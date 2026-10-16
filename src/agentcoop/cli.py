@@ -23,6 +23,7 @@ from agentcoop.errors import CoopError
 from agentcoop.paths import board_root, files_dir
 from agentcoop.doctor import format_doctor, run_doctor
 from agentcoop.runner import run_runner
+from agentcoop.ui import serve
 from agentcoop.install import disconnect_agent
 from agentcoop.projects import (
     INTEGRITY_WARNING,
@@ -43,6 +44,7 @@ from agentcoop.wizard import (
     helper_remove,
     project_remove,
     setup_board,
+    show_board,
 )
 
 
@@ -174,6 +176,12 @@ def build_parser() -> argparse.ArgumentParser:
     project_rm.add_argument("name")
     project_rm.add_argument("--yes", action="store_true")
     project_rm.set_defaults(func=cmd_project_remove)
+
+    ui_cmd = sub.add_parser("ui", help="Open the local viewer")
+    ui_cmd.set_defaults(func=cmd_ui)
+
+    show_cmd = sub.add_parser("show-board", help="Open the board folder")
+    show_cmd.set_defaults(func=cmd_show_board)
 
     runner_cmd = sub.add_parser("runner", help="Answer mail with a local model")
     _add_as(runner_cmd)
@@ -540,6 +548,17 @@ def cmd_helper_remove(args: argparse.Namespace) -> int:
 def cmd_project_remove(args: argparse.Namespace) -> int:
     """Remove a project."""
     print(project_remove(args.name, yes=args.yes))
+    return 0
+
+
+def cmd_ui(_args: argparse.Namespace) -> int:
+    """Open the local viewer."""
+    return serve()
+
+
+def cmd_show_board(_args: argparse.Namespace) -> int:
+    """Open the board folder."""
+    print(show_board())
     return 0
 
 
