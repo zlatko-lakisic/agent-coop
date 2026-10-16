@@ -1,0 +1,77 @@
+"""Write AGENTS-SUPPORT.md from the capability table."""
+
+from __future__ import annotations
+
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+SRC = ROOT / "src"
+if str(SRC) not in sys.path:
+    sys.path.insert(0, str(SRC))
+
+from agentcoop.tools import all_tools  # noqa: E402
+
+OPEN_QUESTIONS = (
+    "Exact setup of the existing Claude desktop workflow. The Claude desktop entry stays unfinished until those details are provided.",
+    "Whether ChatGPT Work can write to granted local folders.",
+    "Whether the ChatGPT desktop app's Codex side reads .codex/skills/.",
+    "Skill paths for GitHub Copilot, OpenCode, Cline, and Goose.",
+    "Current hook formats for Codex, Gemini CLI, and Cursor.",
+    "Read-only permission settings per tool (exact config keys).",
+    "Detection paths for each app on each OS.",
+)
+
+
+def render() -> str:
+    """Return the support page that matches the capability table."""
+    lines = [
+        "# Supported agents",
+        "",
+        "Generated from src/agentcoop/tools.py. Do not edit by hand.",
+        "",
+        "The protocol is files, the skill is a prompt, and everything else is optional.",
+        "Web chat cannot join, because it cannot read files on this computer.",
+        "",
+    ]
+    for tool in all_tools():
+        lines.append("## " + tool.display)
+        lines.append("")
+        if tool.default_agent_name:
+            lines.append("- Agent name: `" + tool.default_agent_name + "`")
+        else:
+            lines.append("- Agent name: not supported")
+        lines.append("- Can drive: " + ("yes" if tool.can_drive else "no"))
+        lines.append("- Joins with: " + tool.join_method)
+        lines.append("- Hooks: " + tool.hooks)
+        lines.append("- Read-only lock: " + tool.read_only_lock)
+        lines.append("- Status: " + tool.status)
+        if tool.helper_note:
+            lines.append("- Suggested helper note: " + tool.helper_note)
+        lines.append("- Notes: " + tool.notes)
+        lines.append("")
+    lines.append("## Open questions")
+    lines.append("")
+    for index, question in enumerate(OPEN_QUESTIONS, start=1):
+        lines.append(str(index) + ". " + question)
+    lines.append("")
+    return "\n".join(lines)
+
+
+def main(argv: list[str] | None = None) -> int:
+    """Write the page, or fail when --check finds a difference."""
+    args = list(sys.argv[1:] if argv is None else argv)
+    target = ROOT / "AGENTS-SUPPORT.md"
+    text = render()
+    if "--check" in args:
+        current = target.read_text(encoding="utf-8") if target.is_file() else ""
+        if current != text:
+            print("AGENTS-SUPPORT.md is out of date. Run: python3 scripts/gen_agents_support.py", file=sys.stderr)
+            return 1
+        return 0
+    target.write_text(text, encoding="utf-8")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
