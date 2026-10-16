@@ -21,6 +21,8 @@ from agentcoop.core import (
 )
 from agentcoop.errors import CoopError
 from agentcoop.paths import board_root, files_dir
+from agentcoop.doctor import format_doctor, run_doctor
+from agentcoop.install import disconnect_agent
 from agentcoop.projects import (
     INTEGRITY_WARNING,
     integrity_ok,
@@ -29,6 +31,17 @@ from agentcoop.projects import (
     resolve_project,
     role_of,
     validate_agent_name,
+)
+from agentcoop.wizard import (
+    add_project_flow,
+    change_driver,
+    connect_one,
+    format_agents,
+    format_projects,
+    helper_add,
+    helper_remove,
+    project_remove,
+    setup_board,
 )
 
 
@@ -99,6 +112,73 @@ def build_parser() -> argparse.ArgumentParser:
     _add_project(who_cmd)
     who_cmd.add_argument("--strict", action="store_true")
     who_cmd.set_defaults(func=cmd_whoami)
+
+    setup_cmd = sub.add_parser("setup", help="Set up the board on this computer")
+    setup_cmd.add_argument("--detect", action="store_true")
+    setup_cmd.add_argument("--json", action="store_true")
+    setup_cmd.add_argument("--connect", default="")
+    setup_cmd.add_argument("--yes", action="store_true")
+    setup_cmd.add_argument("--model", default="")
+    setup_cmd.set_defaults(func=cmd_setup)
+
+    connect_cmd = sub.add_parser("connect", help="Connect one agent")
+    connect_cmd.add_argument("tool")
+    _add_as(connect_cmd)
+    connect_cmd.add_argument("--yes", action="store_true")
+    connect_cmd.add_argument("--model", default="")
+    connect_cmd.add_argument("--host", default="")
+    connect_cmd.add_argument("--api", default="")
+    connect_cmd.set_defaults(func=cmd_connect)
+
+    disconnect_cmd = sub.add_parser("disconnect", help="Disconnect one agent")
+    disconnect_cmd.add_argument("name")
+    disconnect_cmd.set_defaults(func=cmd_disconnect)
+
+    agents_cmd = sub.add_parser("agents", help="List connected agents")
+    agents_cmd.set_defaults(func=cmd_agents)
+
+    project_cmd = sub.add_parser("project", help="Add and edit projects")
+    project_sub = project_cmd.add_subparsers(dest="project_cmd", required=True)
+    project_add = project_sub.add_parser("add", help="Add a project")
+    project_add.add_argument("path", nargs="?")
+    project_add.add_argument("--name")
+    project_add.add_argument("--driver")
+    project_add.add_argument("--helper", action="append", default=[])
+    project_add.add_argument("--lock-helpers", choices=("yes", "no"), default="no")
+    project_add.add_argument("--gitignore", choices=("yes", "no"), default="yes")
+    project_add.add_argument("--yes", action="store_true")
+    project_add.set_defaults(func=cmd_project_add)
+    project_list = project_sub.add_parser("list", help="List projects")
+    project_list.set_defaults(func=cmd_project_list)
+    project_show = project_sub.add_parser("show", help="Show one project")
+    project_show.add_argument("name")
+    project_show.set_defaults(func=cmd_project_show)
+    project_driver = project_sub.add_parser("driver", help="Change the driver")
+    project_driver.add_argument("name")
+    project_driver.add_argument("agent")
+    project_driver.add_argument("--yes", action="store_true")
+    project_driver.set_defaults(func=cmd_project_driver)
+    helper = project_sub.add_parser("helper", help="Add or remove a helper")
+    helper_sub = helper.add_subparsers(dest="helper_cmd", required=True)
+    helper_add_cmd = helper_sub.add_parser("add")
+    helper_add_cmd.add_argument("name")
+    helper_add_cmd.add_argument("agent")
+    helper_add_cmd.add_argument("--note", required=True)
+    helper_add_cmd.set_defaults(func=cmd_helper_add)
+    helper_remove_cmd = helper_sub.add_parser("remove")
+    helper_remove_cmd.add_argument("name")
+    helper_remove_cmd.add_argument("agent")
+    helper_remove_cmd.set_defaults(func=cmd_helper_remove)
+    project_rm = project_sub.add_parser("remove", help="Remove a project")
+    project_rm.add_argument("name")
+    project_rm.add_argument("--yes", action="store_true")
+    project_rm.set_defaults(func=cmd_project_remove)
+
+    doctor_cmd = sub.add_parser("doctor", help="Check that Agent Co-op is set up")
+    _add_project(doctor_cmd)
+    doctor_cmd.add_argument("--json", action="store_true")
+    doctor_cmd.add_argument("--strict", action="store_true")
+    doctor_cmd.set_defaults(func=cmd_doctor)
 
     version_cmd = sub.add_parser("version", help="Show the tool and spec versions")
     version_cmd.set_defaults(func=cmd_version)
@@ -322,6 +402,149 @@ def cmd_whoami(args: argparse.Namespace) -> int:
     print("\n".join(lines))
     if args.strict and broken:
         return 5
+    return 0
+
+
+def _tool_list(raw: str) -> list[str]:
+    return [part.strip() for part in raw.split(",") if part.strip()]
+
+
+def _helpers(items: list[str]) -> dict[str, str]:
+    result = {}
+    for item in items:
+        if "=" not in item:
+            raise CoopError(
+                "Write a helper as NAME=NOTE. Example: --helper claude_code=reviews code",
+                code=2,
+            )
+        name, note = item.split("=", 1)
+        result[name.strip()] = note.strip()
+    return result
+
+
+def cmd_setup(args: argparse.Namespace) -> int:
+    """Set up or detect."""
+    if args.detect:
+        result = setup_board(detect_only=True)
+        if args.json:
+            print(json.dumps(result, indent=2))
+        else:
+            found = result["found"]
+            if not found:
+                print("Found no agents automatically. App detection paths are still TODO.")
+                print("Connect one by name. Example: agentcoop connect claude-code")
+            else:
+                print("Found: " + ", ".join(item["display"] for item in found))
+        return 0
+    result = setup_board(
+        connect=_tool_list(args.connect),
+        yes=args.yes,
+        model=args.model or None,
+    )
+    if args.json:
+        print(json.dumps({"board": result["board"], "connected": result["connected"]}, indent=2))
+        return 0
+    print("Agent Co-op is set up.")
+    print("Board: " + result["board"])
+    if result["connected"]:
+        print("Connected: " + ", ".join(result["connected"]))
+    else:
+        print("No agents connected yet. Example: agentcoop connect cursor")
+    return 0
+
+
+def cmd_connect(args: argparse.Namespace) -> int:
+    """Connect one tool."""
+    name = connect_one(
+        args.tool,
+        agent_name=args.as_name,
+        yes=args.yes,
+        model=args.model or None,
+        host=args.host or None,
+        api=args.api or None,
+    )
+    print(name + " is connected.")
+    return 0
+
+
+def cmd_disconnect(args: argparse.Namespace) -> int:
+    """Disconnect one agent."""
+    disconnect_agent(_board(), args.name)
+    print(args.name + " is disconnected.")
+    return 0
+
+
+def cmd_agents(_args: argparse.Namespace) -> int:
+    """List agents."""
+    print(format_agents(_board()))
+    return 0
+
+
+def cmd_project_add(args: argparse.Namespace) -> int:
+    """Add a project from flags."""
+    print(
+        add_project_flow(
+            path=Path(args.path) if args.path else None,
+            name=args.name,
+            driver=args.driver,
+            helpers=_helpers(args.helper),
+            lock_helpers=args.lock_helpers == "yes",
+            gitignore=args.gitignore != "no",
+            yes=args.yes,
+        )
+    )
+    return 0
+
+
+def cmd_project_list(_args: argparse.Namespace) -> int:
+    """List projects."""
+    print(format_projects(_board()))
+    return 0
+
+
+def cmd_project_show(args: argparse.Namespace) -> int:
+    """Show one project."""
+    print(format_projects(_board(), args.name))
+    return 0
+
+
+def cmd_project_driver(args: argparse.Namespace) -> int:
+    """Change the driver."""
+    print(change_driver(args.name, args.agent, yes=args.yes))
+    return 0
+
+
+def cmd_helper_add(args: argparse.Namespace) -> int:
+    """Add a helper."""
+    print(helper_add(args.name, args.agent, args.note))
+    return 0
+
+
+def cmd_helper_remove(args: argparse.Namespace) -> int:
+    """Remove a helper."""
+    print(helper_remove(args.name, args.agent))
+    return 0
+
+
+def cmd_project_remove(args: argparse.Namespace) -> int:
+    """Remove a project."""
+    print(project_remove(args.name, yes=args.yes))
+    return 0
+
+
+def cmd_doctor(args: argparse.Namespace) -> int:
+    """Print health checks."""
+    board = _board()
+    items = run_doctor(board, project=args.project)
+    if args.json:
+        print(json.dumps([{"ok": item.ok, "text": item.text} for item in items], indent=2))
+    else:
+        print(format_doctor(items))
+    broken = [item for item in items if not item.ok]
+    if args.strict and not integrity_ok(board):
+        return 5
+    if broken:
+        return 1
     return 0
 
 
