@@ -192,4 +192,4 @@ Zlatko Lakisic
 
 ## License
 
-To be decided.
+[Apache License 2.0](LICENSE). Copyright 2026 Zlatko Lakisic.
