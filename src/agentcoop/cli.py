@@ -22,6 +22,7 @@ from agentcoop.core import (
 from agentcoop.errors import CoopError
 from agentcoop.paths import board_root, files_dir
 from agentcoop.doctor import format_doctor, run_doctor
+from agentcoop.runner import run_runner
 from agentcoop.install import disconnect_agent
 from agentcoop.projects import (
     INTEGRITY_WARNING,
@@ -173,6 +174,16 @@ def build_parser() -> argparse.ArgumentParser:
     project_rm.add_argument("name")
     project_rm.add_argument("--yes", action="store_true")
     project_rm.set_defaults(func=cmd_project_remove)
+
+    runner_cmd = sub.add_parser("runner", help="Answer mail with a local model")
+    _add_as(runner_cmd)
+    runner_cmd.add_argument("--api", choices=("ollama", "openai"))
+    runner_cmd.add_argument("--host")
+    runner_cmd.add_argument("--model")
+    runner_cmd.add_argument("--interval", type=int, default=5)
+    runner_cmd.add_argument("--once", action="store_true")
+    runner_cmd.add_argument("--system-prompt-file")
+    runner_cmd.set_defaults(func=cmd_runner)
 
     doctor_cmd = sub.add_parser("doctor", help="Check that Agent Co-op is set up")
     _add_project(doctor_cmd)
@@ -530,6 +541,26 @@ def cmd_project_remove(args: argparse.Namespace) -> int:
     """Remove a project."""
     print(project_remove(args.name, yes=args.yes))
     return 0
+
+
+def cmd_runner(args: argparse.Namespace) -> int:
+    """Answer new messages with a local model."""
+    agent = _agent(args)
+    prompt = ""
+    if args.system_prompt_file:
+        path = Path(args.system_prompt_file)
+        if not path.is_file():
+            raise CoopError("Could not read the system prompt file: " + str(path))
+        prompt = path.read_text(encoding="utf-8")
+    return run_runner(
+        agent=agent,
+        api=args.api,
+        host=args.host,
+        model=args.model,
+        interval=args.interval,
+        once=args.once,
+        system_prompt=prompt,
+    )
 
 
 def cmd_doctor(args: argparse.Namespace) -> int:
