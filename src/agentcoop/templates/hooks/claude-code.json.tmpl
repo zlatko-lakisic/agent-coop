@@ -1,0 +1,25 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "{{AGENTCOOP}} check --as {{AGENT_NAME}} --summary"
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "{{AGENTCOOP}} check --as {{AGENT_NAME}} --summary"
+          }
+        ]
+      }
+    ]
+  }
+}
