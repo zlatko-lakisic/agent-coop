@@ -169,6 +169,7 @@ class ViewerHandler(BaseHTTPRequestHandler):
                     "helpers": project.get("helpers") or {},
                     "messages": messages,
                     "context": context,
+                    "progress": _progress_row(board, name),
                 }
             )
         agent_rows = []
@@ -197,6 +198,22 @@ class ViewerHandler(BaseHTTPRequestHandler):
             "note": "This page is for you. Agents do not connect to it.",
             "banner": banner,
         }
+
+
+def _progress_row(board: Path, project: str) -> dict | None:
+    from agentcoop.progress import latest_progress, parse_progress_name, progress_time
+
+    latest = latest_progress(board, project)
+    if latest is None:
+        return None
+    parsed = parse_progress_name(latest.name)
+    when = progress_time(latest.name)
+    return {
+        "version": latest.name,
+        "author": parsed[1] if parsed else "",
+        "time": when.strftime("%Y-%m-%dT%H:%M:%SZ") if when else "",
+        "body": latest.read_text(encoding="utf-8"),
+    }
 
 
 def suggest_repos(home: Path, limit: int = 20) -> list[str]:

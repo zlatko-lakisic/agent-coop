@@ -95,7 +95,11 @@ def deny_reason(path: Path, board: Path) -> str | None:
 
 def allowed_roots_for(project_path: Path, board: Path, project: str, extra: list[str]) -> list[Path]:
     """Return folders an attachment for this project may live in."""
-    roots = [project_path, board / "projects" / project / "files"]
+    roots = [
+        project_path,
+        board / "projects" / project / "files",
+        board / "projects" / project / "progress",
+    ]
     for item in extra:
         if item:
             roots.append(Path(item))

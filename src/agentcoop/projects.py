@@ -39,6 +39,8 @@ _EMPTY_CONFIG = {
     "max_runs_per_day": 48,
     "run_timeout_minutes": 15,
     "auto_branch": "agentcoop/auto",
+    "progress_limit_bytes": 16384,
+    "progress_every_minutes": 15,
 }
 
 

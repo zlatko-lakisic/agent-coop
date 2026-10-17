@@ -9,6 +9,7 @@ from pathlib import Path
 
 from agentcoop import __version__
 from agentcoop.core import file_id, load_message, log_messages, new_messages, protocol_violation
+from agentcoop.errors import CoopError
 from agentcoop.detect import probe_json
 from agentcoop.install import file_sha256
 from agentcoop.paths import home_dir, inbox_done, inbox_msgs, is_same_or_inside
@@ -98,6 +99,7 @@ def run_doctor(
     items.extend(_message_checks(board, projects, only=project_names))
     items.extend(_context_checks(board, projects, only=project_names, now=now))
     items.extend(_schedule_checks(board, agents, projects, now=now))
+    items.extend(_progress_checks(board, projects, now=now))
     if project:
         items.append(_hello_check(board, projects, project))
     return items
@@ -628,6 +630,48 @@ def _worktree_checks(board: Path, projects: dict) -> list[DoctorItem]:
                         "The worktree for " + name + " is missing " + source.name + ".",
                     )
                 )
+    return items
+
+
+def _progress_checks(board: Path, projects: dict, *, now: datetime | None = None) -> list[DoctorItem]:
+    """Note stale blocked progress and urgent requests with no reply."""
+    from agentcoop.core import log_messages
+    from agentcoop.progress import latest_progress, progress_time, section_text, urgent_requests
+
+    items: list[DoctorItem] = []
+    moment = now or datetime.now(timezone.utc)
+    if moment.tzinfo is None:
+        moment = moment.replace(tzinfo=timezone.utc)
+    for name in (projects.get("projects") or {}):
+        path = latest_progress(board, name)
+        if path is None:
+            continue
+        when = progress_time(path.name)
+        blocked = section_text(path.read_text(encoding="utf-8"), "Blocked or need help")
+        if when and blocked and blocked.strip().lower() != "none":
+            if (moment - when).total_seconds() > 3600:
+                items.append(
+                    DoctorItem(
+                        "note",
+                        name + " has been blocked since " + when.strftime("%Y-%m-%dT%H:%M:%SZ") + ".",
+                    )
+                )
+    for row in urgent_requests(board):
+        project = str(row.get("project") or "")
+        mid = str(row.get("id") or "")
+        try:
+            sent = datetime.strptime(str(row.get("time") or ""), "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+        except ValueError:
+            continue
+        if (moment - sent).total_seconds() < 1800:
+            continue
+        try:
+            messages = log_messages(board, project)
+        except CoopError:
+            messages = []
+        if any(item.re == mid for item in messages):
+            continue
+        items.append(DoctorItem("note", "Urgent request " + mid + " has had no reply for 30 minutes."))
     return items
 
 

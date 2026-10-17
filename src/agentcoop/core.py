@@ -655,8 +655,10 @@ def archive(board: Path, project: str, agent: str, older_than_days: int = 30, no
         os.replace(marker, dest_done / marker.name)
         moved += 1
     from agentcoop.context import archive_context
+    from agentcoop.progress import archive_progress
 
     archive_context(board, project, older_than_days, now=moment)
+    archive_progress(board, project, older_than_days, now=moment)
     return moved
 
 
@@ -726,6 +728,12 @@ def render_check(report: InboxReport, *, summary: bool = False) -> str:
         helper_line = ", ".join(helper_bits) if helper_bits else "(none)"
         lines.append('Agent Co-op: you are the driver for "' + report.project + '".')
         lines.append("Helpers: " + helper_line + ".")
+        if report.board_path:
+            from agentcoop.progress import reminder_line
+
+            reminder = reminder_line(Path(report.board_path), report.project, report.agent)
+            if reminder:
+                lines.append(reminder)
     else:
         lines.append(
             'Agent Co-op: you are a helper for "'
