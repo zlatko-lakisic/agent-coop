@@ -26,6 +26,7 @@ from agentcoop.doctor import format_doctor, run_doctor
 from agentcoop.runner import run_runner
 from agentcoop.ui import serve
 from agentcoop.install import disconnect_agent
+from agentcoop.uninstall import run_uninstall
 from agentcoop.projects import (
     INTEGRITY_WARNING,
     board_is_ready,
@@ -234,6 +235,12 @@ def build_parser() -> argparse.ArgumentParser:
 
     version_cmd = sub.add_parser("version", help="Show the tool and spec versions")
     version_cmd.set_defaults(func=cmd_version)
+
+    uninstall_cmd = sub.add_parser("uninstall", help="Remove Agent Co-op from this computer")
+    uninstall_cmd.add_argument("--agent", action="store_true")
+    uninstall_cmd.add_argument("--dry-run", action="store_true")
+    uninstall_cmd.add_argument("--keep-board", action="store_true")
+    uninstall_cmd.set_defaults(func=cmd_uninstall)
     return parser
 
 
@@ -742,3 +749,13 @@ def cmd_version(_args: argparse.Namespace) -> int:
     print("agentcoop " + __version__)
     print("spec " + SPEC_VERSION)
     return 0
+
+
+def cmd_uninstall(args: argparse.Namespace) -> int:
+    """Remove Agent Co-op from this computer."""
+    return run_uninstall(
+        _board(),
+        agent=args.agent,
+        dry_run=args.dry_run,
+        keep_board=args.keep_board,
+    )

@@ -159,14 +159,27 @@ def merge_hook_settings(existing: dict, addition: dict) -> dict:
 
 
 def remove_hook_command(settings: dict, command: str) -> dict:
-    """Remove hook entries that run one command. Leave every other hook."""
+    """Remove hook entries that run one command. Leave every other hook.
+
+    An event key is deleted when its list becomes empty. The hooks key is
+    deleted when nothing is left under it. Every other key stays as it was.
+    """
     result = json.loads(json.dumps(settings))
-    hooks = result.get("hooks") or {}
+    hooks = result.get("hooks")
+    if not isinstance(hooks, dict):
+        return result
     for event, entries in list(hooks.items()):
         if not isinstance(entries, list):
             continue
-        hooks[event] = [entry for entry in entries if _hook_command(entry) != command]
-    result["hooks"] = hooks
+        kept = [entry for entry in entries if _hook_command(entry) != command]
+        if kept:
+            hooks[event] = kept
+        else:
+            del hooks[event]
+    if hooks:
+        result["hooks"] = hooks
+    else:
+        result.pop("hooks", None)
     return result
 
 
