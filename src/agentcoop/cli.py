@@ -12,6 +12,7 @@ from agentcoop import SPEC_VERSION, __version__
 from agentcoop.core import (
     archive,
     check_inbox,
+    file_id,
     log_messages,
     mark_done,
     projects_for_check,
@@ -379,6 +380,7 @@ def _report_json(report: object) -> dict:
     messages = []
     for item in report.messages:  # type: ignore[attr-defined]
         row = item.message.to_dict()
+        row["id"] = file_id(item.message)
         row["violation"] = item.violation
         row["attachments_status"] = [
             {"path": status.path, "blocked": status.blocked, "reason": status.reason}

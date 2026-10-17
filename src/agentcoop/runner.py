@@ -8,7 +8,7 @@ import time
 import urllib.request
 from pathlib import Path
 
-from agentcoop.core import check_inbox, mark_done, projects_for_check, send
+from agentcoop.core import check_inbox, file_id, mark_done, projects_for_check, send
 from agentcoop.errors import CoopError
 from agentcoop.paths import board_root, files_dir
 from agentcoop.projects import load_agents, load_config, load_projects, require_board
@@ -133,11 +133,11 @@ def _give_up(board: Path, agent: str, project: str, message, reason: str, log) -
                 subject=subject,
                 body=body,
                 type="status",
-                re=message.id,
+                re=file_id(message),
             )
         except (CoopError, OSError, ValueError, KeyError) as exc:
-            log(agent + " could not tell the driver about " + message.id + ". " + str(exc))
-    mark_done(board, project, agent, [message.id])
+            log(agent + " could not tell the driver about " + file_id(message) + ". " + str(exc))
+    mark_done(board, project, agent, [file_id(message)])
 
 
 def reply_to_message(
@@ -175,7 +175,7 @@ def reply_to_message(
     if len(answer.encode("utf-8")) > limit:
         folder = files_dir(board, project, agent)
         folder.mkdir(parents=True, exist_ok=True)
-        path = folder / (message.id + "-answer.md")
+        path = folder / (file_id(message) + "-answer.md")
         path.write_text(answer, encoding="utf-8")
         attachments.append(str(path))
         answer = "The answer is in the attached file."
@@ -187,10 +187,10 @@ def reply_to_message(
         subject="Re: " + message.subject,
         body=answer,
         type="answer",
-        re=message.id,
+        re=file_id(message),
         attachments=attachments,
     )
-    mark_done(board, project, agent, [message.id])
+    mark_done(board, project, agent, [file_id(message)])
 
 
 def run_runner(
@@ -235,12 +235,12 @@ def run_runner(
                 for item in report.messages:
                     message = item.message
                     if item.violation:
-                        log("Ignoring out of protocol message " + message.id)
-                        mark_done(board, project, agent, [message.id])
+                        log("Ignoring out of protocol message " + file_id(message))
+                        mark_done(board, project, agent, [file_id(message)])
                         continue
                     if message.type not in ("question", "task") and not message.needs_reply:
-                        mark_done(board, project, agent, [message.id])
-                        log("Noted " + message.id + " (" + message.type + "). No answer needed.")
+                        mark_done(board, project, agent, [file_id(message)])
+                        log("Noted " + file_id(message) + " (" + message.type + "). No answer needed.")
                         continue
                     try:
                         reply_to_message(
@@ -254,12 +254,12 @@ def run_runner(
                             system_prompt=system_prompt,
                             opener=opener,
                         )
-                        failures.pop(message.id, None)
+                        failures.pop(file_id(message), None)
                     except CoopError as exc:
                         _give_up(board, agent, project, message, str(exc), log)
                     except (OSError, ValueError, KeyError, json.JSONDecodeError) as exc:
-                        count = failures.get(message.id, 0) + 1
-                        failures[message.id] = count
+                        count = failures.get(file_id(message), 0) + 1
+                        failures[file_id(message)] = count
                         if count >= 10:
                             _give_up(
                                 board,
@@ -269,10 +269,10 @@ def run_runner(
                                 "the model did not answer after 10 tries: " + str(exc),
                                 log,
                             )
-                            failures.pop(message.id, None)
+                            failures.pop(file_id(message), None)
                         else:
                             failed = True
-                            log(agent + " could not answer " + message.id + ". " + str(exc))
+                            log(agent + " could not answer " + file_id(message) + ". " + str(exc))
         except KeyboardInterrupt:
             return 0
         if once:
