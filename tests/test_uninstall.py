@@ -264,7 +264,7 @@ class UninstallTests(unittest.TestCase):
         with support.TempEnv() as env:
             _prepare(env)
             folder = env.home / ".config" / "systemd" / "user"
-            folder.mkdir(parents=True)
+            folder.mkdir(parents=True, exist_ok=True)
             unit = folder / "agentcoop-runner.service"
             unit.write_text(
                 "[Service]\nExecStart=/usr/bin/agentcoop runner --as ollama_llava\n",
