@@ -1,6 +1,12 @@
 # Background schedule
 
-Agent Co-op can check the board every few minutes and start an agent when it has new mail.
+Agent Co-op can check the board every few minutes and start an agent when it has new mail. An agent starts only when it has mail. The default interval is 5 minutes.
+
+Scheduled helpers answer read-only. The schedule posts their reply. They do not run `agentcoop send` themselves. If the first line of the reply is `NEED CONTEXT:`, the schedule asks the driver for project context.
+
+A run that prints an authentication error is a sign-in failure. It does not count toward the three-failure notice, and the message stays new. `agentcoop status` and `agentcoop doctor` say which command to run.
+
+A helper reply that is empty is a failed run. After three failures the driver gets a notice.
 
 ## Cursor
 

@@ -2,10 +2,13 @@
 
 ## 0.2.0
 
-- Project context, driver progress, and urgent help.
-- Background checks, a separate `agentcoop/auto` worktree, and a git push guard.
-- Cursor can be the scheduled driver through `.cursor/cli.json`, without `--force`.
-- Sign-in failures, empty helper replies, and notes on standard error.
+- Project context, and a helper asks the driver once when there is none.
+- Driver progress, urgent help, and a reminder when the update is stale.
+- Background checks, a separate `agentcoop/auto` worktree, and a git push guard that also blocks new-branch checkouts.
+- Scheduled helpers answer read-only. The schedule posts the reply.
+- Cursor's command is `agent`. A scheduled Cursor driver uses `.cursor/cli.json` and never `--force`.
+- A run that is not signed in is reported, and an empty helper reply counts as a failure.
+- Send notes go to standard error, so a captured id stays a single line.
 
 ## 0.1.0
 

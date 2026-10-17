@@ -22,11 +22,10 @@ def main() -> int:
         env["HOME"] = str(home)
         env["USERPROFILE"] = str(home)
         env["PYTHONPATH"] = str(src)
+        starter = sys.argv[1:] or [sys.executable, "-m", "agentcoop"]
         setup = subprocess.run(
             [
-                sys.executable,
-                "-m",
-                "agentcoop",
+                *starter,
                 "setup",
                 "--connect",
                 "cursor",
