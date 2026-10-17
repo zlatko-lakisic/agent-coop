@@ -301,7 +301,8 @@ def _run_helper(board, agent, project, record, *, popen, timeout_minutes) -> int
             continue
         _set_signin(board, agent, False)
         _count_run(board, agent, "exit " + str(code))
-        if code != 0:
+        text = (output or "").strip()
+        if code != 0 or not text:
             fails = _bump_failure(board, file_id(message))
             if fails >= 3:
                 _give_up(board, agent, project, message, "the scheduled run failed 3 times", print)
@@ -310,7 +311,6 @@ def _run_helper(board, agent, project, record, *, popen, timeout_minutes) -> int
         _clear_failure(board, file_id(message))
         if version:
             write_marker(board, project, agent, version)
-        text = output.strip()
         if text.startswith("NEED CONTEXT:"):
             from agentcoop.context import helper_has_open_context_request
 
@@ -332,7 +332,7 @@ def _run_helper(board, agent, project, record, *, popen, timeout_minutes) -> int
                     continue
             mark_done(board, project, agent, [file_id(message)])
         else:
-            deliver_answer(board, agent=agent, project=project, message=message, answer=text or "(no reply)")
+            deliver_answer(board, agent=agent, project=project, message=message, answer=text)
         handled += 1
     return 0
 

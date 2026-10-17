@@ -154,6 +154,22 @@ class TickTests(unittest.TestCase):
             folder = env.board / "projects" / "demo" / "files" / "claude_code"
             self.assertTrue(any(path.name.endswith("-answer.md") for path in folder.iterdir()))
 
+    def test_empty_reply_is_a_failed_run(self) -> None:
+        with support.TempEnv() as env:
+            _board_ready(env)
+            _point_cli(env.board, "claude_code", _cli(env))
+            launch = _popen("  \n")
+            main(["send", "--project", "demo", "--as", "cursor", "--to", "claude_code", "--subject", "A", "--body", "one"])
+            run_agent(env.board, "claude_code", "demo", popen=launch)
+            left, _issues = new_messages(env.board, "demo", "claude_code")
+            self.assertEqual(len(left), 1)
+            run_agent(env.board, "claude_code", "demo", popen=launch)
+            run_agent(env.board, "claude_code", "demo", popen=launch)
+            left, _issues = new_messages(env.board, "demo", "claude_code")
+            self.assertEqual(left, [])
+            notices, _issues = new_messages(env.board, "demo", "cursor")
+            self.assertTrue(any("failed 3 times" in item.body for item in notices))
+
     def test_three_failures_then_a_notice(self) -> None:
         with support.TempEnv() as env:
             _board_ready(env)
