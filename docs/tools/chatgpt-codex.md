@@ -6,6 +6,8 @@ Can drive: yes
 
 Joins with: agents_md
 
+Project files for: members
+
 Hooks: todo
 
 Read-only lock: todo

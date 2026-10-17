@@ -29,6 +29,16 @@ from agentcoop.tools import get_tool
 MARKER_START = "<!-- agentcoop:start -->"
 MARKER_END = "<!-- agentcoop:end -->"
 
+
+def marker_start(agent: str) -> str:
+    """Return the section start marker for one agent."""
+    return "<!-- agentcoop:start " + agent + " -->"
+
+
+def marker_end(agent: str) -> str:
+    """Return the section end marker for one agent."""
+    return "<!-- agentcoop:end " + agent + " -->"
+
 _KIND_TEMPLATE = {
     "skill": "SKILL.md.tmpl",
     "rule": "cursor-rule.mdc.tmpl",
@@ -83,15 +93,28 @@ def backup_file(path: Path, board: Path, scope: str) -> Path:
     return dest
 
 
-def upsert_marked_section(original: str, section: str) -> str:
-    """Insert or replace only the Agent Co-op section of a text file."""
-    block = MARKER_START + "\n" + section.strip() + "\n" + MARKER_END + "\n"
-    if MARKER_START in original and MARKER_END in original:
-        pre, rest = original.split(MARKER_START, 1)
-        _old, post = rest.split(MARKER_END, 1)
-        if post.startswith("\n"):
-            post = post[1:]
-        return pre + block + post
+def _replace_marked(original: str, start: str, end: str, block: str) -> str | None:
+    if start not in original or end not in original:
+        return None
+    pre, rest = original.split(start, 1)
+    _old, post = rest.split(end, 1)
+    if post.startswith("\n"):
+        post = post[1:]
+    return pre + block + post
+
+
+def upsert_marked_section(original: str, section: str, agent: str = "") -> str:
+    """Insert or replace one agent's Agent Co-op section."""
+    start = marker_start(agent) if agent else MARKER_START
+    end = marker_end(agent) if agent else MARKER_END
+    block = start + "\n" + section.strip() + "\n" + end + "\n"
+    updated = _replace_marked(original, start, end, block)
+    if updated is not None:
+        return updated
+    if agent and MARKER_START in original and marker_start(agent) not in original and "<!-- agentcoop:start " not in original:
+        updated = _replace_marked(original, MARKER_START, MARKER_END, block)
+        if updated is not None:
+            return updated
     base = original
     if base and not base.endswith("\n"):
         base += "\n"
@@ -100,15 +123,20 @@ def upsert_marked_section(original: str, section: str) -> str:
     return base + block
 
 
-def remove_marked_section(original: str) -> str:
-    """Remove the Agent Co-op section and leave the rest of the file."""
-    if MARKER_START not in original or MARKER_END not in original:
-        return original
-    pre, rest = original.split(MARKER_START, 1)
-    _old, post = rest.split(MARKER_END, 1)
-    if post.startswith("\n"):
-        post = post[1:]
-    return pre + post
+def remove_marked_section(original: str, agent: str = "") -> str:
+    """Remove one agent's section. The old marker form is removed when it is the only one."""
+    if agent:
+        start = marker_start(agent)
+        end = marker_end(agent)
+        updated = _replace_marked(original, start, end, "")
+        text = original if updated is None else updated
+        if "<!-- agentcoop:start " not in text and MARKER_START in text:
+            legacy = _replace_marked(text, MARKER_START, MARKER_END, "")
+            if legacy is not None:
+                text = legacy
+        return text
+    updated = _replace_marked(original, MARKER_START, MARKER_END, "")
+    return original if updated is None else updated
 
 
 def merge_hook_settings(existing: dict, addition: dict) -> dict:
@@ -245,7 +273,7 @@ def _plan_user_files(board: Path, tool: object, agent_name: str) -> list[dict]:
         rendered = render_template(template_name, agent_name=agent_name, board=board)
         if kind in ("agents_md", "gemini_md"):
             original = path.read_text(encoding="utf-8") if path.is_file() else ""
-            rendered = upsert_marked_section(original, rendered)
+            rendered = upsert_marked_section(original, rendered, agent_name)
         planned.append({"path": path, "content": rendered, "kind": kind, "command": ""})
     return planned
 
@@ -371,6 +399,25 @@ def preview_project_files(board: Path, agent_name: str, project_path: Path) -> l
     return planned
 
 
+def project_instruction_agents(board: Path, project: dict) -> list[str]:
+    """Return members who should have project-scope instruction files."""
+    agents = load_agents(board)
+    driver = project.get("driver") or ""
+    names = [driver] + list((project.get("helpers") or {}).keys())
+    chosen = []
+    for name in names:
+        if not name:
+            continue
+        record = (agents.get("agents") or {}).get(name) or {}
+        tool_key = record.get("tool") or ""
+        if not tool_key or tool_key == "runner":
+            continue
+        tool = get_tool(tool_key)
+        if name == driver or tool.project_files_for == "members":
+            chosen.append(name)
+    return chosen
+
+
 def install_project_files(
     board: Path,
     project_name: str,
@@ -446,29 +493,29 @@ def repair_project_files(board: Path, project_name: str) -> list[str]:
     project = projects["projects"].get(project_name)
     if project is None:
         raise CoopError("There is no project named " + project_name + ".")
-    driver = project.get("driver", "")
     before = {entry.get("path") for entry in (project.get("installed") or [])}
     root = Path(project["path"])
     agents = load_agents(board)
-    agent = agents["agents"].get(driver)
-    if agent is None:
-        raise CoopError(driver + " is not connected yet. Run: agentcoop connect")
-    if agent["tool"] == "runner":
-        return pruned
-    tool = get_tool(agent["tool"])
     to_fix: list[str] = []
-    for item in tool.install_paths:
-        if item["scope"] != "project":
-            continue
-        if item["kind"] == "hook" and tool.hooks != "supported":
-            continue
-        path = root / item["path"]
-        in_manifest = str(path) in before
-        if not path.is_file() or not in_manifest:
-            to_fix.append(str(path))
+    targets = project_instruction_agents(board, project)
+    for name in targets:
+        record = (agents.get("agents") or {}).get(name)
+        if record is None:
+            raise CoopError(name + " is not connected yet. Run: agentcoop connect")
+        tool = get_tool(record["tool"])
+        for item in tool.install_paths:
+            if item["scope"] != "project":
+                continue
+            if item["kind"] == "hook" and tool.hooks != "supported":
+                continue
+            path = root / item["path"]
+            in_manifest = str(path) in before
+            if not path.is_file() or not in_manifest:
+                to_fix.append(str(path))
     if not to_fix:
         return pruned
-    install_project_files(board, project_name, driver, yes=False, gitignore=False)
+    for name in targets:
+        install_project_files(board, project_name, name, yes=False, gitignore=False)
     repaired = [path for path in to_fix if Path(path).is_file()]
     return pruned + repaired
 
@@ -615,7 +662,7 @@ def undo_entry(entry: dict) -> str | None:
         path.write_text(json.dumps(updated, indent=2) + "\n", encoding="utf-8")
         return None
     if kind in ("agents_md", "gemini_md"):
-        text = remove_marked_section(path.read_text(encoding="utf-8"))
+        text = remove_marked_section(path.read_text(encoding="utf-8"), str(entry.get("agent") or ""))
         if entry.get("created") and not text.strip():
             path.unlink()
         else:
@@ -686,7 +733,7 @@ def _install_one(
     rendered = render_template(template_name, agent_name=agent_name, board=board)
     if kind in ("agents_md", "gemini_md"):
         original = path.read_text(encoding="utf-8") if path.is_file() else ""
-        content = upsert_marked_section(original, rendered)
+        content = upsert_marked_section(original, rendered, agent_name)
     else:
         content = rendered
     _write_content(

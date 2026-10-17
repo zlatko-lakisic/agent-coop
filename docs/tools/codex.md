@@ -6,6 +6,8 @@ Can drive: yes
 
 Joins with: skill
 
+Project files for: driver
+
 Hooks: todo
 
 Read-only lock: todo

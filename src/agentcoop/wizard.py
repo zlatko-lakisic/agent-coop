@@ -221,9 +221,19 @@ def add_project_flow(
     if prompter is not None and helpers is None:
         helper_map = _ask_helpers(prompter, agents, driver)
     preview_project_files(board, driver, folder)
+    for helper in helper_map:
+        record = (agents["agents"].get(helper) or {})
+        tool_key = record.get("tool") or ""
+        if tool_key and tool_key != "runner" and get_tool(tool_key).project_files_for == "members":
+            preview_project_files(board, helper, folder)
     add_project(board, chosen, folder, driver, helper_map)
     try:
         install_project_files(board, chosen, driver, yes=yes, gitignore=gitignore)
+        for helper in helper_map:
+            record = (agents["agents"].get(helper) or {})
+            tool_key = record.get("tool") or ""
+            if tool_key and tool_key != "runner" and get_tool(tool_key).project_files_for == "members":
+                install_project_files(board, chosen, helper, yes=yes, gitignore=False)
     except Exception as exc:
         notes = rollback_project_add(board, chosen)
         extra = (" " + " ".join(notes)) if notes else ""
@@ -306,6 +316,8 @@ def helper_add(project_name: str, agent: str, note: str) -> str:
     add_helper(board, project_name, agent, note)
     agents = load_agents(board)
     tool_key = (agents["agents"].get(agent) or {}).get("tool", "")
+    if tool_key and tool_key != "runner" and get_tool(tool_key).project_files_for == "members":
+        install_project_files(board, project_name, agent, yes=False, gitignore=False)
     return agent + " is a helper on " + project_name + ". " + lock_notice(tool_key)
 
 

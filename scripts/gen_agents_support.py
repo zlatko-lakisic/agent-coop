@@ -43,6 +43,7 @@ def render() -> str:
             lines.append("- Agent name: not supported")
         lines.append("- Can drive: " + ("yes" if tool.can_drive else "no"))
         lines.append("- Joins with: " + tool.join_method)
+        lines.append("- Project files for: " + tool.project_files_for)
         lines.append("- Hooks: " + tool.hooks)
         lines.append("- Read-only lock: " + tool.read_only_lock)
         lines.append("- Status: " + tool.status)
@@ -58,18 +59,55 @@ def render() -> str:
     return "\n".join(lines)
 
 
+def render_tool_page(tool: object) -> str:
+    """Return one docs/tools page."""
+    lines = ["# " + tool.display, ""]  # type: ignore[attr-defined]
+    if tool.default_agent_name:  # type: ignore[attr-defined]
+        lines.append("Agent name: `" + tool.default_agent_name + "`")  # type: ignore[attr-defined]
+    else:
+        lines.append("Agent name: not supported")
+    lines.append("")
+    lines.append("Can drive: " + ("yes" if tool.can_drive else "no"))  # type: ignore[attr-defined]
+    lines.append("")
+    lines.append("Joins with: " + tool.join_method)  # type: ignore[attr-defined]
+    lines.append("")
+    lines.append("Project files for: " + tool.project_files_for)  # type: ignore[attr-defined]
+    lines.append("")
+    lines.append("Hooks: " + tool.hooks)  # type: ignore[attr-defined]
+    lines.append("")
+    lines.append("Read-only lock: " + tool.read_only_lock)  # type: ignore[attr-defined]
+    lines.append("")
+    lines.append("Status: " + tool.status)  # type: ignore[attr-defined]
+    lines.append("")
+    lines.append(tool.notes)  # type: ignore[attr-defined]
+    lines.append("")
+    lines.append("See AGENTS-SUPPORT.md for the full table. Open questions there are not guesses.")
+    lines.append("")
+    return "\n".join(lines)
+
+
 def main(argv: list[str] | None = None) -> int:
-    """Write the page, or fail when --check finds a difference."""
+    """Write the pages, or fail when --check finds a difference."""
     args = list(sys.argv[1:] if argv is None else argv)
     target = ROOT / "AGENTS-SUPPORT.md"
     text = render()
+    pages = {}
+    for tool in all_tools():
+        pages[ROOT / "docs" / "tools" / (tool.key + ".md")] = render_tool_page(tool)
     if "--check" in args:
         current = target.read_text(encoding="utf-8") if target.is_file() else ""
-        if current != text:
+        stale = current != text
+        for path, page in pages.items():
+            if not path.is_file() or path.read_text(encoding="utf-8") != page:
+                stale = True
+        if stale:
             print("AGENTS-SUPPORT.md is out of date. Run: python3 scripts/gen_agents_support.py", file=sys.stderr)
             return 1
         return 0
     target.write_text(text, encoding="utf-8")
+    for path, page in pages.items():
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(page, encoding="utf-8")
     return 0
 
 

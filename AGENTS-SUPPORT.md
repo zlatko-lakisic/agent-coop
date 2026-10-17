@@ -10,6 +10,7 @@ Web chat cannot join, because it cannot read files on this computer.
 - Agent name: `cursor`
 - Can drive: yes
 - Joins with: rule
+- Project files for: members
 - Hooks: todo
 - Read-only lock: todo
 - Status: untested
@@ -21,6 +22,7 @@ Web chat cannot join, because it cannot read files on this computer.
 - Agent name: `claude_code`
 - Can drive: yes
 - Joins with: skill
+- Project files for: driver
 - Hooks: supported
 - Read-only lock: todo
 - Status: untested
@@ -32,6 +34,7 @@ Web chat cannot join, because it cannot read files on this computer.
 - Agent name: `codex`
 - Can drive: yes
 - Joins with: skill
+- Project files for: driver
 - Hooks: todo
 - Read-only lock: todo
 - Status: untested
@@ -43,6 +46,7 @@ Web chat cannot join, because it cannot read files on this computer.
 - Agent name: `chatgpt_codex`
 - Can drive: yes
 - Joins with: agents_md
+- Project files for: members
 - Hooks: todo
 - Read-only lock: todo
 - Status: untested
@@ -54,6 +58,7 @@ Web chat cannot join, because it cannot read files on this computer.
 - Agent name: `chatgpt_work`
 - Can drive: no
 - Joins with: folder_grant
+- Project files for: driver
 - Hooks: none
 - Read-only lock: advisory
 - Status: planned
@@ -65,6 +70,7 @@ Web chat cannot join, because it cannot read files on this computer.
 - Agent name: `claude_desktop`
 - Can drive: no
 - Joins with: folder_grant
+- Project files for: driver
 - Hooks: none
 - Read-only lock: advisory
 - Status: planned
@@ -76,6 +82,7 @@ Web chat cannot join, because it cannot read files on this computer.
 - Agent name: `gemini`
 - Can drive: yes
 - Joins with: gemini_md
+- Project files for: members
 - Hooks: todo
 - Read-only lock: todo
 - Status: untested
@@ -87,6 +94,7 @@ Web chat cannot join, because it cannot read files on this computer.
 - Agent name: `copilot`
 - Can drive: yes
 - Joins with: agents_md
+- Project files for: members
 - Hooks: todo
 - Read-only lock: todo
 - Status: planned
@@ -98,6 +106,7 @@ Web chat cannot join, because it cannot read files on this computer.
 - Agent name: `opencode`
 - Can drive: yes
 - Joins with: agents_md
+- Project files for: members
 - Hooks: todo
 - Read-only lock: todo
 - Status: planned
@@ -109,6 +118,7 @@ Web chat cannot join, because it cannot read files on this computer.
 - Agent name: `cline`
 - Can drive: yes
 - Joins with: agents_md
+- Project files for: members
 - Hooks: todo
 - Read-only lock: todo
 - Status: planned
@@ -120,6 +130,7 @@ Web chat cannot join, because it cannot read files on this computer.
 - Agent name: `goose`
 - Can drive: yes
 - Joins with: agents_md
+- Project files for: members
 - Hooks: todo
 - Read-only lock: todo
 - Status: planned
@@ -131,6 +142,7 @@ Web chat cannot join, because it cannot read files on this computer.
 - Agent name: `ollama_model`
 - Can drive: no
 - Joins with: runner
+- Project files for: driver
 - Hooks: none
 - Read-only lock: advisory
 - Status: untested
@@ -142,6 +154,7 @@ Web chat cannot join, because it cannot read files on this computer.
 - Agent name: `ollama_model`
 - Can drive: no
 - Joins with: runner
+- Project files for: driver
 - Hooks: none
 - Read-only lock: advisory
 - Status: untested
@@ -153,6 +166,7 @@ Web chat cannot join, because it cannot read files on this computer.
 - Agent name: `lmstudio_model`
 - Can drive: no
 - Joins with: runner
+- Project files for: driver
 - Hooks: none
 - Read-only lock: advisory
 - Status: untested
@@ -164,6 +178,7 @@ Web chat cannot join, because it cannot read files on this computer.
 - Agent name: not supported
 - Can drive: no
 - Joins with: none
+- Project files for: driver
 - Hooks: none
 - Read-only lock: none
 - Status: planned
@@ -174,6 +189,7 @@ Web chat cannot join, because it cannot read files on this computer.
 - Agent name: not supported
 - Can drive: no
 - Joins with: none
+- Project files for: driver
 - Hooks: none
 - Read-only lock: none
 - Status: planned
