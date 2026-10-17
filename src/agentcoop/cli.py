@@ -35,6 +35,7 @@ from agentcoop.projects import (
     role_of,
     validate_agent_name,
 )
+from agentcoop.review import review_projects
 from agentcoop.wizard import (
     add_project_flow,
     change_driver,
@@ -194,6 +195,10 @@ def build_parser() -> argparse.ArgumentParser:
     project_fix = project_sub.add_parser("repair", help="Reinstall missing project files")
     project_fix.add_argument("name")
     project_fix.set_defaults(func=cmd_project_repair)
+    project_review = project_sub.add_parser("review", help="Review hand edits to projects.json")
+    project_review.add_argument("--restore", action="store_true")
+    project_review.add_argument("--accept", action="store_true")
+    project_review.set_defaults(func=cmd_project_review)
 
     ui_cmd = sub.add_parser("ui", help="Open the local viewer")
     ui_cmd.set_defaults(func=cmd_ui)
@@ -600,6 +605,14 @@ def cmd_project_remove(args: argparse.Namespace) -> int:
 def cmd_project_repair(args: argparse.Namespace) -> int:
     """Reinstall missing driver project files."""
     print(project_repair(args.name))
+    return 0
+
+
+def cmd_project_review(args: argparse.Namespace) -> int:
+    """Review projects.json after a hand edit."""
+    if args.restore and args.accept:
+        raise CoopError("Use either --restore or --accept, not both.", code=2)
+    print(review_projects(_board(), restore=args.restore, accept=args.accept))
     return 0
 
 

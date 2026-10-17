@@ -16,7 +16,7 @@ from agentcoop.doctor import format_doctor, run_doctor
 from agentcoop.errors import CoopError
 from agentcoop.install import read_template
 from agentcoop.paths import board_root, home_dir
-from agentcoop.projects import load_agents, load_projects, require_board
+from agentcoop.projects import INTEGRITY_WARNING, integrity_ok, load_agents, load_projects, require_board
 from agentcoop.tools import tool_can_drive
 from agentcoop.wizard import add_project_flow, change_driver, helper_add, helper_remove
 
@@ -97,7 +97,13 @@ class ViewerHandler(BaseHTTPRequestHandler):
             else:
                 self._send(404, b"Not found.\n")
                 return
-        except (CoopError, KeyError, OSError) as exc:
+        except CoopError as exc:
+            body = str(exc)
+            if exc.code == 5:
+                body = "BANNER: " + body
+            self._send(400, body.encode("utf-8"), "text/plain; charset=utf-8")
+            return
+        except (KeyError, OSError) as exc:
             self._send(400, str(exc).encode("utf-8"), "text/plain; charset=utf-8")
             return
         self._send(200, text.encode("utf-8"), "text/plain; charset=utf-8")
@@ -157,10 +163,14 @@ class ViewerHandler(BaseHTTPRequestHandler):
                     "note": note,
                 }
             )
+        banner = ""
+        if not integrity_ok(board):
+            banner = INTEGRITY_WARNING
         return {
             "projects": rows,
             "agents": agent_rows,
             "note": "This page is for you. Agents do not connect to it.",
+            "banner": banner,
         }
 
 

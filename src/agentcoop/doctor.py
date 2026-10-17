@@ -10,7 +10,15 @@ from agentcoop.core import load_message, log_messages, new_messages, protocol_vi
 from agentcoop.detect import probe_json
 from agentcoop.install import file_sha256
 from agentcoop.paths import inbox_msgs, is_same_or_inside
-from agentcoop.projects import board_is_ready, integrity_ok, load_agents, load_config, load_projects, role_of
+from agentcoop.projects import (
+    INTEGRITY_WARNING,
+    board_is_ready,
+    integrity_ok,
+    load_agents,
+    load_config,
+    load_projects,
+    role_of,
+)
 from agentcoop.tools import get_tool, tool_can_drive
 
 INBOX_LIMIT = 500
@@ -37,13 +45,7 @@ def run_doctor(board: Path, project: str | None = None) -> list[DoctorItem]:
     if integrity_ok(board):
         items.append(DoctorItem(True, "projects.json matches the saved check."))
     else:
-        items.append(
-            DoctorItem(
-                False,
-                "projects.json was changed outside agentcoop. Roles may not be what you set. "
-                "Run: agentcoop doctor",
-            )
-        )
+        items.append(DoctorItem(False, INTEGRITY_WARNING))
     agents = load_agents(board)
     projects = load_projects(board)
     config = load_config(board)

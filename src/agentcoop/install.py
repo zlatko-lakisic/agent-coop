@@ -335,6 +335,9 @@ def rollback_project_add(board: Path, name: str) -> None:
 
 def repair_project_files(board: Path, project_name: str) -> list[str]:
     """Reinstall missing driver project files. Returns absolute paths written."""
+    from agentcoop.projects import require_integrity
+
+    require_integrity(board)
     pruned = prune_out_of_scope_project_files(board, project_name)
     projects = load_projects(board)
     project = projects["projects"].get(project_name)
@@ -372,6 +375,9 @@ def prune_out_of_scope_project_files(board: Path, project_name: str | None = Non
 
     Only removes files that are in the manifest and still match the saved hash.
     """
+    from agentcoop.projects import require_integrity
+
+    require_integrity(board)
     projects = load_projects(board)
     agents = load_agents(board)
     names = [project_name] if project_name else list((projects.get("projects") or {}).keys())
@@ -455,6 +461,9 @@ def disconnect_agent(board: Path, name: str) -> None:
 
 def remove_project_files(board: Path, project_name: str) -> None:
     """Undo files installed for a project, then drop the project entry."""
+    from agentcoop.projects import require_integrity
+
+    require_integrity(board)
     projects = load_projects(board)
     project = projects["projects"].get(project_name)
     if project is None:
