@@ -426,6 +426,21 @@ def _install_one(
     )
 
 
+def claude_code_hooks(board: Path, agent_name: str) -> dict:
+    """Build Claude Code hook settings as a dict.
+
+    Paths are inserted with json.dumps, so Windows backslashes stay valid JSON.
+    """
+    command = agentcoop_command(board) + " check --as " + agent_name + " --summary"
+    entry = {"hooks": [{"type": "command", "command": command}]}
+    return {
+        "hooks": {
+            "SessionStart": [{"matcher": "*", **entry}],
+            "UserPromptSubmit": [dict(entry)],
+        }
+    }
+
+
 def _install_hook(
     board: Path,
     agent_name: str,
@@ -436,7 +451,7 @@ def _install_hook(
 ) -> None:
     if tool_key != "claude-code":
         return
-    addition = json.loads(render_template("hooks/claude-code.json.tmpl", agent_name=agent_name, board=board))
+    addition = claude_code_hooks(board, agent_name)
     command = ""
     for entries in (addition.get("hooks") or {}).values():
         for entry in entries:

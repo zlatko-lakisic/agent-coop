@@ -10,6 +10,7 @@ import support
 
 from agentcoop.errors import CoopError
 from agentcoop.install import (
+    claude_code_hooks,
     connect_agent,
     disconnect_agent,
     install_project_files,
@@ -116,6 +117,19 @@ class InstallTests(unittest.TestCase):
             self.assertIn("PreToolUse", data["hooks"])
             self.assertEqual(data["hooks"].get("SessionStart"), [])
             self.assertFalse((folder / ".cursor").exists())
+
+    def test_hook_paths_escape_windows_backslashes(self) -> None:
+        with support.TempEnv() as env:
+            init_board_files(env.board)
+            board = Path(r"C:\Users\you\.agent_board")
+            hooks = claude_code_hooks(board, "claude_code")
+            # Round-trip through JSON the same way install writes settings.
+            encoded = json.dumps(hooks)
+            loaded = json.loads(encoded)
+            command = loaded["hooks"]["SessionStart"][0]["hooks"][0]["command"]
+            self.assertIn("claude_code", command)
+            self.assertIn("check --as", command)
+            self.assertIn("agent_board", command.replace("\\\\", "\\"))
 
     def test_disconnect_refuses_driver(self) -> None:
         with support.TempEnv() as env:
