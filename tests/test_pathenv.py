@@ -21,6 +21,7 @@ from agentcoop.pathenv import (
 )
 from agentcoop.projects import init_board_files, load_agents, load_config, mutate_agents
 class PathEnvTests(unittest.TestCase):
+    @unittest.skipIf(os.name == "nt", "POSIX path resolve")
     def test_launcher_order_on_posix(self) -> None:
         calls = []
 
