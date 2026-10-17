@@ -31,7 +31,11 @@ class PathEnvTests(unittest.TestCase):
             return None
 
         path = pick_launcher(which=which, name="posix", executable="/fallback")
-        self.assertTrue(path.endswith("python3") or path == "/usr/bin/python3")
+        # resolve() follows the real python3 symlink, which may be python3.12.
+        expected = "/usr/bin/python3"
+        if Path(expected).exists():
+            expected = str(Path(expected).resolve())
+        self.assertEqual(path, expected)
         self.assertEqual(calls, ["python3"])
 
     def test_launcher_order_on_windows(self) -> None:
