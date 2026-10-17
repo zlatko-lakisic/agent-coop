@@ -12,6 +12,7 @@ from pathlib import Path
 
 from agentcoop.errors import CoopError
 from agentcoop.paths import (
+    agentcoop_command,
     archive_dir,
     ensure_agent_dirs,
     files_dir,
@@ -113,6 +114,7 @@ class InboxReport:
     messages: list[CheckedMessage]
     issues: list[ReadIssue]
     integrity_ok: bool
+    board_path: str = ""
 
 
 def utc_now(now: datetime | None = None) -> datetime:
@@ -446,6 +448,7 @@ def check_inbox(
         messages=checked,
         issues=issues,
         integrity_ok=integrity_ok(board),
+        board_path=str(board),
     )
 
 
@@ -554,6 +557,7 @@ def log_messages(board: Path, project: str) -> list[Message]:
 
 def render_check(report: InboxReport, *, summary: bool = False) -> str:
     """Render check output. Summary prints one line, or nothing when idle."""
+    cmd = agentcoop_command(Path(report.board_path)) if report.board_path else "agentcoop"
     lines: list[str] = []
     if not report.integrity_ok:
         lines.append(INTEGRITY_WARNING)
@@ -583,7 +587,9 @@ def render_check(report: InboxReport, *, summary: bool = False) -> str:
             + report.project
             + " (from "
             + ", ".join(senders)
-            + "). Run: agentcoop check --as "
+            + "). Run: "
+            + cmd
+            + " check --as "
             + report.agent
         )
     if report.role == "driver":
@@ -651,6 +657,11 @@ def render_check(report: InboxReport, *, summary: bool = False) -> str:
     if visible:
         ids = " ".join(item.message.id for item in visible)
         lines.append(
-            "When finished, run: agentcoop done --as " + report.agent + " " + ids
+            "When finished, run: "
+            + cmd
+            + " done --as "
+            + report.agent
+            + " "
+            + ids
         )
     return "\n".join(lines).rstrip() + ("\n" if lines else "")
