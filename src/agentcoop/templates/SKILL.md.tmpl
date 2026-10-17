@@ -40,6 +40,8 @@ Do not wait. Keep working and read the answer on your next check. `{{AGENTCOOP}}
 
 Helpers send fixes as patch or draft files. Review them yourself before applying anything.
 
+If the human asks you to say hello to your helpers, send each helper a message with --type question --needs-reply --subject "Agent Co-op hello".
+
 ## If you are a helper
 
 * Never edit, create, or delete files in the project folder. If you want to change something, write a patch or draft into your own files folder (shown in the check output) and attach it to your reply.
@@ -49,6 +51,7 @@ Helpers send fixes as patch or draft files. Review them yourself before applying
 
 * If you need more information, reply with `--type question` and the same `--re`.
 * Never message other helpers. If another helper should be involved, say so in your reply and let the driver decide.
+* If you receive a message with the subject "Agent Co-op hello", reply with --type ack and --subject "Re: Agent Co-op hello".
 
 ## Rules for everyone
 

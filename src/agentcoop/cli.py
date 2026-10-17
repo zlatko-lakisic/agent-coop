@@ -301,7 +301,7 @@ def cmd_send(args: argparse.Namespace) -> int:
     agent = _agent(args)
     board = _board()
     project = resolve_project(board, explicit=args.project, cwd=Path.cwd(), agent=agent)
-    mid, _warning = send(
+    mid = send(
         board,
         project=project,
         sender=agent,
@@ -764,10 +764,15 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     board = _board()
     items = run_doctor(board, project=args.project)
     if args.json:
-        print(json.dumps([{"ok": item.ok, "text": item.text} for item in items], indent=2))
+        print(
+            json.dumps(
+                [{"level": item.level, "ok": item.ok, "text": item.text} for item in items],
+                indent=2,
+            )
+        )
     else:
         print(format_doctor(items))
-    broken = [item for item in items if not item.ok]
+    broken = [item for item in items if item.level == "fix"]
     if args.strict and not integrity_ok(board):
         return 5
     if broken:

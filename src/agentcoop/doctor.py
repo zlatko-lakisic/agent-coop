@@ -26,49 +26,67 @@ INBOX_LIMIT = 500
 
 @dataclass
 class DoctorItem:
-    """One check."""
+    """One check. level is ok, note, or fix."""
 
-    ok: bool
+    level: str
     text: str
-    note: bool = False
+
+    @property
+    def ok(self) -> bool:
+        """True when this line is not a fix."""
+        return self.level != "fix"
 
 
 def run_doctor(board: Path, project: str | None = None) -> list[DoctorItem]:
-    """Run health checks. Pass a project name to include the hello test."""
+    """Run health checks. Pass a project name to focus on that project."""
     items: list[DoctorItem] = []
     if not board_is_ready(board):
-        return [DoctorItem(False, "Agent Co-op is not set up yet. Run: agentcoop setup")]
+        return [DoctorItem("fix", "Agent Co-op is not set up yet. Run: agentcoop setup")]
     if not os_access_write(board):
-        items.append(DoctorItem(False, "The board folder is not writable: " + str(board)))
+        items.append(DoctorItem("fix", "The board folder is not writable: " + str(board)))
     else:
-        items.append(DoctorItem(True, "Board folder is ready."))
+        items.append(DoctorItem("ok", "Board folder is ready."))
     items.append(_bin_check(board))
     from agentcoop.pathenv import path_notes_for_doctor
 
     for note in path_notes_for_doctor(board):
         if note.startswith("Fix: "):
-            items.append(DoctorItem(False, note[len("Fix: ") :]))
+            items.append(DoctorItem("fix", note[len("Fix: ") :]))
         elif note.startswith("Note: "):
-            items.append(DoctorItem(True, note[len("Note: ") :], note=True))
+            items.append(DoctorItem("note", note[len("Note: ") :]))
         else:
-            items.append(DoctorItem(True, note, note=True))
+            items.append(DoctorItem("note", note))
     loose = _loose_permissions(board)
     if loose is not None:
         items.append(loose)
     projects, intact = read_projects_checked(board)
     if intact:
-        items.append(DoctorItem(True, "projects.json matches the saved check."))
+        items.append(DoctorItem("ok", "projects.json matches the saved check."))
     else:
-        items.append(DoctorItem(False, INTEGRITY_WARNING))
+        items.append(DoctorItem("fix", INTEGRITY_WARNING))
     agents = load_agents(board)
     config = load_config(board)
+    member_names: set[str] | None = None
+    project_names: set[str] | None = None
+    if project:
+        record = (projects.get("projects") or {}).get(project)
+        if record is None:
+            items.append(
+                DoctorItem("fix", "There is no project named " + project + ". Run: agentcoop project list")
+            )
+            return items
+        project_names = {project}
+        member_names = {record.get("driver", "")} | set((record.get("helpers") or {}).keys())
+        member_names.discard("")
     for name, record in (agents.get("agents") or {}).items():
+        if member_names is not None and name not in member_names:
+            continue
         items.extend(_agent_checks(name, record))
         if record.get("tool") == "runner":
             items.append(_runner_check(record))
-    items.extend(_project_checks(projects, agents, config))
-    items.extend(_duplicate_instruction_checks(agents, projects))
-    items.extend(_message_checks(board, projects))
+    items.extend(_project_checks(projects, agents, config, only=project_names))
+    items.extend(_duplicate_instruction_checks(agents, projects, only=project_names))
+    items.extend(_message_checks(board, projects, only=project_names))
     if project:
         items.append(_hello_check(board, projects, project))
     return items
@@ -96,18 +114,14 @@ def _loose_permissions(board: Path) -> DoctorItem | None:
             break
         seen += 1
         if os.stat(dirpath).st_mode & 0o077:
-            return DoctorItem(
-                False,
-                "other accounts on this computer can read the board. Run: agentcoop setup",
+            return DoctorItem("fix", "other accounts on this computer can read the board. Run: agentcoop setup",
             )
         for name in filenames:
             seen += 1
             if seen > 5000:
                 break
             if os.stat(os.path.join(dirpath, name)).st_mode & 0o077:
-                return DoctorItem(
-                    False,
-                    "other accounts on this computer can read the board. Run: agentcoop setup",
+                return DoctorItem("fix", "other accounts on this computer can read the board. Run: agentcoop setup",
                 )
     return None
 
@@ -115,18 +129,16 @@ def _loose_permissions(board: Path) -> DoctorItem | None:
 def _bin_check(board: Path) -> DoctorItem:
     version_file = board / "bin" / "VERSION"
     if not version_file.is_file():
-        return DoctorItem(False, "The agentcoop command is not on the board yet. Run: agentcoop setup")
+        return DoctorItem("fix", "The agentcoop command is not on the board yet. Run: agentcoop setup")
     current = version_file.read_text(encoding="utf-8").strip()
     if current != __version__:
-        return DoctorItem(
-            False,
-            "The agentcoop command on the board is version "
+        return DoctorItem("fix", "The agentcoop command on the board is version "
             + current
             + ". This copy is "
             + __version__
             + ". Run: agentcoop setup",
         )
-    return DoctorItem(True, "The agentcoop command on the board is current.")
+    return DoctorItem("ok", "The agentcoop command on the board is current.")
 
 
 def _foreign_install_path(tool: object, installed: list) -> Path | None:
@@ -157,9 +169,7 @@ def _agent_checks(name: str, record: dict) -> list[DoctorItem]:
             foreign = _foreign_install_path(tool, installed)
             if foreign is not None:
                 items.append(
-                    DoctorItem(
-                        False,
-                        str(foreign)
+                    DoctorItem("fix", str(foreign)
                         + " belongs to you, not Agent Co-op. Move it, or run: agentcoop connect "
                         + tool_key
                         + " --yes to replace it.",
@@ -167,20 +177,16 @@ def _agent_checks(name: str, record: dict) -> list[DoctorItem]:
                 )
             else:
                 items.append(
-                    DoctorItem(
-                        False,
-                        display + " is registered but its skill is missing. Run: agentcoop connect " + tool_key,
+                    DoctorItem("fix", display + " is registered but its skill is missing. Run: agentcoop connect " + tool_key,
                     )
                 )
         else:
-            items.append(DoctorItem(True, display + ": connected."))
+            items.append(DoctorItem("ok", display + ": connected."))
     for entry in installed:
         path = Path(entry.get("path", ""))
         if not path.is_file():
             items.append(
-                DoctorItem(
-                    False,
-                    display
+                DoctorItem("fix", display
                     + " is missing "
                     + str(path)
                     + ". Run: agentcoop connect "
@@ -191,15 +197,13 @@ def _agent_checks(name: str, record: dict) -> list[DoctorItem]:
         if file_sha256(path) != entry.get("sha256"):
             items.append(
                 DoctorItem(
-                    False,
+                    "note",
                     str(path)
-                    + " belongs to you, not Agent Co-op. Move it, or run: agentcoop connect "
-                    + record.get("tool", name)
-                    + " --yes to replace it.",
+                    + " was changed after it was installed. Agent Co-op will leave it alone.",
                 )
             )
         else:
-            items.append(DoctorItem(True, display + ": " + path.name + " is installed."))
+            items.append(DoctorItem("ok", display + ": " + path.name + " is installed."))
     tool_key = record.get("tool", "")
     try:
         tool = get_tool(tool_key)
@@ -209,9 +213,7 @@ def _agent_checks(name: str, record: dict) -> list[DoctorItem]:
         hooked = any(entry.get("kind") == "hook" for entry in installed)
         if not hooked:
             items.append(
-                DoctorItem(
-                    False,
-                    display + " hooks are not installed. Run: agentcoop connect " + tool.key,
+                DoctorItem("fix", display + " hooks are not installed. Run: agentcoop connect " + tool.key,
                 )
             )
     return items
@@ -226,58 +228,64 @@ def _runner_check(record: dict) -> DoctorItem:
     if api == "openai":
         data = probe_json(host.rstrip("/") + "/v1/models")
         if data is None:
-            return DoctorItem(False, display + " is not reachable at " + host + ". Start LM Studio's server.")
+            return DoctorItem("fix", display + " is not reachable at " + host + ". Start LM Studio's server.")
         ids = [str(item.get("id")) for item in (data.get("data") or []) if isinstance(item, dict)]
         if model and ids and model not in ids:
-            return DoctorItem(False, "The model " + model + " is not loaded in LM Studio.")
-        return DoctorItem(True, display + ": server is reachable.")
+            return DoctorItem("fix", "The model " + model + " is not loaded in LM Studio.")
+        return DoctorItem("ok", display + ": server is reachable.")
     data = probe_json(host.rstrip("/") + "/api/tags")
     if data is None:
-        return DoctorItem(False, display + " is not running. Start Ollama, then run: agentcoop doctor")
+        return DoctorItem("fix", display + " is not running. Start Ollama, then run: agentcoop doctor")
     names = [str(item.get("name")) for item in (data.get("models") or []) if isinstance(item, dict)]
     if model and names and not any(model == name or name.startswith(model + ":") or model.startswith(name) for name in names):
         short = model.split(":")[0]
-        return DoctorItem(False, "The model " + model + " is not installed. Run: ollama pull " + short)
-    return DoctorItem(True, display + ": server is reachable.")
+        return DoctorItem("fix", "The model " + model + " is not installed. Run: ollama pull " + short)
+    return DoctorItem("ok", display + ": server is reachable.")
 
 
-def _project_checks(projects: dict, agents: dict, config: dict) -> list[DoctorItem]:
+def _project_checks(
+    projects: dict,
+    agents: dict,
+    config: dict,
+    *,
+    only: set[str] | None = None,
+) -> list[DoctorItem]:
     items = []
     known = agents.get("agents") or {}
     roots = [Path(item) for item in (config.get("allowed_roots") or []) if isinstance(item, str)]
     seen: list[tuple[str, Path]] = []
     for name, project in (projects.get("projects") or {}).items():
+        if only is not None and name not in only:
+            continue
         path = Path(project.get("path", ""))
         if not path.exists():
-            items.append(DoctorItem(False, "The " + name + " folder is missing: " + str(path)))
+            items.append(DoctorItem("fix", "The " + name + " folder is missing: " + str(path)))
         else:
-            items.append(DoctorItem(True, name + ": folder exists."))
+            items.append(DoctorItem("ok", name + ": folder exists."))
         nested = False
         for other_name, other_path in seen:
             if is_same_or_inside(path, other_path) or is_same_or_inside(other_path, path):
-                items.append(DoctorItem(False, name + " sits inside " + other_name + ". Projects cannot be nested."))
+                items.append(DoctorItem("fix", name + " sits inside " + other_name + ". Projects cannot be nested."))
                 nested = True
         if not nested:
             seen.append((name, path))
         driver = project.get("driver", "")
         if driver not in known:
-            items.append(DoctorItem(False, driver + " is not connected. Run: agentcoop connect " + driver))
+            items.append(DoctorItem("fix", driver + " is not connected. Run: agentcoop connect " + driver))
         else:
             tool_key = known[driver].get("tool", "")
             if not tool_can_drive(tool_key):
-                items.append(DoctorItem(False, driver + " cannot be the driver of " + name + "."))
+                items.append(DoctorItem("fix", driver + " cannot be the driver of " + name + "."))
             else:
-                items.append(DoctorItem(True, known[driver].get("display", driver) + ": connected as the driver of " + name + "."))
+                items.append(DoctorItem("ok", known[driver].get("display", driver) + ": connected as the driver of " + name + "."))
         for helper in (project.get("helpers") or {}):
             if helper not in known:
-                items.append(DoctorItem(False, helper + " is not connected. Run: agentcoop agents"))
+                items.append(DoctorItem("fix", helper + " is not connected. Run: agentcoop agents"))
             else:
-                items.append(DoctorItem(True, known[helper].get("display", helper) + ": connected."))
+                items.append(DoctorItem("ok", known[helper].get("display", helper) + ": connected."))
         if path.exists() and not any(is_same_or_inside(path, root) for root in roots):
             items.append(
-                DoctorItem(
-                    False,
-                    "The "
+                DoctorItem("fix", "The "
                     + name
                     + " folder is not on the allowed list, so attachments from it will be blocked.",
                 )
@@ -286,15 +294,18 @@ def _project_checks(projects: dict, agents: dict, config: dict) -> list[DoctorIt
         if path.is_dir():
             for backup in sorted(path.glob("*.agentcoop-backup-*")):
                 items.append(
-                    DoctorItem(
-                        False,
-                        str(backup) + " is an old Agent Co-op backup. You can delete it.",
+                    DoctorItem("fix", str(backup) + " is an old Agent Co-op backup. You can delete it.",
                     )
                 )
     return items
 
 
-def _duplicate_instruction_checks(agents: dict, projects: dict) -> list[DoctorItem]:
+def _duplicate_instruction_checks(
+    agents: dict,
+    projects: dict,
+    *,
+    only: set[str] | None = None,
+) -> list[DoctorItem]:
     """Report when an agent has both a user and a project copy of the same kind."""
     items: list[DoctorItem] = []
     for agent_name, record in (agents.get("agents") or {}).items():
@@ -304,6 +315,8 @@ def _duplicate_instruction_checks(agents: dict, projects: dict) -> list[DoctorIt
             if kind in ("skill", "hook") and entry.get("path"):
                 user_by_kind[kind] = entry["path"]
         for project_name, project in (projects.get("projects") or {}).items():
+            if only is not None and project_name not in only:
+                continue
             project_by_kind: dict[str, str] = {}
             for entry in project.get("installed") or []:
                 if entry.get("agent") != agent_name:
@@ -314,9 +327,7 @@ def _duplicate_instruction_checks(agents: dict, projects: dict) -> list[DoctorIt
             for kind in ("skill", "hook"):
                 if kind in user_by_kind and kind in project_by_kind:
                     items.append(
-                        DoctorItem(
-                            False,
-                            agent_name
+                        DoctorItem("fix", agent_name
                             + " has two copies of the Agent Co-op instructions: "
                             + user_by_kind[kind]
                             + " and "
@@ -350,9 +361,7 @@ def _driver_files_check(name: str, project: dict, known: dict) -> list[DoctorIte
         path = root / item["path"]
         if not path.is_file() or str(path) not in installed:
             return [
-                DoctorItem(
-                    False,
-                    name
+                DoctorItem("fix", name
                     + ": "
                     + driver
                     + " is missing its project files. Run: agentcoop project repair "
@@ -362,9 +371,16 @@ def _driver_files_check(name: str, project: dict, known: dict) -> list[DoctorIte
     return []
 
 
-def _message_checks(board: Path, projects: dict) -> list[DoctorItem]:
+def _message_checks(
+    board: Path,
+    projects: dict,
+    *,
+    only: set[str] | None = None,
+) -> list[DoctorItem]:
     items = []
     for name, project in (projects.get("projects") or {}).items():
+        if only is not None and name not in only:
+            continue
         members = [project.get("driver", "")] + list((project.get("helpers") or {}).keys())
         for agent in members:
             if not agent:
@@ -373,17 +389,17 @@ def _message_checks(board: Path, projects: dict) -> list[DoctorItem]:
             for issue in issues:
                 items.append(
                     DoctorItem(
-                        False,
-                        "A message file could not be read: " + str(issue.path) + ". Run: agentcoop doctor",
+                        "fix",
+                        "a message file could not be read and was skipped: "
+                        + str(issue.path)
+                        + ". Delete it if you do not need it.",
                     )
                 )
             folder = inbox_msgs(board, name, agent)
             count = len([path for path in folder.glob("*.json") if not path.name.startswith(".")]) if folder.is_dir() else 0
             if count > INBOX_LIMIT:
                 items.append(
-                    DoctorItem(
-                        False,
-                        agent
+                    DoctorItem("fix", agent
                         + " has "
                         + str(count)
                         + " messages in "
@@ -406,9 +422,7 @@ def _message_checks(board: Path, projects: dict) -> list[DoctorItem]:
                     continue
                 if protocol_violation(project, message, board, name):
                     items.append(
-                        DoctorItem(
-                            False,
-                            "Out of protocol message "
+                        DoctorItem("fix", "Out of protocol message "
                             + file_id(message)
                             + " in "
                             + agent
@@ -421,17 +435,18 @@ def _message_checks(board: Path, projects: dict) -> list[DoctorItem]:
 def _hello_check(board: Path, projects: dict, project_name: str) -> DoctorItem:
     project = (projects.get("projects") or {}).get(project_name)
     if project is None:
-        return DoctorItem(False, "There is no project named " + project_name + ". Run: agentcoop project list")
+        return DoctorItem("fix", "There is no project named " + project_name + ". Run: agentcoop project list")
     driver = project.get("driver", "")
     messages = log_messages(board, project_name)
+    hello_subject = "Agent Co-op hello"
     hellos = [
         item
         for item in messages
-        if item.sender == driver and "hello" in (item.subject + " " + item.body).lower()
+        if item.sender == driver and item.subject == hello_subject
     ]
     if not hellos:
         return DoctorItem(
-            False,
+            "fix",
             'No hello test yet for '
             + project_name
             + '. Paste this into the driver: "Say hello to your helpers on the Agent Co-op board."',
@@ -450,15 +465,10 @@ def _hello_check(board: Path, projects: dict, project_name: str) -> DoctorItem:
         text += " Replied: " + ", ".join(replied) + "."
     if waiting_on:
         text += " Still waiting: " + ", ".join(waiting_on) + "."
-    return DoctorItem(not waiting_on, text)
+    return DoctorItem("ok" if not waiting_on else "fix", text)
 
 
 def format_doctor(items: list[DoctorItem]) -> str:
     """Render doctor results as plain lines."""
-    lines = []
-    for item in items:
-        if item.note:
-            lines.append("Note: " + item.text)
-        else:
-            lines.append(("OK: " if item.ok else "Fix: ") + item.text)
-    return "\n".join(lines)
+    labels = {"ok": "OK: ", "note": "Note: ", "fix": "Fix: "}
+    return "\n".join(labels.get(item.level, "OK: ") + item.text for item in items)
