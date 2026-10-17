@@ -152,6 +152,8 @@ def build_parser() -> argparse.ArgumentParser:
     setup_cmd.add_argument("--yes", action="store_true")
     setup_cmd.add_argument("--model", default="")
     setup_cmd.add_argument("--add-to-path", choices=("yes", "no"), default="no")
+    setup_cmd.add_argument("--schedule", choices=("yes", "no"), default="yes")
+    setup_cmd.add_argument("--every", type=int, default=5)
     setup_cmd.set_defaults(func=cmd_setup)
 
     connect_cmd = sub.add_parser("connect", help="Connect one agent")
@@ -573,22 +575,24 @@ def cmd_context_list(args: argparse.Namespace) -> int:
 
 
 def cmd_start(args: argparse.Namespace) -> int:
-    """Install the schedule. The installer arrives with the schedule part."""
-    minutes = int(args.every)
-    if minutes < 1 or minutes > 60:
-        raise CoopError("The interval must be between 1 and 60 minutes.", code=2)
-    print(
-        "Background checks are not installed yet. The schedule command arrives in a later update."
-    )
+    """Install the background schedule."""
+    from agentcoop.rounds import start_schedule
+
+    start_schedule(_board(), int(args.every))
     return 0
 
 
 def cmd_stop(args: argparse.Namespace) -> int:
-    print("The background schedule is not installed.")
+    from agentcoop.rounds import stop_schedule
+
+    stop_schedule(board_root() if board_root().exists() else _board())
     return 0
 
 
 def cmd_now(args: argparse.Namespace) -> int:
+    from agentcoop.rounds import spawn_round
+
+    spawn_round(_board())
     print("Started a round. Run agentcoop status to see the result.")
     return 0
 
@@ -601,11 +605,16 @@ def cmd_status(args: argparse.Namespace) -> int:
 
 
 def cmd_tick(args: argparse.Namespace) -> int:
-    return 0
+    from agentcoop.rounds import tick
+
+    return tick(_board())
 
 
 def cmd_run_agent(args: argparse.Namespace) -> int:
-    raise CoopError("Scheduled runs are not installed yet.", code=1)
+    from agentcoop.rounds import run_agent
+
+    agent = _agent(args)
+    return run_agent(_board(), agent, args.project)
 
 
 def cmd_touch(args: argparse.Namespace) -> int:
@@ -718,6 +727,8 @@ def cmd_setup(args: argparse.Namespace) -> int:
         model=args.model or None,
         prompter=prompter,
         add_to_path=(args.add_to_path == "yes") if not interactive else None,
+        schedule=None if interactive else args.schedule == "yes",
+        every=args.every,
     )
     if args.json:
         print(json.dumps({"board": result["board"], "connected": result["connected"]}, indent=2))
@@ -800,18 +811,18 @@ def cmd_project_add(args: argparse.Namespace) -> int:
         helpers = None
     else:
         helpers = _helpers(args.helper)
-    print(
-        add_project_flow(
-            path=Path(args.path) if args.path else None,
-            name=args.name,
-            driver=args.driver,
-            helpers=helpers,
-            lock_helpers=args.lock_helpers == "yes",
-            gitignore=args.gitignore != "no",
-            yes=args.yes,
-            prompter=prompter,
-        )
+    text = add_project_flow(
+        path=Path(args.path) if args.path else None,
+        name=args.name,
+        driver=args.driver,
+        helpers=helpers,
+        lock_helpers=args.lock_helpers == "yes",
+        gitignore=args.gitignore != "no",
+        yes=args.yes,
+        prompter=prompter,
     )
+    if text:
+        print(text)
     return 0
 
 

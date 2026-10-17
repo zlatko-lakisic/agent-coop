@@ -53,6 +53,9 @@ def run_doctor(
     else:
         items.append(DoctorItem("ok", "Board folder is ready."))
     items.append(_bin_check(board))
+    executable = _command_executable(board)
+    if executable is not None:
+        items.append(executable)
     from agentcoop.pathenv import path_notes_for_doctor
 
     for note in path_notes_for_doctor(board):
@@ -94,6 +97,7 @@ def run_doctor(
     items.extend(_duplicate_instruction_checks(agents, projects, only=project_names))
     items.extend(_message_checks(board, projects, only=project_names))
     items.extend(_context_checks(board, projects, only=project_names, now=now))
+    items.extend(_schedule_checks(board, agents, projects, now=now))
     if project:
         items.append(_hello_check(board, projects, project))
     return items
@@ -146,6 +150,18 @@ def _bin_check(board: Path) -> DoctorItem:
             + ". Run: agentcoop setup",
         )
     return DoctorItem("ok", "The agentcoop command on the board is current.")
+
+
+def _command_executable(board: Path) -> DoctorItem | None:
+    """Report when the installed command cannot be executed."""
+    if os.name == "nt":
+        return None
+    path = board / "bin" / "agentcoop"
+    if not path.is_file():
+        return None
+    if os.access(path, os.X_OK):
+        return DoctorItem("ok", "The agentcoop command can run.")
+    return DoctorItem("fix", "the agentcoop command cannot run. Run: agentcoop setup")
 
 
 def _foreign_install_path(tool: object, installed: list) -> Path | None:
@@ -524,6 +540,95 @@ def _hello_check(board: Path, projects: dict, project_name: str) -> DoctorItem:
     if waiting_on:
         text += " Still waiting: " + ", ".join(waiting_on) + "."
     return DoctorItem("ok" if not waiting_on else "fix", text)
+
+
+def _schedule_checks(board: Path, agents: dict, projects: dict, *, now: datetime | None = None) -> list[DoctorItem]:
+    """Report whether the background schedule is installed and healthy."""
+    from agentcoop.rounds import load_schedule
+    from agentcoop.schedule import schedulable_reason
+
+    items: list[DoctorItem] = []
+    record = load_schedule(board)
+    if record is None:
+        items.append(DoctorItem("note", "Background checks are off. Run: agentcoop start"))
+        return items
+    items.append(DoctorItem("ok", "Background checks are on, every " + str(record.get("interval")) + " minutes."))
+    for raw in record.get("files") or []:
+        if not Path(raw).is_file():
+            items.append(DoctorItem("fix", "A schedule file is missing: " + raw + ". Run: agentcoop start"))
+    moment = now or datetime.now(timezone.utc)
+    if moment.tzinfo is None:
+        moment = moment.replace(tzinfo=timezone.utc)
+    interval = int(record.get("interval") or 5)
+    last = board / ".state" / "last-tick"
+    late = False
+    if last.is_file():
+        try:
+            when = datetime.strptime(last.read_text(encoding="utf-8").strip(), "%Y-%m-%dT%H:%M:%SZ").replace(
+                tzinfo=timezone.utc
+            )
+            late = (moment - when).total_seconds() > interval * 120
+            shown = when.strftime("%Y-%m-%dT%H:%M:%SZ")
+        except ValueError:
+            late = True
+            shown = "an unknown time"
+    else:
+        installed = str(record.get("installed") or "")
+        try:
+            when = datetime.strptime(installed, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+            late = (moment - when).total_seconds() > interval * 120
+            shown = installed
+        except ValueError:
+            late = False
+            shown = ""
+    if late:
+        items.append(
+            DoctorItem(
+                "fix",
+                "the background schedule has not run since "
+                + shown
+                + ". Run: agentcoop start",
+            )
+        )
+    shim = board / "bin" / "shims" / ("git.cmd" if os.name == "nt" else "git")
+    if not shim.is_file():
+        items.append(DoctorItem("fix", "The git shim is missing while background checks are on. Run: agentcoop start"))
+    items.extend(_worktree_checks(board, projects))
+    for name, agent in (agents.get("agents") or {}).items():
+        reason = schedulable_reason(board, name, role="helper")
+        if reason:
+            items.append(DoctorItem("note", reason))
+    return items
+
+
+def _worktree_checks(board: Path, projects: dict) -> list[DoctorItem]:
+    """Note worktrees that do not match a project, and missing instruction files."""
+    items: list[DoctorItem] = []
+    root = board / "worktrees"
+    known = set((projects.get("projects") or {}).keys())
+    if root.is_dir():
+        for child in root.iterdir():
+            if child.is_dir() and child.name not in known:
+                items.append(DoctorItem("note", "A worktree remains for " + child.name + ", which is not a project."))
+    for name, project in (projects.get("projects") or {}).items():
+        dest = root / name
+        if not dest.is_dir():
+            continue
+        for entry in project.get("installed") or []:
+            if entry.get("scope") not in ("", "project"):
+                continue
+            source = Path(str(entry.get("path") or ""))
+            if not source.is_file():
+                continue
+            copied = dest / source.name
+            if not copied.is_file():
+                items.append(
+                    DoctorItem(
+                        "note",
+                        "The worktree for " + name + " is missing " + source.name + ".",
+                    )
+                )
+    return items
 
 
 def format_doctor(items: list[DoctorItem]) -> str:

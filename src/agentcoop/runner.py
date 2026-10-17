@@ -140,6 +140,49 @@ def _give_up(board: Path, agent: str, project: str, message, reason: str, log) -
     mark_done(board, project, agent, [file_id(message)])
 
 
+def deliver_answer(
+    board: Path,
+    *,
+    agent: str,
+    project: str,
+    message,
+    answer: str,
+    log=print,
+) -> None:
+    """Send a helper answer, attaching it when it is long or contains a diff."""
+    config = load_config(board)
+    limit = int(config.get("body_limit_bytes") or 16384)
+    attachments: list[str] = []
+    body = answer
+    fenced = "```" in answer and ("diff" in answer or "```diff" in answer)
+    if len(answer.encode("utf-8")) > limit or fenced:
+        folder = files_dir(board, project, agent)
+        folder.mkdir(parents=True, exist_ok=True)
+        path = folder / (file_id(message) + "-answer.md")
+        path.write_text(answer if answer.endswith("\n") else answer + "\n", encoding="utf-8")
+        attachments.append(str(path.resolve()))
+        lines = answer.splitlines()
+        body = "\n".join(lines[:20])
+        if len(lines) > 20:
+            body += "\n"
+    try:
+        send(
+            board,
+            project=project,
+            sender=agent,
+            recipient=message.sender,
+            subject="Re: " + message.subject,
+            body=body,
+            type="answer",
+            re=file_id(message),
+            attachments=attachments,
+        )
+    except CoopError as exc:
+        _give_up(board, agent, project, message, str(exc), log)
+        return
+    mark_done(board, project, agent, [file_id(message)])
+
+
 def reply_to_message(
     board: Path,
     *,

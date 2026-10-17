@@ -16,6 +16,6 @@ Background runs: yes
 
 Status: untested
 
-User skill and user hooks only. SessionStart and UserPromptSubmit run check --summary, which stays quiet outside projects. TODO: exact permission keys for a read-only lock are not confirmed. TODO: detection paths per OS are not confirmed. The Code side of the Claude desktop app uses this entry. Background flags confirmed in the Claude Code CLI reference: -p, --model, --tools, --allowedTools, --disallowedTools, --permission-mode, --add-dir.
+User skill and user hooks only. SessionStart and UserPromptSubmit run check --summary, which stays quiet outside projects. TODO: exact permission keys for a read-only lock are not confirmed. TODO: detection paths per OS are not confirmed. The Code side of the Claude desktop app uses this entry. Background flags confirmed at https://code.claude.com/docs/en/cli-reference : -p, --model, --tools, --permission-mode plan and dontAsk, --add-dir, --allowedTools, --disallowedTools. Helper runs are plan mode with Read, Grep, and Glob only. Driver runs use dontAsk and --add-dir for the board.
 
 See AGENTS-SUPPORT.md for the full table. Open questions there are not guesses.

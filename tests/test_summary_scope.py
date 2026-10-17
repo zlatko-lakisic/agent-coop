@@ -166,8 +166,8 @@ class SummaryScopeTests(unittest.TestCase):
             data = json.loads(settings.read_text(encoding="utf-8"))
             session = data["hooks"]["SessionStart"][0]["hooks"][0]["command"]
             prompt = data["hooks"]["UserPromptSubmit"][0]["hooks"][0]["command"]
-            self.assertEqual(session, prompt)
             self.assertIn("check --as claude_code --summary", session)
+            self.assertIn("touch --as claude_code", prompt)
 
     def test_doctor_reports_duplicate_skill(self) -> None:
         with support.TempEnv() as env:

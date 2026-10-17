@@ -93,10 +93,12 @@ TOOLS: tuple[Tool, ...] = (
             "Project rule only (loads every turn). "
             "TODO: hook format for Cursor is not verified, so hooks are not installed. "
             "TODO: detection paths per OS are not confirmed. "
-            "Background runs use cursor-agent -p. Flags confirmed in the Cursor CLI "
-            "parameters page: --print, --model, --workspace, --trust, --force, --mode. "
-            "TODO: no confirmed flag denies git push by itself. Shell(git) cannot "
-            "tell push from other git commands. The git shim is the second layer."
+            "Background helper runs use cursor-agent -p --mode ask (read only). "
+            "Flags confirmed at https://cursor.com/docs/cli/reference/parameters : "
+            "--print, --model, --workspace, --trust, --force, --mode ask. "
+            "TODO: driver runs are not scheduled. No confirmed flag adds the board "
+            "as a writable folder beside the workspace. --force allows writes everywhere, "
+            "which is broader than the worktree plus the board."
         ),
         helper_note="edits the project and asks helpers",
         headless={
@@ -111,16 +113,11 @@ TOOLS: tuple[Tool, ...] = (
                 "--trust",
                 "{model_flag}",
             ],
-            "driver": [
-                "{cli}",
-                "-p",
-                "{prompt}",
-                "--workspace",
-                "{cwd}",
-                "--trust",
-                "--force",
-                "{model_flag}",
-            ],
+            "driver": "todo",
+            "driver_todo": (
+                "No confirmed flag adds the board as a writable folder beside the workspace. "
+                "--force allows writes everywhere."
+            ),
         },
         cli_names=("cursor-agent",),
     ),
@@ -146,8 +143,10 @@ TOOLS: tuple[Tool, ...] = (
             "TODO: exact permission keys for a read-only lock are not confirmed. "
             "TODO: detection paths per OS are not confirmed. "
             "The Code side of the Claude desktop app uses this entry. "
-            "Background flags confirmed in the Claude Code CLI reference: -p, --model, "
-            "--tools, --allowedTools, --disallowedTools, --permission-mode, --add-dir."
+            "Background flags confirmed at https://code.claude.com/docs/en/cli-reference : "
+            "-p, --model, --tools, --permission-mode plan and dontAsk, --add-dir, "
+            "--allowedTools, --disallowedTools. Helper runs are plan mode with Read, Grep, "
+            "and Glob only. Driver runs use dontAsk and --add-dir for the board."
         ),
         helper_note="reviews code",
         headless={
@@ -156,11 +155,9 @@ TOOLS: tuple[Tool, ...] = (
                 "-p",
                 "{prompt}",
                 "--permission-mode",
-                "dontAsk",
+                "plan",
                 "--tools",
-                "Read,Grep,Glob,Bash",
-                "--allowedTools",
-                "Read,Grep,Glob,Bash({board_cmd} *)",
+                "Read,Grep,Glob",
                 "--add-dir",
                 "{project_path}",
                 "{model_flag}",
@@ -175,6 +172,8 @@ TOOLS: tuple[Tool, ...] = (
                 "Read,Grep,Glob,Edit,Write,Bash",
                 "--disallowedTools",
                 "Bash(git push *),Bash(git push)",
+                "--add-dir",
+                "{board}",
                 "{model_flag}",
             ],
         },
@@ -198,10 +197,11 @@ TOOLS: tuple[Tool, ...] = (
             "TODO: Codex hook format is not verified, so hooks are not installed. "
             "TODO: exact sandbox config keys for a read-only lock are not confirmed. "
             "TODO: detection paths per OS are not confirmed. "
-            "Background flags confirmed in the Codex CLI reference: exec, --sandbox "
-            "read-only and workspace-write, --cd, --skip-git-repo-check, --model, "
-            "--ask-for-approval never. workspace-write has network off unless "
-            "sandbox_workspace_write.network_access is set."
+            "Background flags confirmed at https://developers.openai.com/codex/cli/reference : "
+            "exec, --sandbox read-only and workspace-write, --cd, --skip-git-repo-check, "
+            "--model, --ask-for-approval never, --add-dir. workspace-write has network off "
+            "unless sandbox_workspace_write.network_access is set "
+            "(https://github.com/openai/codex/blob/13c42a077c88a0d04ae7680a9891d2daf4558577/docs/sandbox.md)."
         ),
         helper_note="answers coding questions",
         headless={
@@ -229,6 +229,8 @@ TOOLS: tuple[Tool, ...] = (
                 "never",
                 "--cd",
                 "{cwd}",
+                "--add-dir",
+                "{board}",
                 "{model_flag}",
                 "{prompt}",
             ],
@@ -291,6 +293,8 @@ TOOLS: tuple[Tool, ...] = (
                 "never",
                 "--cd",
                 "{cwd}",
+                "--add-dir",
+                "{board}",
                 "{model_flag}",
                 "{prompt}",
             ],
@@ -372,9 +376,10 @@ TOOLS: tuple[Tool, ...] = (
             "Runs on this computer and calls a model in Google's cloud. "
             "TODO: Gemini CLI hook format is not verified, so hooks are not installed. "
             "TODO: detection paths per OS are not confirmed. "
-            "Background flags confirmed in Gemini CLI headless docs: -p, --model, "
-            "--approval-mode plan and auto_edit. "
-            "TODO: no confirmed flag restricts shell to the agentcoop command only."
+            "Helper flag confirmed at https://google-gemini.github.io/gemini-cli/docs/cli/headless.html : "
+            "-p, --model, --approval-mode plan (read only). "
+            "TODO: driver runs are not scheduled. --approval-mode auto_edit still asks "
+            "before shell commands, and no confirmed flag adds the board as a writable folder."
         ),
         helper_note="second opinion on a plan",
         headless={
@@ -386,14 +391,11 @@ TOOLS: tuple[Tool, ...] = (
                 "plan",
                 "{model_flag}",
             ],
-            "driver": [
-                "{cli}",
-                "-p",
-                "{prompt}",
-                "--approval-mode",
-                "auto_edit",
-                "{model_flag}",
-            ],
+            "driver": "todo",
+            "driver_todo": (
+                "--approval-mode auto_edit still asks before every shell command, "
+                "and no confirmed flag adds the board as a writable folder."
+            ),
         },
         cli_names=("gemini",),
     ),

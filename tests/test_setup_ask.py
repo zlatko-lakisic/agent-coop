@@ -41,7 +41,7 @@ class SetupAskTests(unittest.TestCase):
             ]
             out = io.StringIO()
             prompter = Prompter(
-                input_fn=_answers("1,2", "1", "n", "n"),
+                input_fn=_answers("1,2", "", "", "1", "n", "n", "n"),
                 output_fn=out.write,
             )
             with patch("agentcoop.wizard.detect_installed", return_value=found):
@@ -57,7 +57,7 @@ class SetupAskTests(unittest.TestCase):
             found = [{"tool": "cursor", "display": "Cursor", "reason": "found ~/.cursor"}]
             out = io.StringIO()
             prompter = Prompter(
-                input_fn=_answers("claude-code", "n", "n"),
+                input_fn=_answers("claude-code", "", "n", "n", "n"),
                 output_fn=out.write,
             )
             with patch("agentcoop.wizard.detect_installed", return_value=found):

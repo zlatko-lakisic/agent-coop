@@ -16,7 +16,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "{{AGENTCOOP}} check --as {{AGENT_NAME}} --summary"
+            "command": "{{AGENTCOOP}} check --as {{AGENT_NAME}} --summary && {{AGENTCOOP}} touch --as {{AGENT_NAME}}"
           }
         ]
       }

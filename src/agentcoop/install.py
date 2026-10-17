@@ -158,6 +158,35 @@ def merge_hook_settings(existing: dict, addition: dict) -> dict:
     return result
 
 
+def _remove_agent_check_hooks(settings: dict, agent: str) -> dict:
+    """Remove Claude hooks that check or touch this agent."""
+    if not agent:
+        return settings
+    result = json.loads(json.dumps(settings))
+    hooks = result.get("hooks")
+    if not isinstance(hooks, dict):
+        return result
+    needles = ("check --as " + agent, "touch --as " + agent)
+    for event, entries in list(hooks.items()):
+        if not isinstance(entries, list):
+            continue
+        kept = []
+        for entry in entries:
+            command = _hook_command(entry)
+            if any(needle in command for needle in needles):
+                continue
+            kept.append(entry)
+        if kept:
+            hooks[event] = kept
+        else:
+            del hooks[event]
+    if hooks:
+        result["hooks"] = hooks
+    else:
+        result.pop("hooks", None)
+    return result
+
+
 def remove_hook_command(settings: dict, command: str) -> dict:
     """Remove hook entries that run one command. Leave every other hook.
 
@@ -245,6 +274,9 @@ def stage_runtime(board: Path) -> None:
         launcher = pick_launcher()
         store_launcher(board, launcher)
         write_command_wrapper(board, launcher)
+    from agentcoop.rounds import write_shims
+
+    write_shims(board)
     version = bindir / "VERSION"
     version.write_text(__version__ + "\n", encoding="utf-8")
     if os.name != "nt":
@@ -741,6 +773,14 @@ def disconnect_agent(board: Path, name: str) -> list[str]:
 def remove_project_files(board: Path, project_name: str) -> list[str]:
     """Undo files installed for a project, then drop the project entry."""
     notes: list[str] = []
+    current = (load_projects(board).get("projects") or {}).get(project_name) or {}
+    folder = current.get("path")
+    if folder:
+        from agentcoop.worktree import remove_worktree
+
+        note = remove_worktree(board, project_name, Path(folder))
+        if note:
+            notes.append(note)
 
     def change(projects: dict) -> None:
         project = projects["projects"].get(project_name)
@@ -778,6 +818,7 @@ def undo_entry(entry: dict) -> str | None:
             return None
         command = entry.get("command") or ""
         updated = remove_hook_command(data, command) if command else data
+        updated = _remove_agent_check_hooks(updated, str(entry.get("agent") or ""))
         hooks = updated.get("hooks") or {}
         empty_hooks = all(not entries for entries in hooks.values()) if isinstance(hooks, dict) else False
         other_keys = [key for key in updated.keys() if key != "hooks"]
@@ -879,11 +920,13 @@ def claude_code_hooks(board: Path, agent_name: str) -> dict:
     Paths are inserted with json.dumps, so Windows backslashes stay valid JSON.
     """
     command = agentcoop_command(board) + " check --as " + agent_name + " --summary"
+    touch = agentcoop_command(board) + " touch --as " + agent_name
     entry = {"hooks": [{"type": "command", "command": command}]}
+    prompt = {"hooks": [{"type": "command", "command": command + " && " + touch}]}
     return {
         "hooks": {
             "SessionStart": [{"matcher": "*", **entry}],
-            "UserPromptSubmit": [dict(entry)],
+            "UserPromptSubmit": [prompt],
         }
     }
 

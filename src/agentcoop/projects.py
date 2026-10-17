@@ -36,6 +36,9 @@ _EMPTY_CONFIG = {
     "allowed_roots": [],
     "body_limit_bytes": 16384,
     "context_limit_bytes": 65536,
+    "max_runs_per_day": 48,
+    "run_timeout_minutes": 15,
+    "auto_branch": "agentcoop/auto",
 }
 
 
@@ -117,13 +120,30 @@ def require_integrity(board: Path) -> None:
 
 
 def tighten_board_modes(board: Path) -> None:
-    """On POSIX, make every board folder private and every board file private."""
+    """On POSIX, keep board files private and commands under bin executable."""
     if os.name == "nt" or not board.exists():
         return
+    bindir = board / "bin"
     for dirpath, _dirnames, filenames in os.walk(board):
         os.chmod(dirpath, 0o700)
+        folder = Path(dirpath)
         for name in filenames:
-            os.chmod(os.path.join(dirpath, name), 0o600)
+            path = folder / name
+            if _is_board_executable(bindir, path):
+                os.chmod(path, 0o700)
+            else:
+                os.chmod(path, 0o600)
+
+
+def _is_board_executable(bindir: Path, path: Path) -> bool:
+    """Return True for files that must stay executable under bin/."""
+    try:
+        path.relative_to(bindir)
+    except ValueError:
+        return False
+    if path.name == "VERSION":
+        return False
+    return True
 
 
 def init_board_files(board: Path) -> None:
