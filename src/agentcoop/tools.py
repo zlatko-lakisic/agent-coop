@@ -23,7 +23,7 @@ class Tool:
     join_method: str
     hooks: str
     read_only_lock: str
-    detect: tuple[str, ...]
+    detect: tuple[dict, ...]
     install_paths: tuple[dict[str, str], ...]
     status: str
     notes: str
@@ -47,6 +47,18 @@ def _hook(scope: str, path: str) -> dict[str, str]:
     return {"scope": scope, "kind": "hook", "path": path}
 
 
+def _home_dir(name: str) -> dict:
+    return {"home_dir": name}
+
+
+def _command(name: str) -> dict:
+    return {"command": name}
+
+
+def _app(*, darwin: str | None = None, win32: str | None = None, linux: str | None = None) -> dict:
+    return {"app": {"darwin": darwin, "win32": win32, "linux": linux}}
+
+
 TOOLS: tuple[Tool, ...] = (
     Tool(
         key="cursor",
@@ -58,7 +70,14 @@ TOOLS: tuple[Tool, ...] = (
         join_method="rule",
         hooks="todo",
         read_only_lock="todo",
-        detect=(),
+        detect=(
+            _home_dir(".cursor"),
+            _command("cursor"),
+            _app(
+                darwin="/Applications/Cursor.app",
+                win32="%LOCALAPPDATA%/Programs/cursor/Cursor.exe",
+            ),
+        ),
         install_paths=(_rule(".cursor/rules/agent-coop.mdc"),),
         status="untested",
         notes=(
@@ -78,7 +97,7 @@ TOOLS: tuple[Tool, ...] = (
         join_method="skill",
         hooks="supported",
         read_only_lock="todo",
-        detect=(),
+        detect=(_home_dir(".claude"), _command("claude")),
         install_paths=(
             _skill("user", ".claude/skills/agent-coop/SKILL.md"),
             _hook("user", ".claude/settings.json"),
@@ -103,7 +122,7 @@ TOOLS: tuple[Tool, ...] = (
         join_method="skill",
         hooks="todo",
         read_only_lock="todo",
-        detect=(),
+        detect=(_home_dir(".codex"), _command("codex")),
         install_paths=(_skill("user", ".codex/skills/agent-coop/SKILL.md"),),
         status="untested",
         notes=(
@@ -124,7 +143,13 @@ TOOLS: tuple[Tool, ...] = (
         join_method="agents_md",
         hooks="todo",
         read_only_lock="todo",
-        detect=(),
+        detect=(
+            _app(
+                darwin="/Applications/ChatGPT.app",
+                # TODO: Windows ChatGPT app path not confirmed.
+                win32=None,
+            ),
+        ),
         install_paths=(
             _section("agents_md", "AGENTS.md"),
             _skill("project", ".codex/skills/agent-coop/SKILL.md"),
@@ -169,14 +194,20 @@ TOOLS: tuple[Tool, ...] = (
         join_method="folder_grant",
         hooks="none",
         read_only_lock="advisory",
-        detect=(),
+        detect=(
+            _app(
+                darwin="/Applications/Claude.app",
+                win32="%LOCALAPPDATA%/AnthropicClaude",
+            ),
+        ),
         install_paths=(),
         status="planned",
         notes=(
             "Connected folders plus a skill. "
             "TODO: match the existing Claude desktop setup exactly. "
             "Details are not filled in until they are provided. "
-            "The Code side of the Claude desktop app is Claude Code, not this entry."
+            "The Code side of the Claude desktop app is Claude Code, not this entry. "
+            "TODO: detection paths per OS are not confirmed."
         ),
         helper_note="answers from connected folders",
     ),
@@ -190,7 +221,7 @@ TOOLS: tuple[Tool, ...] = (
         join_method="gemini_md",
         hooks="todo",
         read_only_lock="todo",
-        detect=(),
+        detect=(_home_dir(".gemini"), _command("gemini")),
         install_paths=(
             _skill("user", ".gemini/skills/agent-coop/SKILL.md"),
             _section("gemini_md", "GEMINI.md"),
@@ -233,12 +264,13 @@ TOOLS: tuple[Tool, ...] = (
         join_method="agents_md",
         hooks="todo",
         read_only_lock="todo",
-        detect=(),
+        detect=(_command("opencode"),),
         install_paths=(_section("agents_md", "AGENTS.md"),),
         status="planned",
         notes=(
             "Can use a local model through Ollama or LM Studio. "
-            "TODO: verify the skill path. Until then, install uses an AGENTS.md section."
+            "TODO: verify the skill path. Until then, install uses an AGENTS.md section. "
+            "TODO: detection paths per OS are not confirmed."
         ),
         helper_note="local coding help",
     ),
@@ -268,12 +300,13 @@ TOOLS: tuple[Tool, ...] = (
         join_method="agents_md",
         hooks="todo",
         read_only_lock="todo",
-        detect=(),
+        detect=(_command("goose"),),
         install_paths=(_section("agents_md", "AGENTS.md"),),
         status="planned",
         notes=(
             "A fully local driver can use an Ollama model. "
-            "TODO: verify the skill path. Status planned."
+            "TODO: verify the skill path. Status planned. "
+            "TODO: detection paths per OS are not confirmed."
         ),
         helper_note="local coding help",
     ),

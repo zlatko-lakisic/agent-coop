@@ -69,7 +69,7 @@ Web chat cannot join, because it cannot read files on this computer.
 - Read-only lock: advisory
 - Status: planned
 - Suggested helper note: answers from connected folders
-- Notes: Connected folders plus a skill. TODO: match the existing Claude desktop setup exactly. Details are not filled in until they are provided. The Code side of the Claude desktop app is Claude Code, not this entry.
+- Notes: Connected folders plus a skill. TODO: match the existing Claude desktop setup exactly. Details are not filled in until they are provided. The Code side of the Claude desktop app is Claude Code, not this entry. TODO: detection paths per OS are not confirmed.
 
 ## Gemini CLI
 
@@ -102,7 +102,7 @@ Web chat cannot join, because it cannot read files on this computer.
 - Read-only lock: todo
 - Status: planned
 - Suggested helper note: local coding help
-- Notes: Can use a local model through Ollama or LM Studio. TODO: verify the skill path. Until then, install uses an AGENTS.md section.
+- Notes: Can use a local model through Ollama or LM Studio. TODO: verify the skill path. Until then, install uses an AGENTS.md section. TODO: detection paths per OS are not confirmed.
 
 ## Cline
 
@@ -124,7 +124,7 @@ Web chat cannot join, because it cannot read files on this computer.
 - Read-only lock: todo
 - Status: planned
 - Suggested helper note: local coding help
-- Notes: A fully local driver can use an Ollama model. TODO: verify the skill path. Status planned.
+- Notes: A fully local driver can use an Ollama model. TODO: verify the skill path. Status planned. TODO: detection paths per OS are not confirmed.
 
 ## Local model runner
 

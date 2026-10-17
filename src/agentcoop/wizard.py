@@ -437,11 +437,17 @@ def _default_folder() -> Path:
 def _found_sentence(found: list[dict]) -> str:
     if not found:
         return (
-            "Found no local model servers. App detection paths are still TODO, "
-            "so choose agents by name."
+            "Found no agents automatically. Connect one by name. "
+            "Example: agentcoop connect claude-code"
         )
-    names = ", ".join(item["display"] for item in found)
-    return "Found: " + names
+    parts = []
+    for item in found:
+        reason = item.get("reason") or ""
+        if reason:
+            parts.append(item["display"] + " (" + reason + ")")
+        else:
+            parts.append(item["display"])
+    return "Found: " + ", ".join(parts)
 
 
 def _ask_tools(prompter: Prompter) -> list[str]:

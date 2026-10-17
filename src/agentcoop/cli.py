@@ -501,10 +501,17 @@ def cmd_setup(args: argparse.Namespace) -> int:
         else:
             found = result["found"]
             if not found:
-                print("Found no agents automatically. App detection paths are still TODO.")
-                print("Connect one by name. Example: agentcoop connect claude-code")
+                print(
+                    "Found no agents automatically. Connect one by name. "
+                    "Example: agentcoop connect claude-code"
+                )
             else:
-                print("Found: " + ", ".join(item["display"] for item in found))
+                for item in found:
+                    reason = item.get("reason") or ""
+                    if reason:
+                        print("Found: " + item["display"] + " (" + reason + ")")
+                    else:
+                        print("Found: " + item["display"])
         return 0
     result = setup_board(
         connect=_tool_list(args.connect),
