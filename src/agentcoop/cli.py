@@ -43,6 +43,7 @@ from agentcoop.wizard import (
     helper_add,
     helper_remove,
     project_remove,
+    project_repair,
     setup_board,
     show_board,
 )
@@ -189,6 +190,9 @@ def build_parser() -> argparse.ArgumentParser:
     project_rm.add_argument("name")
     project_rm.add_argument("--yes", action="store_true")
     project_rm.set_defaults(func=cmd_project_remove)
+    project_fix = project_sub.add_parser("repair", help="Reinstall missing project files")
+    project_fix.add_argument("name")
+    project_fix.set_defaults(func=cmd_project_repair)
 
     ui_cmd = sub.add_parser("ui", help="Open the local viewer")
     ui_cmd.set_defaults(func=cmd_ui)
@@ -561,6 +565,12 @@ def cmd_helper_remove(args: argparse.Namespace) -> int:
 def cmd_project_remove(args: argparse.Namespace) -> int:
     """Remove a project."""
     print(project_remove(args.name, yes=args.yes))
+    return 0
+
+
+def cmd_project_repair(args: argparse.Namespace) -> int:
+    """Reinstall missing driver project files."""
+    print(project_repair(args.name))
     return 0
 
 

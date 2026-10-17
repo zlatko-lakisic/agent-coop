@@ -211,7 +211,42 @@ def _project_checks(projects: dict, agents: dict, config: dict) -> list[DoctorIt
                     + " folder is not on the allowed list, so attachments from it will be blocked.",
                 )
             )
+        items.extend(_driver_files_check(name, project, known))
     return items
+
+
+def _driver_files_check(name: str, project: dict, known: dict) -> list[DoctorItem]:
+    """Report when the driver's project files are missing or not in the manifest."""
+    driver = project.get("driver", "")
+    if driver not in known:
+        return []
+    tool_key = known[driver].get("tool", "")
+    if tool_key == "runner":
+        return []
+    try:
+        tool = get_tool(tool_key)
+    except KeyError:
+        return []
+    root = Path(project.get("path", ""))
+    installed = {entry.get("path") for entry in (project.get("installed") or [])}
+    for item in tool.install_paths:
+        if item["scope"] != "project":
+            continue
+        if item["kind"] == "hook" and tool.hooks != "supported":
+            continue
+        path = root / item["path"]
+        if not path.is_file() or str(path) not in installed:
+            return [
+                DoctorItem(
+                    False,
+                    name
+                    + ": "
+                    + driver
+                    + " is missing its project files. Run: agentcoop project repair "
+                    + name,
+                )
+            ]
+    return []
 
 
 def _message_checks(board: Path, projects: dict) -> list[DoctorItem]:

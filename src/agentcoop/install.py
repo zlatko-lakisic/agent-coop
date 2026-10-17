@@ -235,6 +235,45 @@ def connect_agent(
     return name
 
 
+def preview_project_files(board: Path, agent_name: str, project_path: Path) -> list[dict]:
+    """Render project-scoped files into memory. No files are written.
+
+    Raises if a template cannot be read, so project add can fail before saving.
+    """
+    agents = load_agents(board)
+    agent = agents["agents"].get(agent_name)
+    if agent is None:
+        raise CoopError(agent_name + " is not connected yet. Run: agentcoop connect")
+    if agent["tool"] == "runner":
+        return []
+    tool = get_tool(agent["tool"])
+    planned: list[dict] = []
+    for item in tool.install_paths:
+        if item["scope"] != "project":
+            continue
+        if item["kind"] == "hook" and tool.hooks != "supported":
+            continue
+        kind = item["kind"]
+        path = project_path / item["path"]
+        if kind == "hook":
+            claude_code_hooks(board, agent_name)
+            planned.append({"path": str(path), "kind": kind, "relative": item["path"]})
+            continue
+        template_name = _KIND_TEMPLATE.get(kind)
+        if template_name is None:
+            continue
+        content = render_template(template_name, agent_name=agent_name, board=board)
+        planned.append(
+            {
+                "path": str(path),
+                "kind": kind,
+                "relative": item["path"],
+                "content": content,
+            }
+        )
+    return planned
+
+
 def install_project_files(
     board: Path,
     project_name: str,
@@ -278,6 +317,52 @@ def install_project_files(
         _install_gitignore(root, written, manifest, agent_name)
     save_projects(board, projects)
     return written
+
+
+def rollback_project_add(board: Path, name: str) -> None:
+    """Undo a half-finished project add: installed files, record, and board folder."""
+    projects = load_projects(board)
+    project = projects["projects"].get(name)
+    if project is not None:
+        for entry in list(project.get("installed") or []):
+            undo_entry(entry)
+        projects["projects"].pop(name, None)
+        save_projects(board, projects)
+    board_dir = board / "projects" / name
+    if board_dir.exists():
+        shutil.rmtree(board_dir)
+
+
+def repair_project_files(board: Path, project_name: str) -> list[str]:
+    """Reinstall missing driver project files. Returns absolute paths written."""
+    projects = load_projects(board)
+    project = projects["projects"].get(project_name)
+    if project is None:
+        raise CoopError("There is no project named " + project_name + ".")
+    driver = project.get("driver", "")
+    before = {entry.get("path") for entry in (project.get("installed") or [])}
+    root = Path(project["path"])
+    agents = load_agents(board)
+    agent = agents["agents"].get(driver)
+    if agent is None:
+        raise CoopError(driver + " is not connected yet. Run: agentcoop connect")
+    if agent["tool"] == "runner":
+        return []
+    tool = get_tool(agent["tool"])
+    to_fix: list[str] = []
+    for item in tool.install_paths:
+        if item["scope"] != "project":
+            continue
+        if item["kind"] == "hook" and tool.hooks != "supported":
+            continue
+        path = root / item["path"]
+        in_manifest = str(path) in before
+        if not path.is_file() or not in_manifest:
+            to_fix.append(str(path))
+    if not to_fix:
+        return []
+    install_project_files(board, project_name, driver, yes=False, gitignore=False)
+    return [path for path in to_fix if Path(path).is_file()]
 
 
 def disconnect_agent(board: Path, name: str) -> None:

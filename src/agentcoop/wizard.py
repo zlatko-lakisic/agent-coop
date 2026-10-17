@@ -14,7 +14,10 @@ from agentcoop.errors import CoopError
 from agentcoop.install import (
     connect_agent,
     install_project_files,
+    preview_project_files,
     remove_project_files,
+    repair_project_files,
+    rollback_project_add,
     stage_runtime,
     undo_entry,
     write_board_readme,
@@ -204,8 +207,15 @@ def add_project_flow(
     helper_map = dict(helpers or {})
     if prompter is not None and helpers is None:
         helper_map = _ask_helpers(prompter, agents, driver)
+    preview_project_files(board, driver, folder)
     add_project(board, chosen, folder, driver, helper_map)
-    install_project_files(board, chosen, driver, yes=yes, gitignore=gitignore)
+    try:
+        install_project_files(board, chosen, driver, yes=yes, gitignore=gitignore)
+    except Exception as exc:
+        rollback_project_add(board, chosen)
+        raise CoopError(
+            "Could not finish adding " + chosen + ". Nothing was changed. " + str(exc)
+        ) from exc
     lines = [
         "Project " + chosen + " is ready.",
         "Folder: " + str(folder),
@@ -290,6 +300,15 @@ def helper_remove(project_name: str, agent: str) -> str:
     save_projects(board, projects)
     remove_helper(board, project_name, agent)
     return agent + " is no longer a helper on " + project_name + "."
+
+
+def project_repair(project_name: str) -> str:
+    """Reinstall missing driver project files."""
+    board = board_root()
+    written = repair_project_files(board, project_name)
+    if not written:
+        return "Nothing to repair."
+    return "Repaired:\n" + "\n".join("  " + path for path in written)
 
 
 def project_remove(project_name: str, *, yes: bool) -> str:
