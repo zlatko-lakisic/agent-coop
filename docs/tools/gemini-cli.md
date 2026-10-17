@@ -16,6 +16,6 @@ Background runs: yes
 
 Status: untested
 
-User skill plus a project GEMINI.md section. Runs on this computer and calls a model in Google's cloud. TODO: Gemini CLI hook format is not verified, so hooks are not installed. TODO: detection paths per OS are not confirmed. Background flags confirmed in Gemini CLI headless docs: -p, --model, --approval-mode plan and auto_edit. TODO: no confirmed flag restricts shell to the agentcoop command only.
+User skill plus a project GEMINI.md section. Runs on this computer and calls a model in Google's cloud. TODO: Gemini CLI hook format is not verified, so hooks are not installed. TODO: detection paths per OS are not confirmed. Helper flag confirmed at https://google-gemini.github.io/gemini-cli/docs/cli/headless.html : -p, --model, --approval-mode plan (read only). TODO: driver runs are not scheduled. --approval-mode auto_edit still asks before shell commands, and no confirmed flag adds the board as a writable folder.
 
 See AGENTS-SUPPORT.md for the full table. Open questions there are not guesses.

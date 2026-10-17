@@ -60,10 +60,11 @@ class HeadlessTests(unittest.TestCase):
             self.assertIn("-p", argv)
             self.assertIn("hello", argv)
             self.assertIn("--permission-mode", argv)
-            self.assertIn("dontAsk", argv)
+            self.assertIn("plan", argv)
             self.assertIn("--model", argv)
             self.assertIn("haiku", argv)
-            self.assertIn("Read,Grep,Glob,Bash", argv)
+            self.assertIn("Read,Grep,Glob", argv)
+            self.assertNotIn("Bash", argv)
 
     def test_runner_uses_once(self) -> None:
         with support.TempEnv() as env:

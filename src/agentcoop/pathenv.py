@@ -66,6 +66,34 @@ def write_command_wrapper(board: Path, launcher: str) -> Path | None:
     return path
 
 
+def command_argv(board: Path) -> list[str]:
+    """Return the argv that runs the installed agentcoop command."""
+    bindir = board / "bin"
+    if os.name == "nt":
+        exe = bindir / "agentcoop.exe"
+        if exe.is_file():
+            return [str(exe)]
+        cmd = bindir / "agentcoop.cmd"
+        if cmd.is_file():
+            return [str(cmd)]
+    else:
+        binary = bindir / "agentcoop"
+        if binary.is_file():
+            return [str(binary)]
+    pyz = bindir / "agentcoop.pyz"
+    launcher = pick_launcher()
+    try:
+        from agentcoop.projects import board_is_ready
+
+        if board_is_ready(board):
+            stored = load_config(board).get("launcher")
+            if isinstance(stored, str) and stored:
+                launcher = stored
+    except (OSError, CoopError):
+        pass
+    return [launcher, str(pyz)]
+
+
 def agentcoop_command(board: Path) -> str:
     """Return the quoted absolute path of the wrapper or binary."""
     bindir = board / "bin"

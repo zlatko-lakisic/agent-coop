@@ -105,8 +105,9 @@ class InstallTests(unittest.TestCase):
             self.assertIn("UserPromptSubmit", data["hooks"])
             session = data["hooks"]["SessionStart"][0]["hooks"][0]["command"]
             prompt = data["hooks"]["UserPromptSubmit"][0]["hooks"][0]["command"]
-            self.assertEqual(session, prompt)
             self.assertIn("check --as claude_code --summary", session)
+            self.assertIn("touch --as claude_code", prompt)
+            self.assertNotEqual(session, prompt)
             folder = env.workspace / "frontend"
             folder.mkdir()
             add_project(env.board, "frontend", folder, "claude_code", {})
@@ -128,6 +129,8 @@ class InstallTests(unittest.TestCase):
             self.assertIn("agent_board", command.replace("\\\\", "\\"))
             # Removal must match the real command string, not a JSON-escaped copy.
             cleaned = remove_hook_command(loaded, command)
+            prompt = loaded["hooks"]["UserPromptSubmit"][0]["hooks"][0]["command"]
+            cleaned = remove_hook_command(cleaned, prompt)
             self.assertNotIn("hooks", cleaned)
 
     def test_disconnect_refuses_driver(self) -> None:

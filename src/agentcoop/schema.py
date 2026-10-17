@@ -130,6 +130,13 @@ def check_config(data: object) -> list[str]:
         or context_limit <= 0
     ):
         problems.append("context_limit_bytes must be a positive integer")
+    for key in ("max_runs_per_day", "run_timeout_minutes"):
+        value = data.get(key)
+        if value is not None and (not isinstance(value, int) or isinstance(value, bool) or value <= 0):
+            problems.append(key + " must be a positive integer")
+    auto_branch = data.get("auto_branch")
+    if auto_branch is not None and not isinstance(auto_branch, str):
+        problems.append("auto_branch must be text")
     launcher = data.get("launcher")
     if launcher is not None and not isinstance(launcher, str):
         problems.append("launcher must be text")

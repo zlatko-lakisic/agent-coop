@@ -16,7 +16,7 @@ Web chat cannot join, because it cannot read files on this computer.
 - Background runs: yes
 - Status: untested
 - Suggested helper note: edits the project and asks helpers
-- Notes: Project rule only (loads every turn). TODO: hook format for Cursor is not verified, so hooks are not installed. TODO: detection paths per OS are not confirmed. Background runs use cursor-agent -p. Flags confirmed in the Cursor CLI parameters page: --print, --model, --workspace, --trust, --force, --mode. TODO: no confirmed flag denies git push by itself. Shell(git) cannot tell push from other git commands. The git shim is the second layer.
+- Notes: Project rule only (loads every turn). TODO: hook format for Cursor is not verified, so hooks are not installed. TODO: detection paths per OS are not confirmed. Background helper runs use cursor-agent -p --mode ask (read only). Flags confirmed at https://cursor.com/docs/cli/reference/parameters : --print, --model, --workspace, --trust, --force, --mode ask. TODO: driver runs are not scheduled. No confirmed flag adds the board as a writable folder beside the workspace. --force allows writes everywhere, which is broader than the worktree plus the board.
 
 ## Claude Code
 
@@ -29,7 +29,7 @@ Web chat cannot join, because it cannot read files on this computer.
 - Background runs: yes
 - Status: untested
 - Suggested helper note: reviews code
-- Notes: User skill and user hooks only. SessionStart and UserPromptSubmit run check --summary, which stays quiet outside projects. TODO: exact permission keys for a read-only lock are not confirmed. TODO: detection paths per OS are not confirmed. The Code side of the Claude desktop app uses this entry. Background flags confirmed in the Claude Code CLI reference: -p, --model, --tools, --allowedTools, --disallowedTools, --permission-mode, --add-dir.
+- Notes: User skill and user hooks only. SessionStart and UserPromptSubmit run check --summary, which stays quiet outside projects. TODO: exact permission keys for a read-only lock are not confirmed. TODO: detection paths per OS are not confirmed. The Code side of the Claude desktop app uses this entry. Background flags confirmed at https://code.claude.com/docs/en/cli-reference : -p, --model, --tools, --permission-mode plan and dontAsk, --add-dir, --allowedTools, --disallowedTools. Helper runs are plan mode with Read, Grep, and Glob only. Driver runs use dontAsk and --add-dir for the board.
 
 ## Codex CLI
 
@@ -42,7 +42,7 @@ Web chat cannot join, because it cannot read files on this computer.
 - Background runs: yes
 - Status: untested
 - Suggested helper note: answers coding questions
-- Notes: User skill only. TODO: Codex hook format is not verified, so hooks are not installed. TODO: exact sandbox config keys for a read-only lock are not confirmed. TODO: detection paths per OS are not confirmed. Background flags confirmed in the Codex CLI reference: exec, --sandbox read-only and workspace-write, --cd, --skip-git-repo-check, --model, --ask-for-approval never. workspace-write has network off unless sandbox_workspace_write.network_access is set.
+- Notes: User skill only. TODO: Codex hook format is not verified, so hooks are not installed. TODO: exact sandbox config keys for a read-only lock are not confirmed. TODO: detection paths per OS are not confirmed. Background flags confirmed at https://developers.openai.com/codex/cli/reference : exec, --sandbox read-only and workspace-write, --cd, --skip-git-repo-check, --model, --ask-for-approval never, --add-dir. workspace-write has network off unless sandbox_workspace_write.network_access is set (https://github.com/openai/codex/blob/13c42a077c88a0d04ae7680a9891d2daf4558577/docs/sandbox.md).
 
 ## ChatGPT desktop (Codex)
 
@@ -94,7 +94,7 @@ Web chat cannot join, because it cannot read files on this computer.
 - Background runs: yes
 - Status: untested
 - Suggested helper note: second opinion on a plan
-- Notes: User skill plus a project GEMINI.md section. Runs on this computer and calls a model in Google's cloud. TODO: Gemini CLI hook format is not verified, so hooks are not installed. TODO: detection paths per OS are not confirmed. Background flags confirmed in Gemini CLI headless docs: -p, --model, --approval-mode plan and auto_edit. TODO: no confirmed flag restricts shell to the agentcoop command only.
+- Notes: User skill plus a project GEMINI.md section. Runs on this computer and calls a model in Google's cloud. TODO: Gemini CLI hook format is not verified, so hooks are not installed. TODO: detection paths per OS are not confirmed. Helper flag confirmed at https://google-gemini.github.io/gemini-cli/docs/cli/headless.html : -p, --model, --approval-mode plan (read only). TODO: driver runs are not scheduled. --approval-mode auto_edit still asks before shell commands, and no confirmed flag adds the board as a writable folder.
 
 ## GitHub Copilot
 

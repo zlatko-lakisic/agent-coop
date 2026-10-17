@@ -71,7 +71,15 @@ class Prompter:
 
     def yes(self, prompt: str, default: bool = False) -> bool:
         """Ask a yes or no question. The prompt should already include (Y/n) or (y/N)."""
-        value = self.line(prompt, "yes" if default else "no")
+        try:
+            value = self._input(prompt)
+        except EOFError as exc:
+            raise CoopError(
+                "This step needs an answer. Run the command with flags instead of the interactive form."
+            ) from exc
+        value = value.strip()
+        if not value:
+            return default
         return value.lower() in ("y", "yes")
 
     def ask(self, prompt: str, parse, *, default: str | None = None) -> object:
@@ -96,6 +104,8 @@ def setup_board(
     model: str | None = None,
     prompter: Prompter | None = None,
     add_to_path: bool | None = None,
+    schedule: bool | None = None,
+    every: int = 5,
 ) -> dict:
     """Create the board and connect agents. Safe to run again."""
     found = detect_installed()
@@ -116,16 +126,27 @@ def setup_board(
         agents_before = load_agents(board)
         tools = _ask_join_tools(prompter, found, agents_before)
         for tool_key in tools:
-            names.append(_connect_named(board, tool_key, yes=yes, model=model, prompter=None))
+            chosen_model = model
+            tool = find_tool(tool_key)
+            if tool is not None and _tool_can_schedule(tool) and not chosen_model:
+                answer = prompter.line(
+                    "Which model should "
+                    + tool.display
+                    + " use when it runs in the background? Press Enter for its default: ",
+                    "",
+                )
+                chosen_model = answer or None
+            names.append(_connect_named(board, tool_key, yes=yes, model=chosen_model, prompter=None))
         for name in _ask_local_models(prompter, found):
             if name:
                 names.append(name)
-        # Model-per-agent and the schedule question are added in later parts.
         path_choice = prompter.yes(
             "Add agentcoop to your PATH so you can type agentcoop in any terminal? (Y/n) ",
             default=True,
         )
         apply_path_change(board, path_choice)
+        if prompter.yes("Check the board in the background every 5 minutes? (Y/n) ", default=True):
+            _turn_on_schedule(board, every)
         if prompter.yes("Do you want to add a project now? (y/N) ", default=False):
             project = add_project_flow(prompter=prompter, yes=yes)
         else:
@@ -135,6 +156,8 @@ def setup_board(
             names.append(_connect_named(board, tool_key, yes=yes, model=model, prompter=prompter))
         if add_to_path:
             apply_path_change(board, True)
+        if schedule:
+            _turn_on_schedule(board, every)
         project = None
     prune_out_of_scope_project_files(board)
     return {
@@ -145,6 +168,20 @@ def setup_board(
         "add_to_path": path_choice,
         "left_alone": left_alone,
     }
+
+
+def _tool_can_schedule(tool: object) -> bool:
+    """Return True when a tool has a background helper or driver command."""
+    spec = getattr(tool, "headless", "none")
+    if not isinstance(spec, dict):
+        return False
+    return isinstance(spec.get("helper"), list) or isinstance(spec.get("driver"), list)
+
+
+def _turn_on_schedule(board: Path, minutes: int) -> None:
+    from agentcoop.rounds import start_schedule
+
+    start_schedule(board, minutes)
 
 
 def apply_path_change(board: Path, enabled: bool) -> None:
@@ -310,9 +347,11 @@ def add_project_flow(
             tool_key = (agents["agents"].get(agent) or {}).get("tool", "")
             lines.append(lock_notice(tool_key))
     lines.append('Paste this into the driver: "Say hello to your helpers on the Agent Co-op board."')
+    text = "\n".join(lines)
     if prompter is not None:
-        prompter.say("\n".join(lines))
-    return "\n".join(lines)
+        prompter.say(text)
+        return ""
+    return text
 
 
 def change_driver(project_name: str, agent: str, *, yes: bool) -> str:

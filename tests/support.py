@@ -26,6 +26,8 @@ class TempEnv:
         self.workspace = self.root / "workspace"
         self.home.mkdir()
         self.workspace.mkdir()
+        self.fakes = self.root / "fakes"
+        self.fakes.mkdir()
         self._old: dict[str, str | None] = {}
 
     def __enter__(self) -> "TempEnv":
@@ -33,9 +35,14 @@ class TempEnv:
             "HOME": str(self.home),
             "USERPROFILE": str(self.home),
             "AGENTCOOP_BOARD": str(self.board),
+            "PATH": str(self.fakes) + os.pathsep + os.environ.get("PATH", ""),
         }.items():
             self._old[key] = os.environ.get(key)
             os.environ[key] = value
+        for name in ("launchctl", "systemctl", "crontab", "schtasks", "taskkill"):
+            path = self.fakes / name
+            path.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+            path.chmod(0o755)
         return self
 
     def __exit__(self, *args: object) -> bool:
