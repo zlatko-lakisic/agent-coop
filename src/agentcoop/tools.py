@@ -95,34 +95,40 @@ TOOLS: tuple[Tool, ...] = (
             "TODO: detection paths per OS are not confirmed. "
             "The command is agent, installed into ~/.local/bin. cursor-agent is the older name. "
             "https://cursor.com/docs/cli/installation "
-            "Background helper runs use agent -p --mode ask (read only). "
             "Flags confirmed at https://cursor.com/docs/cli/reference/parameters : "
-            "--print, --model, --workspace, --trust, --force, --mode ask. "
-            "TODO: driver runs are not scheduled. Print mode without --force was not "
-            "confirmed to run allowed actions with no prompt. cursor-agent is not installed "
-            "on the machine that checked this, and the permissions page says to use allow, "
-            "deny, and --force to control what runs without prompts. "
-            "https://cursor.com/docs/cli/reference/permissions"
+            "-p, --trust, --workspace, --model, --mode ask. "
+            "Scheduled runs never pass --force, -f, or --yolo. "
+            "Before a driver run, Agent Co-op writes <worktree>/.cursor/cli.json so the agent "
+            "may read broadly, write only the worktree and the board, and run git, agentcoop, "
+            "and the commands in driver_shell_allow. "
+            "Before a helper run, it writes <board>/projects/<project>/.cursor/cli.json with "
+            "Read(**) allowed and Write(**) and Shell(*) denied. "
+            "Permissions: https://cursor.com/docs/cli/reference/permissions "
+            "A person's ~/.cursor/cli-config.json may also hold permissions. How the two files "
+            "combine is not documented, so keep broad allow rules out of the global file."
         ),
         helper_note="edits the project and asks helpers",
         headless={
             "helper": [
                 "{cli}",
                 "-p",
-                "{prompt}",
+                "--trust",
                 "--workspace",
                 "{cwd}",
                 "--mode",
                 "ask",
-                "--trust",
                 "{model_flag}",
+                "{prompt}",
             ],
-            "driver": "todo",
-            "driver_todo": (
-                "Cursor cannot be scheduled as the driver yet, because its command-line agent "
-                "cannot limit writes to the project copy and the board without asking. "
-                "It answers when you open it. Claude Code or Codex can be the driver for scheduled runs."
-            ),
+            "driver": [
+                "{cli}",
+                "-p",
+                "--trust",
+                "--workspace",
+                "{cwd}",
+                "{model_flag}",
+                "{prompt}",
+            ],
         },
         cli_names=("agent", "cursor-agent"),
     ),

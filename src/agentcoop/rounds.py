@@ -269,6 +269,10 @@ def _run_helper(board, agent, project, record, *, popen, timeout_minutes) -> int
         prompt, version = _helper_prompt(board, agent, project, record, message)
         cwd = board / "projects" / project
         cwd.mkdir(parents=True, exist_ok=True)
+        if _tool_key(board, agent) == "cursor":
+            from agentcoop.cursorperm import write_cursor_helper_cli
+
+            write_cursor_helper_cli(cwd)
         argv = build_argv(
             board,
             agent,
@@ -330,7 +334,14 @@ def _run_driver(board, agent, project, record, *, popen, timeout_minutes) -> int
         print(str(exc))
         return 1
     _remember_branch(board, project, person)
-    prompt = _driver_prompt(board, agent, project, dest, person, note)
+    command = None
+    if _tool_key(board, agent) == "cursor":
+        from agentcoop.cursorperm import write_cursor_cli
+
+        shells = [str(item) for item in (record.get("driver_shell_allow") or [])]
+        write_cursor_cli(dest, board, shells)
+        command = "agentcoop"
+    prompt = _driver_prompt(board, agent, project, dest, person, note, command=command)
     argv = build_argv(
         board,
         agent,
@@ -408,7 +419,12 @@ def _helper_prompt(board, agent, project, record, message) -> tuple[str, str | N
     return "\n".join(lines) + "\n", version
 
 
-def _driver_prompt(board, agent, project, dest, person, note) -> str:
+def _tool_key(board, agent: str) -> str:
+    agents = load_agents(board).get("agents") or {}
+    return str((agents.get(agent) or {}).get("tool") or "")
+
+
+def _driver_prompt(board, agent, project, dest, person, note, command: str | None = None) -> str:
     from agentcoop.install import read_template
     from agentcoop.pathenv import agentcoop_command
     from agentcoop.worktree import auto_branch
@@ -421,7 +437,7 @@ def _driver_prompt(board, agent, project, dest, person, note) -> str:
         .replace("{{AUTO_BRANCH}}", auto_branch(board))
         .replace("{{PERSON_BRANCH}}", person)
         .replace("{{DIVERGED_NOTE}}", note)
-        .replace("{{AGENTCOOP}}", agentcoop_command(board))
+        .replace("{{AGENTCOOP}}", command or agentcoop_command(board))
     )
 
 
@@ -434,8 +450,10 @@ def _execute(board, agent, project, argv, cwd, *, popen, timeout_minutes) -> tup
     env["AGENTCOOP_UNATTENDED"] = "1"
     env["AGENTCOOP_AGENT"] = agent
     shims = str(board / "bin" / "shims")
+    bindir = str(board / "bin")
     schedule = load_schedule(board) or {}
-    env["PATH"] = shims + os.pathsep + str(schedule.get("path") or env.get("PATH", ""))
+    rest = str(schedule.get("path") or env.get("PATH", ""))
+    env["PATH"] = shims + os.pathsep + bindir + os.pathsep + rest
     started = _stamp()
     launcher = popen or subprocess.Popen
     kwargs = {
