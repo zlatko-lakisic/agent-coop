@@ -81,7 +81,7 @@ TOOLS: tuple[Tool, ...] = (
         read_only_lock="todo",
         detect=(
             _home_dir(".cursor"),
-            _command("cursor"),
+            _command("agent"),
             _app(
                 darwin="/Applications/Cursor.app",
                 win32="%LOCALAPPDATA%/Programs/cursor/Cursor.exe",
@@ -93,7 +93,9 @@ TOOLS: tuple[Tool, ...] = (
             "Project rule only (loads every turn). "
             "TODO: hook format for Cursor is not verified, so hooks are not installed. "
             "TODO: detection paths per OS are not confirmed. "
-            "Background helper runs use cursor-agent -p --mode ask (read only). "
+            "The command is agent, installed into ~/.local/bin. cursor-agent is the older name. "
+            "https://cursor.com/docs/cli/installation "
+            "Background helper runs use agent -p --mode ask (read only). "
             "Flags confirmed at https://cursor.com/docs/cli/reference/parameters : "
             "--print, --model, --workspace, --trust, --force, --mode ask. "
             "TODO: driver runs are not scheduled. Print mode without --force was not "
@@ -122,7 +124,7 @@ TOOLS: tuple[Tool, ...] = (
                 "It answers when you open it. Claude Code or Codex can be the driver for scheduled runs."
             ),
         },
-        cli_names=("cursor-agent",),
+        cli_names=("agent", "cursor-agent"),
     ),
     Tool(
         key="claude-code",

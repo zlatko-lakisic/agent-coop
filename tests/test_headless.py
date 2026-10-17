@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -9,7 +10,7 @@ from unittest import mock
 import support
 
 from agentcoop.projects import connect_agent_record, init_board_files
-from agentcoop.schedule import build_argv, schedulable_reason
+from agentcoop.schedule import build_argv, resolve_cli_path, schedulable_reason
 from agentcoop.tools import get_tool
 
 
@@ -23,7 +24,7 @@ class HeadlessTests(unittest.TestCase):
         self.assertEqual(get_tool("goose").headless, "todo")
         self.assertEqual(get_tool("claude-desktop").headless, "none")
         self.assertEqual(get_tool("chatgpt-work").headless, "none")
-        self.assertEqual(get_tool("cursor").cli_names, ("cursor-agent",))
+        self.assertEqual(get_tool("cursor").cli_names, ("agent", "cursor-agent"))
 
     def test_missing_cli_message(self) -> None:
         with support.TempEnv() as env:
@@ -119,6 +120,39 @@ class HeadlessTests(unittest.TestCase):
             for bad in ("../x", "/tmp/x", "a/b"):
                 with self.assertRaises(CoopError):
                     draft_file(env.board, "cursor", bad, "no")
+
+
+    def test_agent_is_accepted_only_when_it_mentions_cursor(self) -> None:
+        tool = get_tool("cursor")
+        with support.TempEnv() as env:
+            bin_dir = env.workspace / "bin"
+            bin_dir.mkdir()
+            _fake_cli(bin_dir, "agent", "some other tool")
+            previous = os.environ.get("PATH", "")
+            os.environ["PATH"] = str(bin_dir) + os.pathsep + previous
+            try:
+                self.assertIsNone(resolve_cli_path(tool))
+                _fake_cli(bin_dir, "cursor-agent", "cursor-agent 1.0")
+                rejected = resolve_cli_path(tool)
+                self.assertTrue(rejected.endswith("cursor-agent") or rejected.endswith("cursor-agent.cmd"))
+                self.assertTrue(Path(rejected).is_absolute())
+                _fake_cli(bin_dir, "agent", "Cursor Agent 1.0")
+                accepted = resolve_cli_path(tool)
+            finally:
+                os.environ["PATH"] = previous
+            self.assertTrue(accepted.endswith("agent") or accepted.endswith("agent.cmd"))
+            self.assertTrue(Path(accepted).is_absolute())
+            self.assertIn("Cursor", Path(accepted).read_text(encoding="utf-8"))
+
+
+def _fake_cli(folder: Path, name: str, text: str) -> None:
+    if os.name == "nt":
+        path = folder / (name + ".cmd")
+        path.write_text("@echo off\r\necho " + text + "\r\n", encoding="utf-8")
+        return
+    path = folder / name
+    path.write_text("#!/bin/sh\nprintf '%s\\n' '" + text.replace("'", "'\\''") + "'\n", encoding="utf-8")
+    path.chmod(0o755)
 
 
 if __name__ == "__main__":
