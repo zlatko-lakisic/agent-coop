@@ -39,8 +39,8 @@ class UiFlushTests(unittest.TestCase):
 
             thread = threading.Thread(target=_read)
             thread.start()
-            thread.join(30)
-            self.assertTrue(box, "the link was not printed within 30 seconds")
+            thread.join(5)
+            self.assertTrue(box, "the link was not printed within 5 seconds")
             line = box[0].decode("utf-8").strip()
             self.assertTrue(line.startswith("http://127.0.0.1:"))
             self.assertIn("?t=", line)

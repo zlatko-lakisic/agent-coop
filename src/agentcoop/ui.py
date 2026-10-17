@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import secrets
+import socket
 import threading
 import time
 import webbrowser
@@ -33,6 +34,15 @@ class ViewerServer(ThreadingHTTPServer):
         self.token = token
         self.idle_at = time.time()
         super().__init__((host, port), ViewerHandler)
+
+    def server_bind(self) -> None:
+        """Bind without a reverse DNS lookup. That lookup can hang on some computers."""
+        if self.allow_reuse_address:
+            self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        self.socket.bind(self.server_address)
+        self.server_address = self.socket.getsockname()
+        self.server_name = "127.0.0.1"
+        self.server_port = self.server_address[1]
 
 
 class ViewerHandler(BaseHTTPRequestHandler):
