@@ -1,4 +1,4 @@
-# Agent Co-op protocol, version 0.1
+# Agent Co-op protocol, version 0.2
 
 This document is the normative spec. The words MUST, SHOULD, and MAY are used as in common protocol practice: MUST is required, SHOULD is recommended, MAY is allowed.
 
@@ -78,7 +78,7 @@ Each message MUST be one UTF-8 JSON file named `<id>.json`.
 
 | Field | Rule |
 | --- | --- |
-| `v` | Integer protocol version. Version 0.1 uses `1`. A missing value MUST be treated as 1. Unknown fields MUST be ignored. |
+| `v` | Integer message format version. Spec 0.2 uses `1`. A missing value MUST be treated as 1. Unknown fields MUST be ignored. |
 | `id` | SHOULD be `<UTC YYYYMMDDTHHMMSSZ>_<sender>_<4 lowercase hex>`. Readers MUST accept any unique string matching `^[A-Za-z0-9_.-]{1,96}$`. |
 | `ts` | UTC time, ISO 8601, second precision, ending in `Z`. |
 | `project` | Project name. |
@@ -182,7 +182,7 @@ Both modes MUST use the same files. A reader MUST accept either.
 
 ## 12. Versioning
 
-The message field `v` is the message format version. Readers MUST ignore unknown fields. `agentcoop version` prints the tool version and this spec version (`0.1`).
+The message field `v` is the message format version. Spec 0.2 still uses `1`. A context request uses the same fields as any other message. The change is in the role rules, not in the file format, so `v` did not change. Readers MUST ignore unknown fields. `agentcoop version` prints the tool version and this spec version (`0.2`).
 
 ## 13. Known limitations
 
