@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from agentcoop.errors import CoopError
-from agentcoop.paths import ensure_agent_dirs, paths_conflict
+from agentcoop.paths import ensure_agent_dirs, home_dir, is_same_or_inside, paths_conflict
 from agentcoop.tools import get_tool, tool_can_drive
 
 PROJECT_NAME_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,47}$")
@@ -261,8 +261,25 @@ def validate_all(board: Path) -> None:
         seen.append((name, path))
 
 
+def refuse_broad_folder(path: Path, board: Path) -> None:
+    """Refuse a project folder that is home, a root, or the board."""
+    real = path.expanduser().resolve()
+    home = home_dir().resolve()
+    board_real = board.expanduser().resolve()
+    example = "Pick the folder of one project, for example ~/projects/frontend."
+    if real == home:
+        raise CoopError("Your home folder cannot be a project. " + example)
+    if real == Path(real.anchor):
+        raise CoopError("A filesystem root cannot be a project. " + example)
+    if real != home and is_same_or_inside(home, real):
+        raise CoopError("This folder contains your home folder, so it cannot be a project. " + example)
+    if paths_conflict(real, board_real):
+        raise CoopError("This folder contains the Agent Co-op board, so it cannot be a project.")
+
+
 def add_allowed_root(board: Path, folder: str) -> None:
     """Add a folder to allowed_roots if it is not already there."""
+    refuse_broad_folder(Path(folder), board)
     config = load_config(board)
     roots = list(config.get("allowed_roots") or [])
     if folder not in roots:
@@ -370,6 +387,7 @@ def _validate_new_project(board: Path, name: str, record: dict, projects: dict, 
         if not isinstance(note, str):
             raise CoopError("The note for " + helper + " must be text.")
     project_path = Path(path_raw)
+    refuse_broad_folder(project_path, board)
     for other_name, other in projects["projects"].items():
         if other_name == name:
             continue
