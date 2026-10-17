@@ -5,6 +5,7 @@ from __future__ import annotations
 import io
 import json
 import multiprocessing
+import queue
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
@@ -22,7 +23,7 @@ def _worker(board: str, project: str, agent: str, start, done, errors) -> None:
         try:
             add_helper(Path(board), project, agent, "round-" + str(index))
         except CoopError as exc:
-            errors.append(exc.code)
+            errors.put(exc.code)
         done.wait(30)
 
 
@@ -38,7 +39,7 @@ class LockTests(unittest.TestCase):
             folder.mkdir()
             add_project(env.board, "demo", folder, "cursor", {})
             ctx = multiprocessing.get_context("spawn")
-            errors = ctx.Manager().list()
+            errors = ctx.Queue()
             start = ctx.Barrier(5)
             done = ctx.Barrier(5)
             procs = [
@@ -53,7 +54,13 @@ class LockTests(unittest.TestCase):
             for proc in procs:
                 proc.join(60)
                 self.assertEqual(proc.exitcode, 0)
-            self.assertEqual(list(errors), [])
+            codes = []
+            while True:
+                try:
+                    codes.append(errors.get_nowait())
+                except queue.Empty:
+                    break
+            self.assertEqual(codes, [])
             helpers = load_projects(env.board)["projects"]["demo"]["helpers"]
             for name in names:
                 self.assertEqual(helpers.get(name), "round-9")
