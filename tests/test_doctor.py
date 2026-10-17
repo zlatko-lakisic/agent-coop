@@ -84,7 +84,7 @@ class DoctorTests(unittest.TestCase):
                         "--to",
                         "claude_code",
                         "--subject",
-                        "Hello",
+                        "Agent Co-op hello",
                         "--body",
                         "Say hello",
                     ]

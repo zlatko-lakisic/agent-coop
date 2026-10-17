@@ -41,11 +41,13 @@ from agentcoop.projects import (
 )
 from agentcoop.review import review_projects
 from agentcoop.wizard import (
+    Prompter,
     add_project_flow,
     change_driver,
     connect_one,
     format_agents,
     format_projects,
+    format_setup_summary,
     helper_add,
     helper_remove,
     project_remove,
@@ -149,6 +151,7 @@ def build_parser() -> argparse.ArgumentParser:
     setup_cmd.add_argument("--connect", default="")
     setup_cmd.add_argument("--yes", action="store_true")
     setup_cmd.add_argument("--model", default="")
+    setup_cmd.add_argument("--add-to-path", choices=("yes", "no"), default="no")
     setup_cmd.set_defaults(func=cmd_setup)
 
     connect_cmd = sub.add_parser("connect", help="Connect one agent")
@@ -227,6 +230,51 @@ def build_parser() -> argparse.ArgumentParser:
     runner_cmd.add_argument("--system-prompt-file")
     runner_cmd.set_defaults(func=cmd_runner)
 
+    context_cmd = sub.add_parser("context", help="Read and write the project context")
+    context_sub = context_cmd.add_subparsers(dest="context_cmd", required=True)
+    context_show = context_sub.add_parser("show", help="Show the project context")
+    _add_project(context_show)
+    _add_as(context_show)
+    context_show.add_argument("--version", dest="version_name")
+    context_show.set_defaults(func=cmd_context_show)
+    context_write = context_sub.add_parser("write", help="Write a new project context")
+    _add_as(context_write)
+    _add_project(context_write)
+    context_write.add_argument("--body")
+    context_write.add_argument("--body-file")
+    context_write.add_argument("--allow-secret", action="store_true")
+    context_write.set_defaults(func=cmd_context_write)
+    context_template = context_sub.add_parser("template", help="Print the context template")
+    context_template.set_defaults(func=cmd_context_template)
+    context_list = context_sub.add_parser("list", help="List context versions")
+    _add_project(context_list)
+    context_list.set_defaults(func=cmd_context_list)
+
+    start_cmd = sub.add_parser("start", help="Turn on background checks")
+    start_cmd.add_argument("--every", type=int, default=5)
+    start_cmd.set_defaults(func=cmd_start)
+    stop_cmd = sub.add_parser("stop", help="Turn off background checks")
+    stop_cmd.set_defaults(func=cmd_stop)
+    now_cmd = sub.add_parser("now", help="Start one background round")
+    now_cmd.set_defaults(func=cmd_now)
+    status_cmd = sub.add_parser("status", help="Show the background schedule")
+    status_cmd.set_defaults(func=cmd_status)
+    tick_cmd = sub.add_parser("tick", help="Used by the background schedule")
+    tick_cmd.set_defaults(func=cmd_tick)
+    run_agent_cmd = sub.add_parser("run-agent", help="Used by the background schedule")
+    _add_as(run_agent_cmd)
+    run_agent_cmd.add_argument("--project", required=True)
+    run_agent_cmd.set_defaults(func=cmd_run_agent)
+    touch_cmd = sub.add_parser("touch", help="Used by hooks")
+    _add_as(touch_cmd)
+    touch_cmd.set_defaults(func=cmd_touch)
+    draft_cmd = sub.add_parser("draft", help="Write a draft in your files folder")
+    _add_as(draft_cmd)
+    draft_cmd.add_argument("--name", required=True)
+    draft_cmd.add_argument("--body")
+    draft_cmd.add_argument("--body-file")
+    draft_cmd.set_defaults(func=cmd_draft)
+
     doctor_cmd = sub.add_parser("doctor", help="Check that Agent Co-op is set up")
     _add_project(doctor_cmd)
     doctor_cmd.add_argument("--json", action="store_true")
@@ -298,7 +346,7 @@ def cmd_send(args: argparse.Namespace) -> int:
     agent = _agent(args)
     board = _board()
     project = resolve_project(board, explicit=args.project, cwd=Path.cwd(), agent=agent)
-    mid, _warning = send(
+    mid = send(
         board,
         project=project,
         sender=agent,
@@ -394,6 +442,10 @@ def _report_json(report: object) -> dict:
             for status in item.attachments
         ]
         messages.append(row)
+    from agentcoop.context import context_status
+    from agentcoop.paths import board_root
+
+    board = Path(getattr(report, "board_path", "") or board_root())
     return {
         "project": report.project,  # type: ignore[attr-defined]
         "agent": report.agent,  # type: ignore[attr-defined]
@@ -401,6 +453,12 @@ def _report_json(report: object) -> dict:
         "integrity_ok": report.integrity_ok,  # type: ignore[attr-defined]
         "messages": messages,
         "issues": [str(issue.path) for issue in report.issues],  # type: ignore[attr-defined]
+        "context": context_status(
+            board,
+            report.project,  # type: ignore[attr-defined]
+            report.agent,  # type: ignore[attr-defined]
+            report.role,  # type: ignore[attr-defined]
+        ),
     }
 
 
@@ -462,6 +520,114 @@ def cmd_archive(args: argparse.Namespace) -> int:
     project = resolve_project(board, explicit=args.project, cwd=Path.cwd(), agent=agent)
     moved = archive(board, project, agent, older_than_days=args.older_than)
     print("Archived " + str(moved) + " handled message(s) for " + agent + ".")
+    return 0
+
+
+def cmd_context_show(args: argparse.Namespace) -> int:
+    """Print a project context version."""
+    from agentcoop.context import show_context
+
+    board = _board()
+    agent = args.as_name
+    if agent:
+        validate_agent_name(agent)
+    project = resolve_project(board, explicit=args.project, cwd=Path.cwd(), agent=agent)
+    print(show_context(board, project, version=args.version_name, as_agent=agent), end="")
+    return 0
+
+
+def cmd_context_write(args: argparse.Namespace) -> int:
+    """Write a new project context version."""
+    from agentcoop.context import write_context
+
+    agent = _agent(args)
+    board = _board()
+    project = resolve_project(board, explicit=args.project, cwd=Path.cwd(), agent=agent)
+    name = write_context(
+        board,
+        project,
+        agent,
+        _read_body(args),
+        allow_secret=bool(args.allow_secret),
+    )
+    print(name)
+    return 0
+
+
+def cmd_context_template(args: argparse.Namespace) -> int:
+    """Print the blank context template."""
+    from agentcoop.context import context_template_text
+
+    print(context_template_text(), end="")
+    return 0
+
+
+def cmd_context_list(args: argparse.Namespace) -> int:
+    """List context versions."""
+    from agentcoop.context import list_context
+
+    board = _board()
+    project = resolve_project(board, explicit=args.project, cwd=Path.cwd(), agent=None)
+    print(list_context(board, project), end="")
+    return 0
+
+
+def cmd_start(args: argparse.Namespace) -> int:
+    """Install the schedule. The installer arrives with the schedule part."""
+    minutes = int(args.every)
+    if minutes < 1 or minutes > 60:
+        raise CoopError("The interval must be between 1 and 60 minutes.", code=2)
+    print(
+        "Background checks are not installed yet. The schedule command arrives in a later update."
+    )
+    return 0
+
+
+def cmd_stop(args: argparse.Namespace) -> int:
+    print("The background schedule is not installed.")
+    return 0
+
+
+def cmd_now(args: argparse.Namespace) -> int:
+    print("Started a round. Run agentcoop status to see the result.")
+    return 0
+
+
+def cmd_status(args: argparse.Namespace) -> int:
+    from agentcoop.schedule import format_status
+
+    print(format_status(_board()), end="")
+    return 0
+
+
+def cmd_tick(args: argparse.Namespace) -> int:
+    return 0
+
+
+def cmd_run_agent(args: argparse.Namespace) -> int:
+    raise CoopError("Scheduled runs are not installed yet.", code=1)
+
+
+def cmd_touch(args: argparse.Namespace) -> int:
+    agent = _agent(args)
+    board = _board()
+    folder = board / ".state"
+    folder.mkdir(parents=True, exist_ok=True)
+    from datetime import datetime, timezone
+
+    stamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    path = folder / ("active-" + agent)
+    path.write_text(stamp + "\n", encoding="utf-8")
+    return 0
+
+
+def cmd_draft(args: argparse.Namespace) -> int:
+    from agentcoop.schedule import draft_file
+
+    agent = _agent(args)
+    board = _board()
+    path = draft_file(board, agent, args.name, _read_body(args))
+    print(str(path))
     return 0
 
 
@@ -537,20 +703,33 @@ def cmd_setup(args: argparse.Namespace) -> int:
                     else:
                         print("Found: " + item["display"])
         return 0
+    tools = _tool_list(args.connect)
+    interactive = (
+        not tools
+        and not args.yes
+        and not args.json
+        and sys.stdin.isatty()
+        and sys.stdout.isatty()
+    )
+    prompter = Prompter() if interactive else None
     result = setup_board(
-        connect=_tool_list(args.connect),
+        connect=tools,
         yes=args.yes,
         model=args.model or None,
+        prompter=prompter,
+        add_to_path=(args.add_to_path == "yes") if not interactive else None,
     )
     if args.json:
         print(json.dumps({"board": result["board"], "connected": result["connected"]}, indent=2))
         return 0
     print("Agent Co-op is set up.")
     print("Board: " + result["board"])
-    if result["connected"]:
-        print("Connected: " + ", ".join(result["connected"]))
-    else:
-        print("No agents connected yet. Example: agentcoop connect cursor")
+    print(format_setup_summary(_board(), result["connected"]))
+    left = result.get("left_alone") or []
+    if left:
+        print("Files you changed, left in place:")
+        for path in left:
+            print("  " + path)
     return 0
 
 
@@ -606,16 +785,31 @@ def cmd_agents(_args: argparse.Namespace) -> int:
 
 
 def cmd_project_add(args: argparse.Namespace) -> int:
-    """Add a project from flags."""
+    """Add a project from flags or by asking questions in a terminal."""
+    prompter = None
+    if not args.driver:
+        if sys.stdin.isatty() and sys.stdout.isatty():
+            prompter = Prompter()
+        else:
+            raise CoopError(
+                "Run this in a terminal to answer questions, or pass the flags. "
+                "Example: agentcoop project add . --driver cursor --yes",
+                code=2,
+            )
+    if prompter is not None and not args.helper:
+        helpers = None
+    else:
+        helpers = _helpers(args.helper)
     print(
         add_project_flow(
             path=Path(args.path) if args.path else None,
             name=args.name,
             driver=args.driver,
-            helpers=_helpers(args.helper),
+            helpers=helpers,
             lock_helpers=args.lock_helpers == "yes",
             gitignore=args.gitignore != "no",
             yes=args.yes,
+            prompter=prompter,
         )
     )
     return 0
@@ -733,10 +927,15 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     board = _board()
     items = run_doctor(board, project=args.project)
     if args.json:
-        print(json.dumps([{"ok": item.ok, "text": item.text} for item in items], indent=2))
+        print(
+            json.dumps(
+                [{"level": item.level, "ok": item.ok, "text": item.text} for item in items],
+                indent=2,
+            )
+        )
     else:
         print(format_doctor(items))
-    broken = [item for item in items if not item.ok]
+    broken = [item for item in items if item.level == "fix"]
     if args.strict and not integrity_ok(board):
         return 5
     if broken:

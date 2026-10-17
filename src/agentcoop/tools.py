@@ -30,6 +30,10 @@ class Tool:
     helper_note: str = ""
     supported: bool = True
     project_files_for: str = "driver"
+    # headless is a dict of helper/driver argv templates, "todo", or "none".
+    # Placeholders: {cli} {prompt} {cwd} {model} {model_flag} {board_cmd} {project_path}
+    headless: object = "none"
+    cli_names: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         if self.key == "cursor" or self.join_method in ("agents_md", "gemini_md"):
@@ -88,9 +92,37 @@ TOOLS: tuple[Tool, ...] = (
         notes=(
             "Project rule only (loads every turn). "
             "TODO: hook format for Cursor is not verified, so hooks are not installed. "
-            "TODO: detection paths per OS are not confirmed."
+            "TODO: detection paths per OS are not confirmed. "
+            "Background runs use cursor-agent -p. Flags confirmed in the Cursor CLI "
+            "parameters page: --print, --model, --workspace, --trust, --force, --mode. "
+            "TODO: no confirmed flag denies git push by itself. Shell(git) cannot "
+            "tell push from other git commands. The git shim is the second layer."
         ),
         helper_note="edits the project and asks helpers",
+        headless={
+            "helper": [
+                "{cli}",
+                "-p",
+                "{prompt}",
+                "--workspace",
+                "{cwd}",
+                "--mode",
+                "ask",
+                "--trust",
+                "{model_flag}",
+            ],
+            "driver": [
+                "{cli}",
+                "-p",
+                "{prompt}",
+                "--workspace",
+                "{cwd}",
+                "--trust",
+                "--force",
+                "{model_flag}",
+            ],
+        },
+        cli_names=("cursor-agent",),
     ),
     Tool(
         key="claude-code",
@@ -113,9 +145,40 @@ TOOLS: tuple[Tool, ...] = (
             "check --summary, which stays quiet outside projects. "
             "TODO: exact permission keys for a read-only lock are not confirmed. "
             "TODO: detection paths per OS are not confirmed. "
-            "The Code side of the Claude desktop app uses this entry."
+            "The Code side of the Claude desktop app uses this entry. "
+            "Background flags confirmed in the Claude Code CLI reference: -p, --model, "
+            "--tools, --allowedTools, --disallowedTools, --permission-mode, --add-dir."
         ),
         helper_note="reviews code",
+        headless={
+            "helper": [
+                "{cli}",
+                "-p",
+                "{prompt}",
+                "--permission-mode",
+                "dontAsk",
+                "--tools",
+                "Read,Grep,Glob,Bash",
+                "--allowedTools",
+                "Read,Grep,Glob,Bash({board_cmd} *)",
+                "--add-dir",
+                "{project_path}",
+                "{model_flag}",
+            ],
+            "driver": [
+                "{cli}",
+                "-p",
+                "{prompt}",
+                "--permission-mode",
+                "dontAsk",
+                "--allowedTools",
+                "Read,Grep,Glob,Edit,Write,Bash",
+                "--disallowedTools",
+                "Bash(git push *),Bash(git push)",
+                "{model_flag}",
+            ],
+        },
+        cli_names=("claude",),
     ),
     Tool(
         key="codex",
@@ -134,9 +197,43 @@ TOOLS: tuple[Tool, ...] = (
             "User skill only. "
             "TODO: Codex hook format is not verified, so hooks are not installed. "
             "TODO: exact sandbox config keys for a read-only lock are not confirmed. "
-            "TODO: detection paths per OS are not confirmed."
+            "TODO: detection paths per OS are not confirmed. "
+            "Background flags confirmed in the Codex CLI reference: exec, --sandbox "
+            "read-only and workspace-write, --cd, --skip-git-repo-check, --model, "
+            "--ask-for-approval never. workspace-write has network off unless "
+            "sandbox_workspace_write.network_access is set."
         ),
         helper_note="answers coding questions",
+        headless={
+            "helper": [
+                "{cli}",
+                "exec",
+                "--sandbox",
+                "read-only",
+                "--ask-for-approval",
+                "never",
+                "--cd",
+                "{cwd}",
+                "--skip-git-repo-check",
+                "--add-dir",
+                "{project_path}",
+                "{model_flag}",
+                "{prompt}",
+            ],
+            "driver": [
+                "{cli}",
+                "exec",
+                "--sandbox",
+                "workspace-write",
+                "--ask-for-approval",
+                "never",
+                "--cd",
+                "{cwd}",
+                "{model_flag}",
+                "{prompt}",
+            ],
+        },
+        cli_names=("codex",),
     ),
     Tool(
         key="chatgpt-codex",
@@ -164,9 +261,41 @@ TOOLS: tuple[Tool, ...] = (
             "The ChatGPT desktop app on macOS and Windows includes Codex. "
             "It does not read ~/.codex/config.toml (only the CLI does). "
             "TODO: confirm whether it reads .codex/skills/. "
-            "TODO: detection paths per OS are not confirmed."
+            "TODO: detection paths per OS are not confirmed. "
+            "Background runs only when the codex command is installed. Otherwise "
+            "it answers when you open the ChatGPT desktop app."
         ),
         helper_note="architecture questions",
+        headless={
+            "helper": [
+                "{cli}",
+                "exec",
+                "--sandbox",
+                "read-only",
+                "--ask-for-approval",
+                "never",
+                "--cd",
+                "{cwd}",
+                "--skip-git-repo-check",
+                "--add-dir",
+                "{project_path}",
+                "{model_flag}",
+                "{prompt}",
+            ],
+            "driver": [
+                "{cli}",
+                "exec",
+                "--sandbox",
+                "workspace-write",
+                "--ask-for-approval",
+                "never",
+                "--cd",
+                "{cwd}",
+                "{model_flag}",
+                "{prompt}",
+            ],
+        },
+        cli_names=("codex",),
     ),
     Tool(
         key="chatgpt-work",
@@ -185,9 +314,12 @@ TOOLS: tuple[Tool, ...] = (
             "Observer, planned. The user grants ~/.agent_board/ and the project "
             "folder in the app, then pastes the skill into project instructions. "
             "TODO: confirm whether ChatGPT Work can write to granted local folders. "
-            "Until then it cannot reply or mark done."
+            "Until then it cannot reply or mark done. "
+            "Answers when you open the app."
         ),
         helper_note="reads the board when folder access is granted",
+        headless="none",
+        cli_names=(),
     ),
     Tool(
         key="claude-desktop",
@@ -212,9 +344,12 @@ TOOLS: tuple[Tool, ...] = (
             "TODO: match the existing Claude desktop setup exactly. "
             "Details are not filled in until they are provided. "
             "The Code side of the Claude desktop app is Claude Code, not this entry. "
-            "TODO: detection paths per OS are not confirmed."
+            "TODO: detection paths per OS are not confirmed. "
+            "Answers when you open the app."
         ),
         helper_note="answers from connected folders",
+        headless="none",
+        cli_names=(),
     ),
     Tool(
         key="gemini-cli",
@@ -236,9 +371,31 @@ TOOLS: tuple[Tool, ...] = (
             "User skill plus a project GEMINI.md section. "
             "Runs on this computer and calls a model in Google's cloud. "
             "TODO: Gemini CLI hook format is not verified, so hooks are not installed. "
-            "TODO: detection paths per OS are not confirmed."
+            "TODO: detection paths per OS are not confirmed. "
+            "Background flags confirmed in Gemini CLI headless docs: -p, --model, "
+            "--approval-mode plan and auto_edit. "
+            "TODO: no confirmed flag restricts shell to the agentcoop command only."
         ),
         helper_note="second opinion on a plan",
+        headless={
+            "helper": [
+                "{cli}",
+                "-p",
+                "{prompt}",
+                "--approval-mode",
+                "plan",
+                "{model_flag}",
+            ],
+            "driver": [
+                "{cli}",
+                "-p",
+                "{prompt}",
+                "--approval-mode",
+                "auto_edit",
+                "{model_flag}",
+            ],
+        },
+        cli_names=("gemini",),
     ),
     Tool(
         key="copilot",
@@ -275,9 +432,14 @@ TOOLS: tuple[Tool, ...] = (
         notes=(
             "Can use a local model through Ollama or LM Studio. "
             "TODO: verify the skill path. Until then, install uses an AGENTS.md section. "
-            "TODO: detection paths per OS are not confirmed."
+            "TODO: detection paths per OS are not confirmed. "
+            "TODO: opencode run and --auto exist, but docs say permissions are not a "
+            "sandbox and shell still runs with host authority. Not scheduled until "
+            "a confirmed way exists to refuse writes outside the working folder."
         ),
         helper_note="local coding help",
+        headless="todo",
+        cli_names=("opencode",),
     ),
     Tool(
         key="cline",
@@ -311,9 +473,13 @@ TOOLS: tuple[Tool, ...] = (
         notes=(
             "A fully local driver can use an Ollama model. "
             "TODO: verify the skill path. Status planned. "
-            "TODO: detection paths per OS are not confirmed."
+            "TODO: detection paths per OS are not confirmed. "
+            "TODO: goose run exists, but a one-shot mode with permission controls "
+            "that refuse writes outside the working folder is not confirmed."
         ),
         helper_note="local coding help",
+        headless="todo",
+        cli_names=("goose",),
     ),
     Tool(
         key="runner",
@@ -333,6 +499,11 @@ TOOLS: tuple[Tool, ...] = (
             "with an OpenAI-compatible API. The runner is a helper only."
         ),
         helper_note="answers from a local model",
+        headless={
+            "helper": ["{board_cmd}", "runner", "--as", "{agent}", "--once"],
+            "driver": ["{board_cmd}", "runner", "--as", "{agent}", "--once"],
+        },
+        cli_names=(),
     ),
     Tool(
         key="ollama",
@@ -354,6 +525,11 @@ TOOLS: tuple[Tool, ...] = (
             "a host URL of http://localhost:11434 when you name the model."
         ),
         helper_note="answers from a local model",
+        headless={
+            "helper": ["{board_cmd}", "runner", "--as", "{agent}", "--once"],
+            "driver": ["{board_cmd}", "runner", "--as", "{agent}", "--once"],
+        },
+        cli_names=(),
     ),
     Tool(
         key="lmstudio",
@@ -374,6 +550,11 @@ TOOLS: tuple[Tool, ...] = (
             "TODO: detection paths per OS are not confirmed."
         ),
         helper_note="answers from a local model",
+        headless={
+            "helper": ["{board_cmd}", "runner", "--as", "{agent}", "--once"],
+            "driver": ["{board_cmd}", "runner", "--as", "{agent}", "--once"],
+        },
+        cli_names=(),
     ),
     Tool(
         key="chatgpt-web",

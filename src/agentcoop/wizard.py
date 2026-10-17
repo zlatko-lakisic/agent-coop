@@ -39,7 +39,6 @@ from agentcoop.tools import (
     find_tool,
     get_tool,
     sanitize_agent_name,
-    supported_tools,
     tool_can_drive,
     tool_choices_text,
 )
@@ -58,7 +57,7 @@ class Prompter:
 
     def line(self, prompt: str, default: str | None = None) -> str:
         """Read one line. Enter keeps the default."""
-        suffix = " [" + default + "]" if default else ""
+        suffix = " [" + default + "]" if default is not None else ""
         try:
             value = self._input(prompt + suffix + ": ")
         except EOFError as exc:
@@ -68,13 +67,24 @@ class Prompter:
         value = value.strip()
         if value:
             return value
-        return default or ""
+        return default if default is not None else ""
 
     def yes(self, prompt: str, default: bool = False) -> bool:
-        """Ask a yes or no question."""
-        hint = "Y/n" if default else "y/N"
-        value = self.line(prompt + " (" + hint + ")", "yes" if default else "no")
+        """Ask a yes or no question. The prompt should already include (Y/n) or (y/N)."""
+        value = self.line(prompt, "yes" if default else "no")
         return value.lower() in ("y", "yes")
+
+    def ask(self, prompt: str, parse, *, default: str | None = None) -> object:
+        """Ask once, then once more after a one-line explanation. Cancel on a second failure."""
+        last_error = "That answer is not valid."
+        for attempt in range(2):
+            raw = self.line(prompt, default)
+            try:
+                return parse(raw)
+            except ValueError as exc:
+                last_error = str(exc) or last_error
+                self.say(last_error)
+        raise CoopError("Cancelled.", code=1)
 
 
 def setup_board(
@@ -85,6 +95,7 @@ def setup_board(
     as_json: bool = False,
     model: str | None = None,
     prompter: Prompter | None = None,
+    add_to_path: bool | None = None,
 ) -> dict:
     """Create the board and connect agents. Safe to run again."""
     found = detect_installed()
@@ -95,20 +106,52 @@ def setup_board(
     write_board_readme(board)
     stage_runtime(board)
     tighten_board_modes(board)
+    from agentcoop.install import prune_out_of_scope_project_files, refresh_installed_files
+
+    left_alone = refresh_installed_files(board)
     names: list[str] = []
     tools = list(connect or [])
+    path_choice = bool(add_to_path) if add_to_path is not None else False
     if prompter is not None and not tools:
-        prompter.say(_found_sentence(found))
-        tools = _ask_tools(prompter)
-    for tool_key in tools:
-        names.append(_connect_named(board, tool_key, yes=yes, model=model, prompter=prompter))
-    from agentcoop.install import prune_out_of_scope_project_files
-
+        agents_before = load_agents(board)
+        tools = _ask_join_tools(prompter, found, agents_before)
+        for tool_key in tools:
+            names.append(_connect_named(board, tool_key, yes=yes, model=model, prompter=None))
+        for name in _ask_local_models(prompter, found):
+            if name:
+                names.append(name)
+        # Model-per-agent and the schedule question are added in later parts.
+        path_choice = prompter.yes(
+            "Add agentcoop to your PATH so you can type agentcoop in any terminal? (Y/n) ",
+            default=True,
+        )
+        apply_path_change(board, path_choice)
+        if prompter.yes("Do you want to add a project now? (y/N) ", default=False):
+            project = add_project_flow(prompter=prompter, yes=yes)
+        else:
+            project = None
+    else:
+        for tool_key in tools:
+            names.append(_connect_named(board, tool_key, yes=yes, model=model, prompter=prompter))
+        if add_to_path:
+            apply_path_change(board, True)
+        project = None
     prune_out_of_scope_project_files(board)
-    project = None
-    if prompter is not None and prompter.yes("Do you want to add a project now?", default=False):
-        project = add_project_flow(prompter=prompter, yes=yes)
-    return {"board": str(board), "found": found, "connected": names, "project": project}
+    return {
+        "board": str(board),
+        "found": found,
+        "connected": names,
+        "project": project,
+        "add_to_path": path_choice,
+        "left_alone": left_alone,
+    }
+
+
+def apply_path_change(board: Path, enabled: bool) -> None:
+    """Change PATH when the person said yes."""
+    from agentcoop.pathenv import apply_path_change as _apply
+
+    _apply(board, enabled)
 
 
 def connect_one(
@@ -188,6 +231,7 @@ def _connect_named(
         yes=yes,
         display=display,
         runner=runner,
+        model=None if tool_key in ("ollama", "lmstudio", "runner") else model,
     )
 
 
@@ -207,7 +251,9 @@ def add_project_flow(
     init_board_files(board)
     folder = (path or _default_folder()).expanduser().resolve()
     if prompter is not None and path is None:
-        folder = Path(prompter.line("Project folder", str(folder))).expanduser().resolve()
+        folder = Path(
+            prompter.line("Project folder", str(folder))
+        ).expanduser().resolve()
     chosen = name or suggest_name(folder)
     if prompter is not None and name is None:
         chosen = prompter.line("Project name", chosen)
@@ -216,10 +262,23 @@ def add_project_flow(
     if prompter is not None and driver is None:
         driver = _ask_driver(prompter, agents, folder)
     if not driver:
-        raise CoopError("Pick a driver. Example: agentcoop project add . --driver cursor --yes")
+        raise CoopError(
+            "Run this in a terminal to answer questions, or pass the flags. "
+            "Example: agentcoop project add . --driver cursor --yes",
+            code=2,
+        )
     helper_map = dict(helpers or {})
     if prompter is not None and helpers is None:
         helper_map = _ask_helpers(prompter, agents, driver)
+    if prompter is not None:
+        gitignore = prompter.yes(
+            "Add the installed files to .gitignore? (Y/n) ",
+            default=True,
+        )
+        lock_helpers = prompter.yes(
+            "Lock helpers to read only where the tool supports it? (y/N) ",
+            default=False,
+        )
     preview_project_files(board, driver, folder)
     for helper in helper_map:
         record = (agents["agents"].get(helper) or {})
@@ -318,6 +377,15 @@ def helper_add(project_name: str, agent: str, note: str) -> str:
     tool_key = (agents["agents"].get(agent) or {}).get("tool", "")
     if tool_key and tool_key != "runner" and get_tool(tool_key).project_files_for == "members":
         install_project_files(board, project_name, agent, yes=False, gitignore=False)
+    if tool_key == "runner":
+        return (
+            agent
+            + " is a helper on "
+            + project_name
+            + ". "
+            + agent
+            + " is a local model runner. It only answers questions and cannot edit files."
+        )
     return agent + " is a helper on " + project_name + ". " + lock_notice(tool_key)
 
 
@@ -488,19 +556,158 @@ def _found_sentence(found: list[dict]) -> str:
     return "Found: " + ", ".join(parts)
 
 
-def _ask_tools(prompter: Prompter) -> list[str]:
-    tools = [tool for tool in supported_tools() if tool.key not in ("runner",)]
-    for index, tool in enumerate(tools, start=1):
-        prompter.say(str(index) + ". " + tool.display + " (" + tool.key + ")")
-    raw = prompter.line("Which agents should be connected? Enter numbers, or leave blank", "")
-    if not raw:
-        return []
-    chosen = []
-    for part in raw.replace(",", " ").split():
-        if not part.isdigit() or int(part) < 1 or int(part) > len(tools):
-            raise CoopError("Choose numbers from the list, or run agentcoop connect TOOL.")
-        chosen.append(tools[int(part) - 1].key)
-    return chosen
+def _connected_tool_keys(agents: dict) -> set[str]:
+    keys = set()
+    for record in (agents.get("agents") or {}).values():
+        tool = record.get("tool") or ""
+        if tool:
+            keys.add(tool)
+        if tool == "runner":
+            api = ((record.get("runner") or {}).get("api") or "")
+            if api == "openai":
+                keys.add("lmstudio")
+            else:
+                keys.add("ollama")
+    return keys
+
+
+def _detected_join_items(found: list[dict]) -> list[dict]:
+    """Detected tools a person can join by number, excluding local model servers."""
+    items = []
+    for item in found:
+        if "models" in item:
+            continue
+        if item.get("tool") in ("ollama", "lmstudio", "runner"):
+            continue
+        items.append(item)
+    return items
+
+
+def _ask_join_tools(prompter: Prompter, found: list[dict], agents: dict) -> list[str]:
+    """Ask which detected agents should join. Accepts numbers or tool names."""
+    items = _detected_join_items(found)
+    connected = _connected_tool_keys(agents)
+    if not items:
+        prompter.say(_found_sentence(found))
+    for index, item in enumerate(items, start=1):
+        mark = " (already connected)" if item.get("tool") in connected else ""
+        prompter.say(str(index) + ". " + item["display"] + " (" + item["tool"] + ")" + mark)
+
+    def parse(raw: str) -> list[str]:
+        if not raw.strip():
+            return []
+        chosen: list[str] = []
+        for part in raw.replace(",", " ").split():
+            if part.isdigit():
+                number = int(part)
+                if number < 1 or number > len(items):
+                    raise ValueError(
+                        "Choose a number from the list, or type a tool name."
+                    )
+                key = items[number - 1]["tool"]
+                if key not in chosen:
+                    chosen.append(key)
+                continue
+            tool = find_tool(part)
+            if tool is None or tool.key in ("runner",):
+                raise ValueError(
+                    part + " is not a known agent. Example: cursor or claude-code"
+                )
+            if tool.key not in chosen:
+                chosen.append(tool.key)
+        return chosen
+
+    return list(
+        prompter.ask(
+            "Which agents should join? Type numbers separated by commas, or press Enter to skip",
+            parse,
+            default="",
+        )
+    )
+
+
+def _ask_local_models(prompter: Prompter, found: list[dict]) -> list[str]:
+    """Ask which Ollama or LM Studio models should join as helpers."""
+    board = board_root()
+    names: list[str] = []
+    for item in found:
+        models = item.get("models")
+        if models is None:
+            continue
+        tool_key = item.get("tool") or ""
+        display = item.get("display") or tool_key
+        if not models:
+            if tool_key == "ollama":
+                prompter.say(
+                    display
+                    + " has no models yet. Pull a vision model with: ollama pull llava"
+                )
+            else:
+                prompter.say(
+                    display
+                    + " has no models yet. Load a model in LM Studio, then run setup again."
+                )
+            continue
+        for index, model_name in enumerate(models, start=1):
+            prompter.say(str(index) + ". " + model_name)
+
+        def parse(raw: str, models=models) -> list[str]:
+            if not raw.strip():
+                return []
+            chosen: list[str] = []
+            for part in raw.replace(",", " ").split():
+                if not part.isdigit() or int(part) < 1 or int(part) > len(models):
+                    raise ValueError("Choose a number from the model list, or press Enter to skip.")
+                name = models[int(part) - 1]
+                if name not in chosen:
+                    chosen.append(name)
+            return chosen
+
+        selected = list(
+            prompter.ask(
+                "Which "
+                + display
+                + " model should join as a helper? Type numbers, or press Enter to skip",
+                parse,
+                default="",
+            )
+        )
+        for model_name in selected:
+            names.append(
+                _connect_named(
+                    board,
+                    tool_key,
+                    yes=True,
+                    model=model_name,
+                    prompter=None,
+                )
+            )
+    return names
+
+
+def suggest_driver(agents: dict, folder: Path) -> str | None:
+    """Pick the default driver from folder evidence, then Cursor, then the first driver."""
+    options = []
+    for name, record in (agents.get("agents") or {}).items():
+        if tool_can_drive(record.get("tool", "")):
+            options.append(name)
+    if not options:
+        return None
+    evidence: list[str] = []
+    if (folder / ".cursor").exists():
+        evidence.append("cursor")
+    if (folder / ".claude").exists():
+        evidence.append("claude_code")
+    if (folder / ".codex").exists() or (folder / "AGENTS.md").is_file():
+        evidence.append("codex")
+    if (folder / ".gemini").exists() or (folder / "GEMINI.md").is_file():
+        evidence.append("gemini")
+    for name in evidence:
+        if name in options:
+            return name
+    if "cursor" in options:
+        return "cursor"
+    return options[0]
 
 
 def _ask_driver(prompter: Prompter, agents: dict, folder: Path) -> str:
@@ -509,21 +716,27 @@ def _ask_driver(prompter: Prompter, agents: dict, folder: Path) -> str:
         if tool_can_drive(record.get("tool", "")):
             options.append(name)
     if not options:
-        raise CoopError("Connect an agent that can edit files first. Example: agentcoop connect cursor")
+        raise CoopError(
+            "Connect an agent that can edit files first. Example: agentcoop connect cursor"
+        )
     for index, name in enumerate(options, start=1):
         prompter.say(str(index) + ". " + name)
-    default = options[0]
-    env_agent = os.environ.get("AGENTCOOP_AGENT")
-    if env_agent in options:
-        default = env_agent
-    if (folder / ".cursor").exists() and "cursor" in options:
-        default = "cursor"
-    raw = prompter.line("Which agent writes the files in this project?", default)
-    if raw.isdigit() and 1 <= int(raw) <= len(options):
-        return options[int(raw) - 1]
-    if raw not in options:
-        raise CoopError(raw + " cannot be the driver. Pick one of: " + ", ".join(options))
-    return raw
+    default = suggest_driver(agents, folder) or options[0]
+
+    def parse(raw: str) -> str:
+        if raw.isdigit() and 1 <= int(raw) <= len(options):
+            return options[int(raw) - 1]
+        if raw in options:
+            return raw
+        raise ValueError(raw + " cannot be the driver. Pick one of: " + ", ".join(options))
+
+    return str(
+        prompter.ask(
+            "Which agent writes the files in this project?",
+            parse,
+            default=default,
+        )
+    )
 
 
 def _ask_helpers(prompter: Prompter, agents: dict, driver: str) -> dict[str, str]:
@@ -537,14 +750,28 @@ def _ask_helpers(prompter: Prompter, agents: dict, driver: str) -> dict[str, str
         except KeyError:
             note = "helps the driver"
         prompter.say(str(index) + ". " + name + " (suggested note: " + note + ")")
-    raw = prompter.line("Helpers to add? Enter numbers, or leave blank", "")
-    chosen: dict[str, str] = {}
-    if not raw:
+
+    def parse(raw: str) -> list[str]:
+        if not raw.strip():
+            return []
+        chosen: list[str] = []
+        for part in raw.replace(",", " ").split():
+            if not part.isdigit() or int(part) < 1 or int(part) > len(options):
+                raise ValueError("Choose helper numbers from the list.")
+            name = options[int(part) - 1]
+            if name not in chosen:
+                chosen.append(name)
         return chosen
-    for part in raw.replace(",", " ").split():
-        if not part.isdigit() or int(part) < 1 or int(part) > len(options):
-            raise CoopError("Choose helper numbers from the list.")
-        name = options[int(part) - 1]
+
+    selected = list(
+        prompter.ask(
+            "Helpers to add? Enter numbers, or leave blank",
+            parse,
+            default="",
+        )
+    )
+    chosen: dict[str, str] = {}
+    for name in selected:
         try:
             suggestion = get_tool(agents["agents"][name].get("tool", "")).helper_note
         except KeyError:
@@ -552,3 +779,18 @@ def _ask_helpers(prompter: Prompter, agents: dict, driver: str) -> dict[str, str
         note = prompter.line("Note for " + name, suggestion)
         chosen[name] = note
     return chosen
+
+
+def format_setup_summary(board: Path, newly_connected: list[str]) -> str:
+    """List every connected agent, marking ones connected in this run."""
+    agents = load_agents(board).get("agents") or {}
+    if not agents:
+        return "No agents connected yet. Example: agentcoop connect cursor"
+    lines = []
+    new_names = set(newly_connected)
+    for name, record in agents.items():
+        label = record.get("display", name) + " (" + name + ")"
+        if name in new_names:
+            label += " (new)"
+        lines.append(label)
+    return "Connected:\n" + "\n".join("  " + line for line in lines)

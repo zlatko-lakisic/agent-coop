@@ -70,8 +70,10 @@ class ConnectAtomicTests(unittest.TestCase):
             skill = env.home / ".claude" / "skills" / "agent-coop" / "SKILL.md"
             skill.write_text("mine\n", encoding="utf-8")
             text = format_doctor(run_doctor(env.board))
-            self.assertIn(str(skill) + " belongs to you, not Agent Co-op.", text)
-            self.assertIn("agentcoop connect claude-code --yes", text)
+            self.assertIn(
+                str(skill) + " was changed after it was installed. Agent Co-op will leave it alone.",
+                text,
+            )
 
 
 if __name__ == "__main__":

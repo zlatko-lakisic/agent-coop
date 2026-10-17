@@ -146,8 +146,21 @@ class ViewerHandler(BaseHTTPRequestHandler):
         projects = projects.get("projects") or {}
         agents = load_agents(board).get("agents") or {}
         rows = []
+        from agentcoop.context import latest_version, parse_version_name, version_time
+
         for name, project in projects.items():
             messages = [item.to_dict() for item in log_messages(board, name)]
+            latest = latest_version(board, name)
+            context = None
+            if latest is not None:
+                parsed = parse_version_name(latest.name)
+                when = version_time(latest.name)
+                context = {
+                    "version": latest.name,
+                    "author": parsed[1] if parsed else "",
+                    "time": when.strftime("%Y-%m-%dT%H:%M:%SZ") if when else "",
+                    "body": latest.read_text(encoding="utf-8"),
+                }
             rows.append(
                 {
                     "name": name,
@@ -155,6 +168,7 @@ class ViewerHandler(BaseHTTPRequestHandler):
                     "driver": project.get("driver", ""),
                     "helpers": project.get("helpers") or {},
                     "messages": messages,
+                    "context": context,
                 }
             )
         agent_rows = []

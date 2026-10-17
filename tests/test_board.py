@@ -83,7 +83,7 @@ class BoardTests(unittest.TestCase):
     def test_send_check_done_round_trip(self) -> None:
         with support.TempEnv() as env:
             _ready(env)
-            mid, warning = send(
+            mid = send(
                 env.board,
                 project="frontend",
                 sender="cursor",
@@ -92,7 +92,7 @@ class BoardTests(unittest.TestCase):
                 body="Please review the panel.",
                 needs_reply=True,
             )
-            self.assertIsNone(warning)
+            self.assertIsInstance(mid, str)
             done_dir = inbox_done(env.board, "frontend", "claude_code")
             before = list(done_dir.glob("*")) if done_dir.exists() else []
             report = check_inbox(env.board, "frontend", "claude_code")
@@ -178,7 +178,7 @@ class BoardTests(unittest.TestCase):
     def test_role_rules(self) -> None:
         with support.TempEnv() as env:
             _ready(env)
-            mid, _warning = send(
+            mid = send(
                 env.board,
                 project="frontend",
                 sender="cursor",
@@ -228,7 +228,7 @@ class BoardTests(unittest.TestCase):
                     subject="Self",
                     body="no",
                 )
-            reply, _warning = send(
+            reply = send(
                 env.board,
                 project="frontend",
                 sender="claude_code",
@@ -272,7 +272,7 @@ class BoardTests(unittest.TestCase):
     def test_waiting_until_reply(self) -> None:
         with support.TempEnv() as env:
             _ready(env)
-            mid, _warning = send(
+            mid = send(
                 env.board,
                 project="frontend",
                 sender="cursor",
@@ -299,7 +299,7 @@ class BoardTests(unittest.TestCase):
         with support.TempEnv() as env:
             _ready(env)
             past = datetime(2026, 1, 1, tzinfo=timezone.utc)
-            mid, _warning = send(
+            mid = send(
                 env.board,
                 project="frontend",
                 sender="cursor",
