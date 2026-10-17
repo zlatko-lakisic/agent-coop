@@ -170,3 +170,4 @@ The message field `v` is the message format version. Readers MUST ignore unknown
 * Where a tool has no permission setting for the board, enforcement depends on the agent following the skill. `check` and `doctor` detect bare-mode violations. They do not prevent them.
 * A bare-mode agent can write a malformed file. Readers skip young unreadable files and report older ones.
 * A helper that cannot write files cannot reply or mark done.
+* In bare mode any agent can write a message that claims another sender, or rewrite `projects.json` and its hash. Role checks and the integrity warning catch mistakes, not a determined spoof. Real limits come from each tool's own permission settings.
