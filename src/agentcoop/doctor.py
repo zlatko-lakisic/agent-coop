@@ -30,6 +30,7 @@ class DoctorItem:
 
     ok: bool
     text: str
+    note: bool = False
 
 
 def run_doctor(board: Path, project: str | None = None) -> list[DoctorItem]:
@@ -42,6 +43,15 @@ def run_doctor(board: Path, project: str | None = None) -> list[DoctorItem]:
     else:
         items.append(DoctorItem(True, "Board folder is ready."))
     items.append(_bin_check(board))
+    from agentcoop.pathenv import path_notes_for_doctor
+
+    for note in path_notes_for_doctor(board):
+        if note.startswith("Fix: "):
+            items.append(DoctorItem(False, note[len("Fix: ") :]))
+        elif note.startswith("Note: "):
+            items.append(DoctorItem(True, note[len("Note: ") :], note=True))
+        else:
+            items.append(DoctorItem(True, note, note=True))
     loose = _loose_permissions(board)
     if loose is not None:
         items.append(loose)
@@ -445,4 +455,10 @@ def _hello_check(board: Path, projects: dict, project_name: str) -> DoctorItem:
 
 def format_doctor(items: list[DoctorItem]) -> str:
     """Render doctor results as plain lines."""
-    return "\n".join(("OK: " if item.ok else "Fix: ") + item.text for item in items)
+    lines = []
+    for item in items:
+        if item.note:
+            lines.append("Note: " + item.text)
+        else:
+            lines.append(("OK: " if item.ok else "Fix: ") + item.text)
+    return "\n".join(lines)

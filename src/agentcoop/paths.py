@@ -116,16 +116,8 @@ def quote_path(path: str) -> str:
 def agentcoop_command(board: Path) -> str:
     """Return the command skills should run.
 
-    A copied binary wins. Otherwise the command is Python plus the zipapp.
+    Prefer the wrapper or binary in board/bin. Fall back to Python plus the zipapp.
     """
-    bindir = board / "bin"
-    if os.name == "nt":
-        binary = bindir / "agentcoop.exe"
-        launcher = "py"
-    else:
-        binary = bindir / "agentcoop"
-        launcher = "python3"
-    if binary.is_file():
-        return quote_path(str(binary))
-    pyz = bindir / "agentcoop.pyz"
-    return launcher + " " + quote_path(str(pyz))
+    from agentcoop.pathenv import agentcoop_command as _command
+
+    return _command(board)

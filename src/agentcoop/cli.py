@@ -151,6 +151,7 @@ def build_parser() -> argparse.ArgumentParser:
     setup_cmd.add_argument("--connect", default="")
     setup_cmd.add_argument("--yes", action="store_true")
     setup_cmd.add_argument("--model", default="")
+    setup_cmd.add_argument("--add-to-path", choices=("yes", "no"), default="no")
     setup_cmd.set_defaults(func=cmd_setup)
 
     connect_cmd = sub.add_parser("connect", help="Connect one agent")
@@ -553,6 +554,7 @@ def cmd_setup(args: argparse.Namespace) -> int:
         yes=args.yes,
         model=args.model or None,
         prompter=prompter,
+        add_to_path=(args.add_to_path == "yes") if not interactive else None,
     )
     if args.json:
         print(json.dumps({"board": result["board"], "connected": result["connected"]}, indent=2))
@@ -560,6 +562,11 @@ def cmd_setup(args: argparse.Namespace) -> int:
     print("Agent Co-op is set up.")
     print("Board: " + result["board"])
     print(format_setup_summary(_board(), result["connected"]))
+    left = result.get("left_alone") or []
+    if left:
+        print("Files you changed, left in place:")
+        for path in left:
+            print("  " + path)
     return 0
 
 

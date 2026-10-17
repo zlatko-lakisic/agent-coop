@@ -120,4 +120,10 @@ def check_config(data: object) -> list[str]:
     launcher = data.get("launcher")
     if launcher is not None and not isinstance(launcher, str):
         problems.append("launcher must be text")
+    path_changes = data.get("path_changes")
+    if path_changes is not None:
+        if not isinstance(path_changes, list) or any(
+            not isinstance(item, str) for item in path_changes
+        ):
+            problems.append("path_changes must be a list of strings")
     return problems

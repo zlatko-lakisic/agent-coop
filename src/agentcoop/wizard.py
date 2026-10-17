@@ -106,6 +106,9 @@ def setup_board(
     write_board_readme(board)
     stage_runtime(board)
     tighten_board_modes(board)
+    from agentcoop.install import prune_out_of_scope_project_files, refresh_installed_files
+
+    left_alone = refresh_installed_files(board)
     names: list[str] = []
     tools = list(connect or [])
     path_choice = bool(add_to_path) if add_to_path is not None else False
@@ -133,8 +136,6 @@ def setup_board(
         if add_to_path:
             apply_path_change(board, True)
         project = None
-    from agentcoop.install import prune_out_of_scope_project_files
-
     prune_out_of_scope_project_files(board)
     return {
         "board": str(board),
@@ -142,15 +143,15 @@ def setup_board(
         "connected": names,
         "project": project,
         "add_to_path": path_choice,
+        "left_alone": left_alone,
     }
 
 
 def apply_path_change(board: Path, enabled: bool) -> None:
-    """Change PATH when the person said yes. Filled in by the PATH step."""
-    if not enabled:
-        return
-    # A later step writes the wrapper and edits shell startup files.
-    return
+    """Change PATH when the person said yes."""
+    from agentcoop.pathenv import apply_path_change as _apply
+
+    _apply(board, enabled)
 
 
 def connect_one(

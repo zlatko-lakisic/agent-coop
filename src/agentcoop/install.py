@@ -221,6 +221,8 @@ def build_zipapp(dest: Path) -> None:
 
 def stage_runtime(board: Path) -> None:
     """Copy the running command into the board bin folder."""
+    from agentcoop.pathenv import pick_launcher, store_launcher, write_command_wrapper
+
     bindir = board / "bin"
     bindir.mkdir(parents=True, exist_ok=True)
     if getattr(sys, "frozen", False):
@@ -240,10 +242,112 @@ def stage_runtime(board: Path) -> None:
             build_zipapp(dest)
         if os.name != "nt" and dest.is_file():
             dest.chmod(0o700)
+        launcher = pick_launcher()
+        store_launcher(board, launcher)
+        write_command_wrapper(board, launcher)
     version = bindir / "VERSION"
     version.write_text(__version__ + "\n", encoding="utf-8")
     if os.name != "nt":
         version.chmod(0o600)
+
+
+def refresh_installed_files(board: Path) -> list[str]:
+    """Re-render installed files that still match their hash. Return edited paths left alone."""
+    left: list[str] = []
+
+    agents = load_agents(board)
+
+    def change_agents(data: dict) -> None:
+        for name, record in (data.get("agents") or {}).items():
+            tool_key = str(record.get("tool") or "")
+            installed = list(record.get("installed") or [])
+            updated = []
+            for entry in installed:
+                result = _refresh_one_entry(
+                    board, entry, agent_name=name, tool_key=tool_key
+                )
+                if result == "left":
+                    left.append(str(entry.get("path", "")))
+                    updated.append(entry)
+                elif isinstance(result, dict):
+                    updated.append(result)
+                else:
+                    updated.append(entry)
+            record["installed"] = updated
+
+    def change_projects(projects: dict) -> None:
+        known = agents.get("agents") or {}
+        for project in (projects.get("projects") or {}).values():
+            installed = list(project.get("installed") or [])
+            updated = []
+            for entry in installed:
+                agent_name = str(entry.get("agent") or project.get("driver") or "")
+                tool_key = str((known.get(agent_name) or {}).get("tool") or "")
+                result = _refresh_one_entry(
+                    board, entry, agent_name=agent_name, tool_key=tool_key
+                )
+                if result == "left":
+                    left.append(str(entry.get("path", "")))
+                    updated.append(entry)
+                elif isinstance(result, dict):
+                    updated.append(result)
+                else:
+                    updated.append(entry)
+            project["installed"] = updated
+
+    mutate_agents(board, change_agents)
+    mutate_projects(board, change_projects, enforce_integrity=False)
+    return [path for path in left if path]
+
+
+def _refresh_one_entry(
+    board: Path,
+    entry: dict,
+    *,
+    agent_name: str,
+    tool_key: str,
+) -> dict | str | None:
+    """Return an updated entry, 'left' when edited, or None when skipped."""
+    kind = entry.get("kind") or ""
+    path = Path(entry.get("path") or "")
+    if not path.is_file():
+        return None
+    stored = entry.get("sha256")
+    if not stored or file_sha256(path) != stored:
+        return "left"
+    if kind == "gitignore":
+        return None
+    if kind == "hook":
+        if tool_key != "claude-code":
+            return None
+        addition = claude_code_hooks(board, agent_name)
+        try:
+            existing = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return "left"
+        if not isinstance(existing, dict):
+            return "left"
+        merged = merge_hook_settings(existing, addition)
+        content = json.dumps(merged, indent=2) + "\n"
+    else:
+        template_name = _KIND_TEMPLATE.get(kind)
+        if template_name is None:
+            return None
+        rendered = render_template(template_name, agent_name=agent_name, board=board)
+        if kind in ("agents_md", "gemini_md"):
+            original = path.read_text(encoding="utf-8")
+            content = upsert_marked_section(original, rendered, agent_name)
+        else:
+            content = rendered
+    path.write_text(content, encoding="utf-8")
+    if os.name != "nt":
+        try:
+            os.chmod(path, 0o600)
+        except OSError:
+            pass
+    updated = dict(entry)
+    updated["sha256"] = text_sha256(content)
+    return updated
 
 
 def _plan_user_files(board: Path, tool: object, agent_name: str) -> list[dict]:

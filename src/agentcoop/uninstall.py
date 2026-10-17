@@ -45,6 +45,9 @@ def run_uninstall(
         answer = input("Type uninstall to confirm: ")
         if answer.strip() != "uninstall":
             raise CoopError("Cancelled.", code=1)
+    from agentcoop.pathenv import undo_path_changes
+
+    undo_path_changes(board)
     notes = _remove_installs(board)
     _remove_runner_autostart()
     if notes:
