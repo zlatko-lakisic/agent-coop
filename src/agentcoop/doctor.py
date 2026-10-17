@@ -52,6 +52,7 @@ def run_doctor(board: Path, project: str | None = None) -> list[DoctorItem]:
         if record.get("tool") == "runner":
             items.append(_runner_check(record))
     items.extend(_project_checks(projects, agents, config))
+    items.extend(_duplicate_instruction_checks(agents, projects))
     items.extend(_message_checks(board, projects))
     if project:
         items.append(_hello_check(board, projects, project))
@@ -212,6 +213,40 @@ def _project_checks(projects: dict, agents: dict, config: dict) -> list[DoctorIt
                 )
             )
         items.extend(_driver_files_check(name, project, known))
+    return items
+
+
+def _duplicate_instruction_checks(agents: dict, projects: dict) -> list[DoctorItem]:
+    """Report when an agent has both a user and a project copy of the same kind."""
+    items: list[DoctorItem] = []
+    for agent_name, record in (agents.get("agents") or {}).items():
+        user_by_kind: dict[str, str] = {}
+        for entry in record.get("installed") or []:
+            kind = entry.get("kind")
+            if kind in ("skill", "hook") and entry.get("path"):
+                user_by_kind[kind] = entry["path"]
+        for project_name, project in (projects.get("projects") or {}).items():
+            project_by_kind: dict[str, str] = {}
+            for entry in project.get("installed") or []:
+                if entry.get("agent") != agent_name:
+                    continue
+                kind = entry.get("kind")
+                if kind in ("skill", "hook") and entry.get("path"):
+                    project_by_kind[kind] = entry["path"]
+            for kind in ("skill", "hook"):
+                if kind in user_by_kind and kind in project_by_kind:
+                    items.append(
+                        DoctorItem(
+                            False,
+                            agent_name
+                            + " has two copies of the Agent Co-op instructions: "
+                            + user_by_kind[kind]
+                            + " and "
+                            + project_by_kind[kind]
+                            + ". Run: agentcoop project repair "
+                            + project_name,
+                        )
+                    )
     return items
 
 

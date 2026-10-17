@@ -93,6 +93,9 @@ def setup_board(
         tools = _ask_tools(prompter)
     for tool_key in tools:
         names.append(_connect_named(board, tool_key, yes=yes, model=model, prompter=prompter))
+    from agentcoop.install import prune_out_of_scope_project_files
+
+    prune_out_of_scope_project_files(board)
     project = None
     if prompter is not None and prompter.yes("Do you want to add a project now?", default=False):
         project = add_project_flow(prompter=prompter, yes=yes)

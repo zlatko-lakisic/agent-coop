@@ -27,6 +27,7 @@ from agentcoop.ui import serve
 from agentcoop.install import disconnect_agent
 from agentcoop.projects import (
     INTEGRITY_WARNING,
+    board_is_ready,
     integrity_ok,
     load_projects,
     require_board,
@@ -296,6 +297,34 @@ def cmd_send(args: argparse.Namespace) -> int:
 def cmd_check(args: argparse.Namespace) -> int:
     """Print new messages."""
     agent = _agent(args)
+    if args.summary:
+        board = board_root()
+        if not board_is_ready(board):
+            return 0
+        try:
+            names = projects_for_check(
+                board,
+                agent,
+                args.project,
+                Path.cwd(),
+                args.all_projects,
+            )
+        except CoopError as exc:
+            if exc.code in (3, 4):
+                return 0
+            raise
+        chunks: list[str] = []
+        for name in names:
+            try:
+                report = check_inbox(board, name, agent)
+            except CoopError:
+                continue
+            text = render_check(report, summary=True)
+            if text:
+                chunks.append(text.rstrip("\n"))
+        if chunks:
+            print("\n\n".join(chunks))
+        return 0
     board = _board()
     names = projects_for_check(
         board,
@@ -314,7 +343,7 @@ def cmd_check(args: argparse.Namespace) -> int:
         if args.json:
             payload.append(_report_json(report))
         else:
-            text = render_check(report, summary=args.summary)
+            text = render_check(report, summary=False)
             if text:
                 chunks.append(text.rstrip("\n"))
     if args.json:

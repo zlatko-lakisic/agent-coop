@@ -59,13 +59,10 @@ TOOLS: tuple[Tool, ...] = (
         hooks="todo",
         read_only_lock="todo",
         detect=(),
-        install_paths=(
-            _rule(".cursor/rules/agent-coop.mdc"),
-            _skill("project", ".cursor/skills/agent-coop/SKILL.md"),
-        ),
+        install_paths=(_rule(".cursor/rules/agent-coop.mdc"),),
         status="untested",
         notes=(
-            "Project rule and project skill only. "
+            "Project rule only (loads every turn). "
             "TODO: hook format for Cursor is not verified, so hooks are not installed. "
             "TODO: detection paths per OS are not confirmed."
         ),
@@ -84,13 +81,12 @@ TOOLS: tuple[Tool, ...] = (
         detect=(),
         install_paths=(
             _skill("user", ".claude/skills/agent-coop/SKILL.md"),
-            _skill("project", ".claude/skills/agent-coop/SKILL.md"),
-            _hook("project", ".claude/settings.json"),
             _hook("user", ".claude/settings.json"),
         ),
         status="untested",
         notes=(
-            "SessionStart and UserPromptSubmit hooks run check --summary. "
+            "User skill and user hooks only. SessionStart and UserPromptSubmit run "
+            "check --summary, which stays quiet outside projects. "
             "TODO: exact permission keys for a read-only lock are not confirmed. "
             "TODO: detection paths per OS are not confirmed. "
             "The Code side of the Claude desktop app uses this entry."
@@ -108,13 +104,10 @@ TOOLS: tuple[Tool, ...] = (
         hooks="todo",
         read_only_lock="todo",
         detect=(),
-        install_paths=(
-            _skill("user", ".codex/skills/agent-coop/SKILL.md"),
-            _skill("project", ".codex/skills/agent-coop/SKILL.md"),
-            _section("agents_md", "AGENTS.md"),
-        ),
+        install_paths=(_skill("user", ".codex/skills/agent-coop/SKILL.md"),),
         status="untested",
         notes=(
+            "User skill only. "
             "TODO: Codex hook format is not verified, so hooks are not installed. "
             "TODO: exact sandbox config keys for a read-only lock are not confirmed. "
             "TODO: detection paths per OS are not confirmed."
@@ -200,11 +193,11 @@ TOOLS: tuple[Tool, ...] = (
         detect=(),
         install_paths=(
             _skill("user", ".gemini/skills/agent-coop/SKILL.md"),
-            _skill("project", ".gemini/skills/agent-coop/SKILL.md"),
             _section("gemini_md", "GEMINI.md"),
         ),
         status="untested",
         notes=(
+            "User skill plus a project GEMINI.md section. "
             "Runs on this computer and calls a model in Google's cloud. "
             "TODO: Gemini CLI hook format is not verified, so hooks are not installed. "
             "TODO: detection paths per OS are not confirmed."

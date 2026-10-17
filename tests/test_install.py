@@ -55,17 +55,17 @@ class InstallTests(unittest.TestCase):
     def test_agents_md_section_round_trip(self) -> None:
         with support.TempEnv() as env:
             init_board_files(env.board)
-            connect_agent(env.board, "codex", yes=True)
+            connect_agent(env.board, "chatgpt-codex", yes=True)
             folder = env.workspace / "frontend"
             folder.mkdir()
-            add_project(env.board, "frontend", folder, "codex", {})
+            add_project(env.board, "frontend", folder, "chatgpt_codex", {})
             agents_md = folder / "AGENTS.md"
             agents_md.write_text("# Notes\n\nKeep this.\n", encoding="utf-8")
-            install_project_files(env.board, "frontend", "codex", yes=True)
+            install_project_files(env.board, "frontend", "chatgpt_codex", yes=True)
             text = agents_md.read_text(encoding="utf-8")
             self.assertIn("Keep this.", text)
             self.assertEqual(text.count("<!-- agentcoop:start -->"), 1)
-            install_project_files(env.board, "frontend", "codex", yes=True)
+            install_project_files(env.board, "frontend", "chatgpt_codex", yes=True)
             text = agents_md.read_text(encoding="utf-8")
             self.assertEqual(text.count("<!-- agentcoop:start -->"), 1)
             self.assertIn("Keep this.", text)
@@ -95,29 +95,25 @@ class InstallTests(unittest.TestCase):
         self.assertIn("SessionStart", merged["hooks"])
         with support.TempEnv() as env:
             init_board_files(env.board)
-            connect_agent(env.board, "claude-code", yes=True)
-            folder = env.workspace / "frontend"
-            folder.mkdir()
-            add_project(
-                env.board,
-                "frontend",
-                folder,
-                "claude_code",
-                {},
-            )
-            settings = folder / ".claude" / "settings.json"
+            settings = env.home / ".claude" / "settings.json"
             settings.parent.mkdir(parents=True)
             settings.write_text(json.dumps(existing, indent=2) + "\n", encoding="utf-8")
-            install_project_files(env.board, "frontend", "claude_code", yes=True)
+            connect_agent(env.board, "claude-code", yes=True)
             data = json.loads(settings.read_text(encoding="utf-8"))
             self.assertEqual(data["hooks"]["PreToolUse"][0]["hooks"][0]["command"], "echo hi")
             self.assertIn("SessionStart", data["hooks"])
             self.assertIn("UserPromptSubmit", data["hooks"])
-            remove_project_files(env.board, "frontend")
-            data = json.loads(settings.read_text(encoding="utf-8"))
-            self.assertIn("PreToolUse", data["hooks"])
-            self.assertEqual(data["hooks"].get("SessionStart"), [])
-            self.assertFalse((folder / ".cursor").exists())
+            command = data["hooks"]["SessionStart"][0]["hooks"][0]["command"]
+            self.assertEqual(
+                json.dumps(data).count(command),
+                2,
+            )
+            folder = env.workspace / "frontend"
+            folder.mkdir()
+            add_project(env.board, "frontend", folder, "claude_code", {})
+            install_project_files(env.board, "frontend", "claude_code", yes=True)
+            self.assertFalse((folder / ".claude" / "settings.json").exists())
+            self.assertFalse((folder / ".claude" / "skills").exists())
 
     def test_hook_paths_escape_windows_backslashes(self) -> None:
         with support.TempEnv() as env:

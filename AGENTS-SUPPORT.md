@@ -14,7 +14,7 @@ Web chat cannot join, because it cannot read files on this computer.
 - Read-only lock: todo
 - Status: untested
 - Suggested helper note: edits the project and asks helpers
-- Notes: Project rule and project skill only. TODO: hook format for Cursor is not verified, so hooks are not installed. TODO: detection paths per OS are not confirmed.
+- Notes: Project rule only (loads every turn). TODO: hook format for Cursor is not verified, so hooks are not installed. TODO: detection paths per OS are not confirmed.
 
 ## Claude Code
 
@@ -25,7 +25,7 @@ Web chat cannot join, because it cannot read files on this computer.
 - Read-only lock: todo
 - Status: untested
 - Suggested helper note: reviews code
-- Notes: SessionStart and UserPromptSubmit hooks run check --summary. TODO: exact permission keys for a read-only lock are not confirmed. TODO: detection paths per OS are not confirmed. The Code side of the Claude desktop app uses this entry.
+- Notes: User skill and user hooks only. SessionStart and UserPromptSubmit run check --summary, which stays quiet outside projects. TODO: exact permission keys for a read-only lock are not confirmed. TODO: detection paths per OS are not confirmed. The Code side of the Claude desktop app uses this entry.
 
 ## Codex CLI
 
@@ -36,7 +36,7 @@ Web chat cannot join, because it cannot read files on this computer.
 - Read-only lock: todo
 - Status: untested
 - Suggested helper note: answers coding questions
-- Notes: TODO: Codex hook format is not verified, so hooks are not installed. TODO: exact sandbox config keys for a read-only lock are not confirmed. TODO: detection paths per OS are not confirmed.
+- Notes: User skill only. TODO: Codex hook format is not verified, so hooks are not installed. TODO: exact sandbox config keys for a read-only lock are not confirmed. TODO: detection paths per OS are not confirmed.
 
 ## ChatGPT desktop (Codex)
 
@@ -80,7 +80,7 @@ Web chat cannot join, because it cannot read files on this computer.
 - Read-only lock: todo
 - Status: untested
 - Suggested helper note: second opinion on a plan
-- Notes: Runs on this computer and calls a model in Google's cloud. TODO: Gemini CLI hook format is not verified, so hooks are not installed. TODO: detection paths per OS are not confirmed.
+- Notes: User skill plus a project GEMINI.md section. Runs on this computer and calls a model in Google's cloud. TODO: Gemini CLI hook format is not verified, so hooks are not installed. TODO: detection paths per OS are not confirmed.
 
 ## GitHub Copilot
 

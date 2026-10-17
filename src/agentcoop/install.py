@@ -335,6 +335,7 @@ def rollback_project_add(board: Path, name: str) -> None:
 
 def repair_project_files(board: Path, project_name: str) -> list[str]:
     """Reinstall missing driver project files. Returns absolute paths written."""
+    pruned = prune_out_of_scope_project_files(board, project_name)
     projects = load_projects(board)
     project = projects["projects"].get(project_name)
     if project is None:
@@ -347,7 +348,7 @@ def repair_project_files(board: Path, project_name: str) -> list[str]:
     if agent is None:
         raise CoopError(driver + " is not connected yet. Run: agentcoop connect")
     if agent["tool"] == "runner":
-        return []
+        return pruned
     tool = get_tool(agent["tool"])
     to_fix: list[str] = []
     for item in tool.install_paths:
@@ -360,9 +361,63 @@ def repair_project_files(board: Path, project_name: str) -> list[str]:
         if not path.is_file() or not in_manifest:
             to_fix.append(str(path))
     if not to_fix:
-        return []
+        return pruned
     install_project_files(board, project_name, driver, yes=False, gitignore=False)
-    return [path for path in to_fix if Path(path).is_file()]
+    repaired = [path for path in to_fix if Path(path).is_file()]
+    return pruned + repaired
+
+
+def prune_out_of_scope_project_files(board: Path, project_name: str | None = None) -> list[str]:
+    """Remove project installs that are no longer in the capability table.
+
+    Only removes files that are in the manifest and still match the saved hash.
+    """
+    projects = load_projects(board)
+    agents = load_agents(board)
+    names = [project_name] if project_name else list((projects.get("projects") or {}).keys())
+    removed: list[str] = []
+    changed = False
+    for name in names:
+        project = (projects.get("projects") or {}).get(name)
+        if project is None:
+            continue
+        root = Path(project.get("path", ""))
+        kept = []
+        for entry in list(project.get("installed") or []):
+            agent_name = entry.get("agent", "")
+            agent = (agents.get("agents") or {}).get(agent_name) or {}
+            tool_key = agent.get("tool", "")
+            if tool_key in ("", "runner"):
+                kept.append(entry)
+                continue
+            try:
+                tool = get_tool(tool_key)
+            except KeyError:
+                kept.append(entry)
+                continue
+            allowed = {
+                str(root / item["path"])
+                for item in tool.install_paths
+                if item["scope"] == "project"
+                and not (item["kind"] == "hook" and tool.hooks != "supported")
+            }
+            path = entry.get("path", "")
+            if path in allowed or entry.get("kind") == "gitignore":
+                kept.append(entry)
+                continue
+            path_obj = Path(path)
+            if path_obj.is_file() and entry.get("sha256") and file_sha256(path_obj) != entry.get("sha256"):
+                kept.append(entry)
+                continue
+            undo_entry(entry)
+            removed.append(path)
+            changed = True
+        if kept != list(project.get("installed") or []):
+            project["installed"] = kept
+            changed = True
+    if changed:
+        save_projects(board, projects)
+    return removed
 
 
 def disconnect_agent(board: Path, name: str) -> None:
