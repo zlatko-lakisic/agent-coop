@@ -117,6 +117,13 @@ def check_config(data: object) -> list[str]:
     limit = data.get("body_limit_bytes")
     if not isinstance(limit, int) or isinstance(limit, bool) or limit <= 0:
         problems.append("body_limit_bytes must be a positive integer")
+    context_limit = data.get("context_limit_bytes")
+    if context_limit is not None and (
+        not isinstance(context_limit, int)
+        or isinstance(context_limit, bool)
+        or context_limit <= 0
+    ):
+        problems.append("context_limit_bytes must be a positive integer")
     launcher = data.get("launcher")
     if launcher is not None and not isinstance(launcher, str):
         problems.append("launcher must be text")

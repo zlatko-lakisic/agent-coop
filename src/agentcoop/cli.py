@@ -230,6 +230,26 @@ def build_parser() -> argparse.ArgumentParser:
     runner_cmd.add_argument("--system-prompt-file")
     runner_cmd.set_defaults(func=cmd_runner)
 
+    context_cmd = sub.add_parser("context", help="Read and write the project context")
+    context_sub = context_cmd.add_subparsers(dest="context_cmd", required=True)
+    context_show = context_sub.add_parser("show", help="Show the project context")
+    _add_project(context_show)
+    _add_as(context_show)
+    context_show.add_argument("--version", dest="version_name")
+    context_show.set_defaults(func=cmd_context_show)
+    context_write = context_sub.add_parser("write", help="Write a new project context")
+    _add_as(context_write)
+    _add_project(context_write)
+    context_write.add_argument("--body")
+    context_write.add_argument("--body-file")
+    context_write.add_argument("--allow-secret", action="store_true")
+    context_write.set_defaults(func=cmd_context_write)
+    context_template = context_sub.add_parser("template", help="Print the context template")
+    context_template.set_defaults(func=cmd_context_template)
+    context_list = context_sub.add_parser("list", help="List context versions")
+    _add_project(context_list)
+    context_list.set_defaults(func=cmd_context_list)
+
     doctor_cmd = sub.add_parser("doctor", help="Check that Agent Co-op is set up")
     _add_project(doctor_cmd)
     doctor_cmd.add_argument("--json", action="store_true")
@@ -465,6 +485,55 @@ def cmd_archive(args: argparse.Namespace) -> int:
     project = resolve_project(board, explicit=args.project, cwd=Path.cwd(), agent=agent)
     moved = archive(board, project, agent, older_than_days=args.older_than)
     print("Archived " + str(moved) + " handled message(s) for " + agent + ".")
+    return 0
+
+
+def cmd_context_show(args: argparse.Namespace) -> int:
+    """Print a project context version."""
+    from agentcoop.context import show_context
+
+    board = _board()
+    agent = args.as_name
+    if agent:
+        validate_agent_name(agent)
+    project = resolve_project(board, explicit=args.project, cwd=Path.cwd(), agent=agent)
+    print(show_context(board, project, version=args.version_name, as_agent=agent), end="")
+    return 0
+
+
+def cmd_context_write(args: argparse.Namespace) -> int:
+    """Write a new project context version."""
+    from agentcoop.context import write_context
+
+    agent = _agent(args)
+    board = _board()
+    project = resolve_project(board, explicit=args.project, cwd=Path.cwd(), agent=agent)
+    name = write_context(
+        board,
+        project,
+        agent,
+        _read_body(args),
+        allow_secret=bool(args.allow_secret),
+    )
+    print(name)
+    return 0
+
+
+def cmd_context_template(args: argparse.Namespace) -> int:
+    """Print the blank context template."""
+    from agentcoop.context import context_template_text
+
+    print(context_template_text(), end="")
+    return 0
+
+
+def cmd_context_list(args: argparse.Namespace) -> int:
+    """List context versions."""
+    from agentcoop.context import list_context
+
+    board = _board()
+    project = resolve_project(board, explicit=args.project, cwd=Path.cwd(), agent=None)
+    print(list_context(board, project), end="")
     return 0
 
 

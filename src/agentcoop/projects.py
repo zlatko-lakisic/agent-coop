@@ -31,7 +31,12 @@ INTEGRITY_PAUSED = (
 
 _EMPTY_PROJECTS = {"version": 1, "projects": {}}
 _EMPTY_AGENTS = {"version": 1, "agents": {}}
-_EMPTY_CONFIG = {"version": 1, "allowed_roots": [], "body_limit_bytes": 16384}
+_EMPTY_CONFIG = {
+    "version": 1,
+    "allowed_roots": [],
+    "body_limit_bytes": 16384,
+    "context_limit_bytes": 65536,
+}
 
 
 def now_stamp() -> str:

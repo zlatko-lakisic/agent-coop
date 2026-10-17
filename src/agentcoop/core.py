@@ -36,7 +36,7 @@ from agentcoop.safety import check_attachment, require_attachment, secret_warnin
 
 ID_RE = re.compile(r"^[A-Za-z0-9_.-]{1,96}$")
 TS_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
-KNOWN_TYPES = {"question", "answer", "task", "status", "ack", "patch"}
+KNOWN_TYPES = {"question", "answer", "task", "status", "ack", "patch", "context_request"}
 YOUNG_SECONDS = 5
 
 
@@ -317,6 +317,36 @@ def protocol_violation(project: dict, message: Message, board: Path, project_nam
         if message.recipient not in helpers:
             return "The driver can only message helpers."
         return None
+    # Helper rules. One exception: a context_request to the driver with no re,
+    # when the helper has no open context request in this project.
+    if (
+        message.type == "context_request"
+        and message.recipient == driver
+        and not message.re
+    ):
+        if message.sender not in helpers:
+            return "The sender or recipient is not a member of this project."
+        from agentcoop.context import open_context_requests
+
+        open_ones = open_context_requests(board, project_name, helper=message.sender)
+        if message.path is None:
+            # Probe from send: any open request blocks a new one.
+            if open_ones:
+                return (
+                    "You already asked the driver for context. Wait for the answer, or "
+                    "read the latest context with: agentcoop context show --as "
+                    + message.sender
+                )
+            return None
+        # Bare mode: the earliest open request is allowed; later ones are not.
+        mid = file_id(message)
+        if open_ones and file_id(open_ones[0]) != mid:
+            return (
+                "You already asked the driver for context. Wait for the answer, or "
+                "read the latest context with: agentcoop context show --as "
+                + message.sender
+            )
+        return None
     if message.recipient != driver or not message.re:
         return (
             "Helpers can only reply to the driver. "
@@ -332,7 +362,14 @@ def protocol_violation(project: dict, message: Message, board: Path, project_nam
     return None
 
 
-def assert_can_send(board: Path, project_name: str, sender: str, recipient: str, re_id: str | None) -> dict:
+def assert_can_send(
+    board: Path,
+    project_name: str,
+    sender: str,
+    recipient: str,
+    re_id: str | None,
+    msg_type: str = "status",
+) -> dict:
     """Raise when agentcoop send must refuse this message. Returns the project."""
     projects, intact = read_projects_checked(board)
     if not intact:
@@ -340,6 +377,20 @@ def assert_can_send(board: Path, project_name: str, sender: str, recipient: str,
     project = (projects.get("projects") or {}).get(project_name)
     if project is None:
         raise CoopError("There is no project named " + project_name + ". Run: agentcoop project list")
+    if (
+        msg_type == "context_request"
+        and not re_id
+        and role_of(project, sender) == "helper"
+        and recipient == project.get("driver")
+    ):
+        from agentcoop.context import helper_has_open_context_request
+
+        if helper_has_open_context_request(board, project_name, sender):
+            raise CoopError(
+                "You already asked the driver for context. Wait for the answer, or "
+                "read the latest context with: agentcoop context show --as "
+                + sender
+            )
     probe = Message(
         v=1,
         id="probe",
@@ -347,7 +398,7 @@ def assert_can_send(board: Path, project_name: str, sender: str, recipient: str,
         project=project_name,
         sender=sender,
         recipient=recipient,
-        type="status",
+        type=msg_type,
         re=re_id,
         subject="probe",
         body="",
@@ -389,6 +440,8 @@ def send(
         raise CoopError(
             "Message type must be one of: " + ", ".join(sorted(KNOWN_TYPES)) + "."
         )
+    if type == "context_request":
+        needs_reply = True
     if len(subject) > 120:
         raise CoopError("The subject is too long. Keep it to 120 characters.")
     if not allow_secret and (secret_warning(subject) or secret_warning(body)):
@@ -404,7 +457,7 @@ def send(
             "The message is too long. Put the long text in a file under your files "
             "folder and attach that path."
         )
-    project_record = assert_can_send(board, project, sender, recipient, re)
+    project_record = assert_can_send(board, project, sender, recipient, re, msg_type=type)
     roots = list(config.get("allowed_roots") or [])
     project_path = Path(project_record["path"])
     for attachment in attachments or []:
@@ -561,7 +614,10 @@ def waiting(board: Path, project: str, agent: str) -> list[Message]:
 
 
 def archive(board: Path, project: str, agent: str, older_than_days: int = 30, now: datetime | None = None) -> int:
-    """Move handled messages older than the given number of days."""
+    """Move handled messages older than the given number of days.
+
+    Also removes old context versions for the project, always keeping the latest 5.
+    """
     require_board(board)
     moment = utc_now(now)
     cutoff = moment - timedelta(days=older_than_days)
@@ -590,6 +646,9 @@ def archive(board: Path, project: str, agent: str, older_than_days: int = 30, no
         os.replace(path, dest_msgs / path.name)
         os.replace(marker, dest_done / marker.name)
         moved += 1
+    from agentcoop.context import archive_context
+
+    archive_context(board, project, older_than_days, now=moment)
     return moved
 
 
