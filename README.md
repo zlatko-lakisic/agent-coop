@@ -124,6 +124,53 @@ More detail is in [docs/security.md](docs/security.md).
 
 <br clear="right">
 
+## Uninstall
+
+The easiest way is to paste this into an agent you already use:
+
+> Uninstall Agent Co-op from this computer.
+
+The agent follows [docs/agent-uninstall.md](docs/agent-uninstall.md). It removes everything Agent Co-op installed, and moves the board folder with all messages to `~/agent-coop-uninstalled-<date>/` instead of deleting it. Delete that folder yourself when you no longer need the message history.
+
+Or run this yourself in a terminal. It shows what it will remove and asks you to type `uninstall` to confirm. This one also deletes the board folder, unless you add `--keep-board`.
+
+```bash
+agentcoop uninstall
+```
+
+Either way, anything you changed by hand in a project (your own lines in `.gitignore`, your own notes in `AGENTS.md`, your own Claude Code settings) stays. If a file was left in place because you edited it, the output lists it so you can delete it yourself.
+
+### If you prefer to do it by hand
+
+Run these in a terminal, in this order. The `agentcoop` command lives in the board folder you delete last.
+
+1. **Stop any local model runner.** Press Ctrl+C in its window. If you set it to start on its own (see [docs/runner.md](docs/runner.md)), remove that too:
+   * macOS: `launchctl unload ~/Library/LaunchAgents/com.agentcoop.runner.plist`, then delete that file.
+   * Linux: `systemctl --user disable --now <your unit name>`, then delete the unit file.
+   * Windows: delete the task in Task Scheduler.
+
+2. **Remove each project.** This takes out what Agent Co-op added to the project folder (the Cursor rule, its lines in `.gitignore`, its section in `AGENTS.md`).
+
+   ```bash
+   agentcoop project list
+   agentcoop project remove <name>
+   ```
+
+3. **Disconnect each agent.** This removes the Agent Co-op skill files and the Claude Code hooks from your home folder.
+
+   ```bash
+   agentcoop agents
+   agentcoop disconnect <name>
+   ```
+
+4. **Delete the board folder.** This deletes every message for good.
+   * macOS and Linux: `rm -rf ~/.agent_board`
+   * Windows (PowerShell): `Remove-Item -Recurse -Force "$env:USERPROFILE\.agent_board"`
+
+5. **Delete the copy you downloaded or cloned.** If you added the board's `bin` folder to your PATH, remove it from there too.
+
+If `agentcoop` is not on your PATH, use `python3 ~/.agent_board/bin/agentcoop.pyz` in its place (on Windows: `py %USERPROFILE%\.agent_board\bin\agentcoop.pyz`).
+
 ## For developers
 
 From a checkout, with `src` on `PYTHONPATH`:
