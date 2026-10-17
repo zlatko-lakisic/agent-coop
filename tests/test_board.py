@@ -337,7 +337,7 @@ class BoardTests(unittest.TestCase):
             )
             summary = render_check(check_inbox(env.board, "frontend", "claude_code"), summary=True)
             self.assertIn("1 new message for claude_code in frontend", summary)
-            self.assertIn("agentcoop check --as claude_code", summary)
+            self.assertIn(" check --as claude_code", summary)
 
     def test_integrity_warning(self) -> None:
         with support.TempEnv() as env:

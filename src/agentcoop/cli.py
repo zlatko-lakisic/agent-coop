@@ -27,6 +27,7 @@ from agentcoop.ui import serve
 from agentcoop.install import disconnect_agent
 from agentcoop.projects import (
     INTEGRITY_WARNING,
+    board_is_ready,
     integrity_ok,
     load_projects,
     require_board,
@@ -34,6 +35,7 @@ from agentcoop.projects import (
     role_of,
     validate_agent_name,
 )
+from agentcoop.review import review_projects
 from agentcoop.wizard import (
     add_project_flow,
     change_driver,
@@ -43,6 +45,7 @@ from agentcoop.wizard import (
     helper_add,
     helper_remove,
     project_remove,
+    project_repair,
     setup_board,
     show_board,
 )
@@ -59,6 +62,19 @@ def main(argv: list[str] | None = None) -> int:
         return exc.code
     except KeyboardInterrupt:
         return 0
+    except Exception as exc:
+        if os.environ.get("AGENTCOOP_DEBUG") == "1":
+            raise
+        print(
+            "Agent Co-op hit an unexpected error: "
+            + type(exc).__name__
+            + ": "
+            + str(exc)
+            + ". Run the same command with AGENTCOOP_DEBUG=1 to see details, "
+            + "and report it at https://github.com/zlatko-lakisic/agent-coop/issues",
+            file=sys.stderr,
+        )
+        return 1
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -77,6 +93,7 @@ def build_parser() -> argparse.ArgumentParser:
     send_cmd.add_argument("--re", dest="re_id")
     send_cmd.add_argument("--attach", action="append", default=[])
     send_cmd.add_argument("--needs-reply", action="store_true")
+    send_cmd.add_argument("--allow-secret", action="store_true")
     send_cmd.set_defaults(func=cmd_send)
 
     check_cmd = sub.add_parser("check", help="Show new messages")
@@ -176,6 +193,13 @@ def build_parser() -> argparse.ArgumentParser:
     project_rm.add_argument("name")
     project_rm.add_argument("--yes", action="store_true")
     project_rm.set_defaults(func=cmd_project_remove)
+    project_fix = project_sub.add_parser("repair", help="Reinstall missing project files")
+    project_fix.add_argument("name")
+    project_fix.set_defaults(func=cmd_project_repair)
+    project_review = project_sub.add_parser("review", help="Review hand edits to projects.json")
+    project_review.add_argument("--restore", action="store_true")
+    project_review.add_argument("--accept", action="store_true")
+    project_review.set_defaults(func=cmd_project_review)
 
     ui_cmd = sub.add_parser("ui", help="Open the local viewer")
     ui_cmd.set_defaults(func=cmd_ui)
@@ -258,7 +282,7 @@ def cmd_send(args: argparse.Namespace) -> int:
     agent = _agent(args)
     board = _board()
     project = resolve_project(board, explicit=args.project, cwd=Path.cwd(), agent=agent)
-    mid, warning = send(
+    mid, _warning = send(
         board,
         project=project,
         sender=agent,
@@ -269,16 +293,43 @@ def cmd_send(args: argparse.Namespace) -> int:
         re=args.re_id,
         attachments=list(args.attach or []),
         needs_reply=bool(args.needs_reply),
+        allow_secret=bool(args.allow_secret),
     )
     print(mid)
-    if warning:
-        print(warning, file=sys.stderr)
     return 0
 
 
 def cmd_check(args: argparse.Namespace) -> int:
     """Print new messages."""
     agent = _agent(args)
+    if args.summary:
+        board = board_root()
+        if not board_is_ready(board):
+            return 0
+        try:
+            names = projects_for_check(
+                board,
+                agent,
+                args.project,
+                Path.cwd(),
+                args.all_projects,
+            )
+        except CoopError as exc:
+            if exc.code in (3, 4):
+                return 0
+            raise
+        chunks: list[str] = []
+        for name in names:
+            try:
+                report = check_inbox(board, name, agent)
+            except CoopError:
+                continue
+            text = render_check(report, summary=True)
+            if text:
+                chunks.append(text.rstrip("\n"))
+        if chunks:
+            print("\n\n".join(chunks))
+        return 0
     board = _board()
     names = projects_for_check(
         board,
@@ -297,7 +348,7 @@ def cmd_check(args: argparse.Namespace) -> int:
         if args.json:
             payload.append(_report_json(report))
         else:
-            text = render_check(report, summary=args.summary)
+            text = render_check(report, summary=False)
             if text:
                 chunks.append(text.rstrip("\n"))
     if args.json:
@@ -450,10 +501,17 @@ def cmd_setup(args: argparse.Namespace) -> int:
         else:
             found = result["found"]
             if not found:
-                print("Found no agents automatically. App detection paths are still TODO.")
-                print("Connect one by name. Example: agentcoop connect claude-code")
+                print(
+                    "Found no agents automatically. Connect one by name. "
+                    "Example: agentcoop connect claude-code"
+                )
             else:
-                print("Found: " + ", ".join(item["display"] for item in found))
+                for item in found:
+                    reason = item.get("reason") or ""
+                    if reason:
+                        print("Found: " + item["display"] + " (" + reason + ")")
+                    else:
+                        print("Found: " + item["display"])
         return 0
     result = setup_board(
         connect=_tool_list(args.connect),
@@ -548,6 +606,20 @@ def cmd_helper_remove(args: argparse.Namespace) -> int:
 def cmd_project_remove(args: argparse.Namespace) -> int:
     """Remove a project."""
     print(project_remove(args.name, yes=args.yes))
+    return 0
+
+
+def cmd_project_repair(args: argparse.Namespace) -> int:
+    """Reinstall missing driver project files."""
+    print(project_repair(args.name))
+    return 0
+
+
+def cmd_project_review(args: argparse.Namespace) -> int:
+    """Review projects.json after a hand edit."""
+    if args.restore and args.accept:
+        raise CoopError("Use either --restore or --accept, not both.", code=2)
+    print(review_projects(_board(), restore=args.restore, accept=args.accept))
     return 0
 
 

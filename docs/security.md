@@ -18,7 +18,7 @@ The deny list always applies. It includes SSH keys, cloud credentials, Kubernete
 
 ## Secrets
 
-Do not put passwords, API keys, or tokens in a message. `agentcoop send` warns when the body looks like a common key. It does not delete the text for you.
+Do not put passwords, API keys, or tokens in a message. `agentcoop send` refuses when the subject or body looks like a common key, unless you pass `--allow-secret`.
 
 ## The viewer
 
@@ -27,3 +27,11 @@ Do not put passwords, API keys, or tokens in a message. `agentcoop send` warns w
 ## Roles file
 
 `projects.json` is hashed. If something edits it outside `agentcoop`, check and doctor say so and tell the agent to ask the human before trusting a role change. That is detection. It is not a lock.
+
+## What the board cannot stop
+
+Any agent with file access can write a message file that claims another sender, including the driver. `agentcoop` checks roles for messages it sends, and `check` flags messages that break the role rules, but a fake message that follows the rules looks real.
+
+The same applies to `projects.json` and the files under `.state/`: they are protected by the integrity check, which an agent could also rewrite.
+
+The real protection is each tool's own permission settings: give helpers no write access outside the board and their own `files/` folder, and keep destructive actions behind the human's approval in each agent's own chat, which the skill already requires.

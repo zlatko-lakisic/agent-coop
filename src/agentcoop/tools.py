@@ -23,7 +23,7 @@ class Tool:
     join_method: str
     hooks: str
     read_only_lock: str
-    detect: tuple[str, ...]
+    detect: tuple[dict, ...]
     install_paths: tuple[dict[str, str], ...]
     status: str
     notes: str
@@ -47,6 +47,18 @@ def _hook(scope: str, path: str) -> dict[str, str]:
     return {"scope": scope, "kind": "hook", "path": path}
 
 
+def _home_dir(name: str) -> dict:
+    return {"home_dir": name}
+
+
+def _command(name: str) -> dict:
+    return {"command": name}
+
+
+def _app(*, darwin: str | None = None, win32: str | None = None, linux: str | None = None) -> dict:
+    return {"app": {"darwin": darwin, "win32": win32, "linux": linux}}
+
+
 TOOLS: tuple[Tool, ...] = (
     Tool(
         key="cursor",
@@ -58,14 +70,18 @@ TOOLS: tuple[Tool, ...] = (
         join_method="rule",
         hooks="todo",
         read_only_lock="todo",
-        detect=(),
-        install_paths=(
-            _rule(".cursor/rules/agent-coop.mdc"),
-            _skill("project", ".cursor/skills/agent-coop/SKILL.md"),
+        detect=(
+            _home_dir(".cursor"),
+            _command("cursor"),
+            _app(
+                darwin="/Applications/Cursor.app",
+                win32="%LOCALAPPDATA%/Programs/cursor/Cursor.exe",
+            ),
         ),
+        install_paths=(_rule(".cursor/rules/agent-coop.mdc"),),
         status="untested",
         notes=(
-            "Project rule and project skill only. "
+            "Project rule only (loads every turn). "
             "TODO: hook format for Cursor is not verified, so hooks are not installed. "
             "TODO: detection paths per OS are not confirmed."
         ),
@@ -81,16 +97,15 @@ TOOLS: tuple[Tool, ...] = (
         join_method="skill",
         hooks="supported",
         read_only_lock="todo",
-        detect=(),
+        detect=(_home_dir(".claude"), _command("claude")),
         install_paths=(
             _skill("user", ".claude/skills/agent-coop/SKILL.md"),
-            _skill("project", ".claude/skills/agent-coop/SKILL.md"),
-            _hook("project", ".claude/settings.json"),
             _hook("user", ".claude/settings.json"),
         ),
         status="untested",
         notes=(
-            "SessionStart and UserPromptSubmit hooks run check --summary. "
+            "User skill and user hooks only. SessionStart and UserPromptSubmit run "
+            "check --summary, which stays quiet outside projects. "
             "TODO: exact permission keys for a read-only lock are not confirmed. "
             "TODO: detection paths per OS are not confirmed. "
             "The Code side of the Claude desktop app uses this entry."
@@ -107,14 +122,11 @@ TOOLS: tuple[Tool, ...] = (
         join_method="skill",
         hooks="todo",
         read_only_lock="todo",
-        detect=(),
-        install_paths=(
-            _skill("user", ".codex/skills/agent-coop/SKILL.md"),
-            _skill("project", ".codex/skills/agent-coop/SKILL.md"),
-            _section("agents_md", "AGENTS.md"),
-        ),
+        detect=(_home_dir(".codex"), _command("codex")),
+        install_paths=(_skill("user", ".codex/skills/agent-coop/SKILL.md"),),
         status="untested",
         notes=(
+            "User skill only. "
             "TODO: Codex hook format is not verified, so hooks are not installed. "
             "TODO: exact sandbox config keys for a read-only lock are not confirmed. "
             "TODO: detection paths per OS are not confirmed."
@@ -131,7 +143,13 @@ TOOLS: tuple[Tool, ...] = (
         join_method="agents_md",
         hooks="todo",
         read_only_lock="todo",
-        detect=(),
+        detect=(
+            _app(
+                darwin="/Applications/ChatGPT.app",
+                # TODO: Windows ChatGPT app path not confirmed.
+                win32=None,
+            ),
+        ),
         install_paths=(
             _section("agents_md", "AGENTS.md"),
             _skill("project", ".codex/skills/agent-coop/SKILL.md"),
@@ -176,14 +194,20 @@ TOOLS: tuple[Tool, ...] = (
         join_method="folder_grant",
         hooks="none",
         read_only_lock="advisory",
-        detect=(),
+        detect=(
+            _app(
+                darwin="/Applications/Claude.app",
+                win32="%LOCALAPPDATA%/AnthropicClaude",
+            ),
+        ),
         install_paths=(),
         status="planned",
         notes=(
             "Connected folders plus a skill. "
             "TODO: match the existing Claude desktop setup exactly. "
             "Details are not filled in until they are provided. "
-            "The Code side of the Claude desktop app is Claude Code, not this entry."
+            "The Code side of the Claude desktop app is Claude Code, not this entry. "
+            "TODO: detection paths per OS are not confirmed."
         ),
         helper_note="answers from connected folders",
     ),
@@ -197,14 +221,14 @@ TOOLS: tuple[Tool, ...] = (
         join_method="gemini_md",
         hooks="todo",
         read_only_lock="todo",
-        detect=(),
+        detect=(_home_dir(".gemini"), _command("gemini")),
         install_paths=(
             _skill("user", ".gemini/skills/agent-coop/SKILL.md"),
-            _skill("project", ".gemini/skills/agent-coop/SKILL.md"),
             _section("gemini_md", "GEMINI.md"),
         ),
         status="untested",
         notes=(
+            "User skill plus a project GEMINI.md section. "
             "Runs on this computer and calls a model in Google's cloud. "
             "TODO: Gemini CLI hook format is not verified, so hooks are not installed. "
             "TODO: detection paths per OS are not confirmed."
@@ -240,12 +264,13 @@ TOOLS: tuple[Tool, ...] = (
         join_method="agents_md",
         hooks="todo",
         read_only_lock="todo",
-        detect=(),
+        detect=(_command("opencode"),),
         install_paths=(_section("agents_md", "AGENTS.md"),),
         status="planned",
         notes=(
             "Can use a local model through Ollama or LM Studio. "
-            "TODO: verify the skill path. Until then, install uses an AGENTS.md section."
+            "TODO: verify the skill path. Until then, install uses an AGENTS.md section. "
+            "TODO: detection paths per OS are not confirmed."
         ),
         helper_note="local coding help",
     ),
@@ -275,12 +300,13 @@ TOOLS: tuple[Tool, ...] = (
         join_method="agents_md",
         hooks="todo",
         read_only_lock="todo",
-        detect=(),
+        detect=(_command("goose"),),
         install_paths=(_section("agents_md", "AGENTS.md"),),
         status="planned",
         notes=(
             "A fully local driver can use an Ollama model. "
-            "TODO: verify the skill path. Status planned."
+            "TODO: verify the skill path. Status planned. "
+            "TODO: detection paths per OS are not confirmed."
         ),
         helper_note="local coding help",
     ),
@@ -396,6 +422,34 @@ def supported_tools() -> tuple[Tool, ...]:
 def get_tool(key: str) -> Tool:
     """Return one tool entry or raise KeyError."""
     return _BY_KEY[key]
+
+
+def find_tool(name: str) -> Tool | None:
+    """Resolve a user-facing tool name to a Tool, or None if unknown."""
+    if not name:
+        return None
+    lowered = name.casefold()
+    for tool in TOOLS:
+        if tool.key.casefold() == lowered:
+            return tool
+    dashed = lowered.replace("_", "-")
+    for tool in TOOLS:
+        if tool.key.casefold() == dashed:
+            return tool
+    for tool in TOOLS:
+        if tool.default_agent_name.casefold() == lowered:
+            return tool
+    for tool in TOOLS:
+        if tool.display.casefold() == lowered:
+            return tool
+    return None
+
+
+def tool_choices_text() -> str:
+    """Return Display (key) pairs for unknown-name errors."""
+    return ", ".join(
+        tool.display + " (" + tool.key + ")" for tool in supported_tools()
+    )
 
 
 def tool_can_drive(key: str) -> bool:

@@ -12,6 +12,7 @@ from pathlib import Path
 
 from agentcoop.errors import CoopError
 from agentcoop.paths import (
+    agentcoop_command,
     archive_dir,
     ensure_agent_dirs,
     files_dir,
@@ -113,6 +114,7 @@ class InboxReport:
     messages: list[CheckedMessage]
     issues: list[ReadIssue]
     integrity_ok: bool
+    board_path: str = ""
 
 
 def utc_now(now: datetime | None = None) -> datetime:
@@ -319,9 +321,10 @@ def send(
     re: str | None = None,
     attachments: list[str] | None = None,
     needs_reply: bool = False,
+    allow_secret: bool = False,
     now: datetime | None = None,
 ) -> tuple[str, str | None]:
-    """Write a message and return its id plus an optional secret warning."""
+    """Write a message and return its id (second value always None)."""
     require_board(board)
     validate_agent_name(sender)
     validate_agent_name(recipient)
@@ -331,6 +334,12 @@ def send(
         )
     if len(subject) > 120:
         raise CoopError("The subject is too long. Keep it to 120 characters.")
+    if not allow_secret and (secret_warning(subject) or secret_warning(body)):
+        raise CoopError(
+            "This message looks like it contains a password or API key, so it was "
+            "not sent. Remove the secret and send again. If this is a false alarm, "
+            "add --allow-secret."
+        )
     config = load_config(board)
     limit = int(config.get("body_limit_bytes") or 16384)
     if len(body.encode("utf-8")) > limit:
@@ -349,7 +358,6 @@ def send(
             project=project,
             allowed_roots=roots,
         )
-    warning = secret_warning(body)
     moment = utc_now(now)
     ensure_agent_dirs(board, project, sender)
     ensure_agent_dirs(board, project, recipient)
@@ -379,7 +387,7 @@ def send(
             write_message_file(sent_dir(board, project, sender), payload)
         except FileExistsError:
             pass
-        return mid, warning
+        return mid, None
     raise CoopError("Could not pick a unique message id. Try again.") from last_error
 
 
@@ -446,6 +454,7 @@ def check_inbox(
         messages=checked,
         issues=issues,
         integrity_ok=integrity_ok(board),
+        board_path=str(board),
     )
 
 
@@ -554,6 +563,7 @@ def log_messages(board: Path, project: str) -> list[Message]:
 
 def render_check(report: InboxReport, *, summary: bool = False) -> str:
     """Render check output. Summary prints one line, or nothing when idle."""
+    cmd = agentcoop_command(Path(report.board_path)) if report.board_path else "agentcoop"
     lines: list[str] = []
     if not report.integrity_ok:
         lines.append(INTEGRITY_WARNING)
@@ -583,7 +593,9 @@ def render_check(report: InboxReport, *, summary: bool = False) -> str:
             + report.project
             + " (from "
             + ", ".join(senders)
-            + "). Run: agentcoop check --as "
+            + "). Run: "
+            + cmd
+            + " check --as "
             + report.agent
         )
     if report.role == "driver":
@@ -651,6 +663,11 @@ def render_check(report: InboxReport, *, summary: bool = False) -> str:
     if visible:
         ids = " ".join(item.message.id for item in visible)
         lines.append(
-            "When finished, run: agentcoop done --as " + report.agent + " " + ids
+            "When finished, run: "
+            + cmd
+            + " done --as "
+            + report.agent
+            + " "
+            + ids
         )
     return "\n".join(lines).rstrip() + ("\n" if lines else "")

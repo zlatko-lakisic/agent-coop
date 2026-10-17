@@ -10,7 +10,15 @@ from agentcoop.core import load_message, log_messages, new_messages, protocol_vi
 from agentcoop.detect import probe_json
 from agentcoop.install import file_sha256
 from agentcoop.paths import inbox_msgs, is_same_or_inside
-from agentcoop.projects import board_is_ready, integrity_ok, load_agents, load_config, load_projects, role_of
+from agentcoop.projects import (
+    INTEGRITY_WARNING,
+    board_is_ready,
+    integrity_ok,
+    load_agents,
+    load_config,
+    load_projects,
+    role_of,
+)
 from agentcoop.tools import get_tool, tool_can_drive
 
 INBOX_LIMIT = 500
@@ -37,13 +45,7 @@ def run_doctor(board: Path, project: str | None = None) -> list[DoctorItem]:
     if integrity_ok(board):
         items.append(DoctorItem(True, "projects.json matches the saved check."))
     else:
-        items.append(
-            DoctorItem(
-                False,
-                "projects.json was changed outside agentcoop. Roles may not be what you set. "
-                "Run: agentcoop doctor",
-            )
-        )
+        items.append(DoctorItem(False, INTEGRITY_WARNING))
     agents = load_agents(board)
     projects = load_projects(board)
     config = load_config(board)
@@ -52,6 +54,7 @@ def run_doctor(board: Path, project: str | None = None) -> list[DoctorItem]:
         if record.get("tool") == "runner":
             items.append(_runner_check(record))
     items.extend(_project_checks(projects, agents, config))
+    items.extend(_duplicate_instruction_checks(agents, projects))
     items.extend(_message_checks(board, projects))
     if project:
         items.append(_hello_check(board, projects, project))
@@ -211,7 +214,76 @@ def _project_checks(projects: dict, agents: dict, config: dict) -> list[DoctorIt
                     + " folder is not on the allowed list, so attachments from it will be blocked.",
                 )
             )
+        items.extend(_driver_files_check(name, project, known))
     return items
+
+
+def _duplicate_instruction_checks(agents: dict, projects: dict) -> list[DoctorItem]:
+    """Report when an agent has both a user and a project copy of the same kind."""
+    items: list[DoctorItem] = []
+    for agent_name, record in (agents.get("agents") or {}).items():
+        user_by_kind: dict[str, str] = {}
+        for entry in record.get("installed") or []:
+            kind = entry.get("kind")
+            if kind in ("skill", "hook") and entry.get("path"):
+                user_by_kind[kind] = entry["path"]
+        for project_name, project in (projects.get("projects") or {}).items():
+            project_by_kind: dict[str, str] = {}
+            for entry in project.get("installed") or []:
+                if entry.get("agent") != agent_name:
+                    continue
+                kind = entry.get("kind")
+                if kind in ("skill", "hook") and entry.get("path"):
+                    project_by_kind[kind] = entry["path"]
+            for kind in ("skill", "hook"):
+                if kind in user_by_kind and kind in project_by_kind:
+                    items.append(
+                        DoctorItem(
+                            False,
+                            agent_name
+                            + " has two copies of the Agent Co-op instructions: "
+                            + user_by_kind[kind]
+                            + " and "
+                            + project_by_kind[kind]
+                            + ". Run: agentcoop project repair "
+                            + project_name,
+                        )
+                    )
+    return items
+
+
+def _driver_files_check(name: str, project: dict, known: dict) -> list[DoctorItem]:
+    """Report when the driver's project files are missing or not in the manifest."""
+    driver = project.get("driver", "")
+    if driver not in known:
+        return []
+    tool_key = known[driver].get("tool", "")
+    if tool_key == "runner":
+        return []
+    try:
+        tool = get_tool(tool_key)
+    except KeyError:
+        return []
+    root = Path(project.get("path", ""))
+    installed = {entry.get("path") for entry in (project.get("installed") or [])}
+    for item in tool.install_paths:
+        if item["scope"] != "project":
+            continue
+        if item["kind"] == "hook" and tool.hooks != "supported":
+            continue
+        path = root / item["path"]
+        if not path.is_file() or str(path) not in installed:
+            return [
+                DoctorItem(
+                    False,
+                    name
+                    + ": "
+                    + driver
+                    + " is missing its project files. Run: agentcoop project repair "
+                    + name,
+                )
+            ]
+    return []
 
 
 def _message_checks(board: Path, projects: dict) -> list[DoctorItem]:

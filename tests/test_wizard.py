@@ -77,14 +77,14 @@ class WizardTests(unittest.TestCase):
             finally:
                 os.chdir(previous)
             self.assertFalse(rule.exists())
-            self.assertTrue((folder / ".claude" / "skills" / "agent-coop" / "SKILL.md").is_file())
+            self.assertFalse((folder / ".claude" / "skills").exists())
+            self.assertTrue((env.home / ".claude" / "skills" / "agent-coop" / "SKILL.md").is_file())
             inbox = env.board / "projects" / "frontend" / "inbox" / "claude_code" / "msgs"
             bodies = [json.loads(path.read_text(encoding="utf-8"))["body"] for path in inbox.glob("*.json")]
             self.assertTrue(any("Driver changed to claude_code" in body for body in bodies))
             self.assertEqual(main(["project", "remove", "frontend", "--yes"]), 0)
             self.assertFalse((env.board / "projects" / "frontend").exists())
             self.assertTrue(any(Path(env.board / "removed").iterdir()))
-            self.assertFalse((folder / ".claude" / "skills" / "agent-coop" / "SKILL.md").exists())
 
 
 if __name__ == "__main__":

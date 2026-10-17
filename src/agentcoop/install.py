@@ -9,6 +9,7 @@ import shutil
 import sys
 import zipapp
 from datetime import datetime, timezone
+from importlib import resources
 from pathlib import Path
 
 from agentcoop import __version__
@@ -37,12 +38,18 @@ _KIND_TEMPLATE = {
 
 
 def read_template(name: str) -> str:
-    """Load a template shipped inside the package."""
+    """Load a template shipped inside the package.
+
+    Works from source, from a zipapp, and from a PyInstaller binary.
+    """
     if getattr(sys, "frozen", False):
         base = Path(getattr(sys, "_MEIPASS")) / "templates"
         return (base / name).read_text(encoding="utf-8")
-    path = Path(__file__).resolve().parent / "templates" / name
-    return path.read_text(encoding="utf-8")
+    node = resources.files("agentcoop").joinpath("templates")
+    for part in name.split("/"):
+        node = node.joinpath(part)
+    return node.read_text(encoding="utf-8")
+
 
 
 def render_template(name: str, *, agent_name: str, board: Path) -> str:
@@ -228,6 +235,45 @@ def connect_agent(
     return name
 
 
+def preview_project_files(board: Path, agent_name: str, project_path: Path) -> list[dict]:
+    """Render project-scoped files into memory. No files are written.
+
+    Raises if a template cannot be read, so project add can fail before saving.
+    """
+    agents = load_agents(board)
+    agent = agents["agents"].get(agent_name)
+    if agent is None:
+        raise CoopError(agent_name + " is not connected yet. Run: agentcoop connect")
+    if agent["tool"] == "runner":
+        return []
+    tool = get_tool(agent["tool"])
+    planned: list[dict] = []
+    for item in tool.install_paths:
+        if item["scope"] != "project":
+            continue
+        if item["kind"] == "hook" and tool.hooks != "supported":
+            continue
+        kind = item["kind"]
+        path = project_path / item["path"]
+        if kind == "hook":
+            claude_code_hooks(board, agent_name)
+            planned.append({"path": str(path), "kind": kind, "relative": item["path"]})
+            continue
+        template_name = _KIND_TEMPLATE.get(kind)
+        if template_name is None:
+            continue
+        content = render_template(template_name, agent_name=agent_name, board=board)
+        planned.append(
+            {
+                "path": str(path),
+                "kind": kind,
+                "relative": item["path"],
+                "content": content,
+            }
+        )
+    return planned
+
+
 def install_project_files(
     board: Path,
     project_name: str,
@@ -273,6 +319,113 @@ def install_project_files(
     return written
 
 
+def rollback_project_add(board: Path, name: str) -> None:
+    """Undo a half-finished project add: installed files, record, and board folder."""
+    projects = load_projects(board)
+    project = projects["projects"].get(name)
+    if project is not None:
+        for entry in list(project.get("installed") or []):
+            undo_entry(entry)
+        projects["projects"].pop(name, None)
+        save_projects(board, projects)
+    board_dir = board / "projects" / name
+    if board_dir.exists():
+        shutil.rmtree(board_dir)
+
+
+def repair_project_files(board: Path, project_name: str) -> list[str]:
+    """Reinstall missing driver project files. Returns absolute paths written."""
+    from agentcoop.projects import require_integrity
+
+    require_integrity(board)
+    pruned = prune_out_of_scope_project_files(board, project_name)
+    projects = load_projects(board)
+    project = projects["projects"].get(project_name)
+    if project is None:
+        raise CoopError("There is no project named " + project_name + ".")
+    driver = project.get("driver", "")
+    before = {entry.get("path") for entry in (project.get("installed") or [])}
+    root = Path(project["path"])
+    agents = load_agents(board)
+    agent = agents["agents"].get(driver)
+    if agent is None:
+        raise CoopError(driver + " is not connected yet. Run: agentcoop connect")
+    if agent["tool"] == "runner":
+        return pruned
+    tool = get_tool(agent["tool"])
+    to_fix: list[str] = []
+    for item in tool.install_paths:
+        if item["scope"] != "project":
+            continue
+        if item["kind"] == "hook" and tool.hooks != "supported":
+            continue
+        path = root / item["path"]
+        in_manifest = str(path) in before
+        if not path.is_file() or not in_manifest:
+            to_fix.append(str(path))
+    if not to_fix:
+        return pruned
+    install_project_files(board, project_name, driver, yes=False, gitignore=False)
+    repaired = [path for path in to_fix if Path(path).is_file()]
+    return pruned + repaired
+
+
+def prune_out_of_scope_project_files(board: Path, project_name: str | None = None) -> list[str]:
+    """Remove project installs that are no longer in the capability table.
+
+    Only removes files that are in the manifest and still match the saved hash.
+    """
+    from agentcoop.projects import require_integrity
+
+    require_integrity(board)
+    projects = load_projects(board)
+    agents = load_agents(board)
+    names = [project_name] if project_name else list((projects.get("projects") or {}).keys())
+    removed: list[str] = []
+    changed = False
+    for name in names:
+        project = (projects.get("projects") or {}).get(name)
+        if project is None:
+            continue
+        root = Path(project.get("path", ""))
+        kept = []
+        for entry in list(project.get("installed") or []):
+            agent_name = entry.get("agent", "")
+            agent = (agents.get("agents") or {}).get(agent_name) or {}
+            tool_key = agent.get("tool", "")
+            if tool_key in ("", "runner"):
+                kept.append(entry)
+                continue
+            try:
+                tool = get_tool(tool_key)
+            except KeyError:
+                kept.append(entry)
+                continue
+            allowed = {
+                str(root / item["path"])
+                for item in tool.install_paths
+                if item["scope"] == "project"
+                and not (item["kind"] == "hook" and tool.hooks != "supported")
+            }
+            path = entry.get("path", "")
+            if path in allowed or entry.get("kind") == "gitignore":
+                kept.append(entry)
+                continue
+            path_obj = Path(path)
+            if path_obj.is_file() and entry.get("sha256") and file_sha256(path_obj) != entry.get("sha256"):
+                kept.append(entry)
+                continue
+            undo_entry(entry)
+            removed.append(path)
+            changed = True
+        if kept != list(project.get("installed") or []):
+            project["installed"] = kept
+            changed = True
+    if changed:
+        save_projects(board, projects)
+    return removed
+
+
 def disconnect_agent(board: Path, name: str) -> None:
     """Remove what connect installed and unregister the agent."""
     projects = load_projects(board)
@@ -308,6 +461,9 @@ def disconnect_agent(board: Path, name: str) -> None:
 
 def remove_project_files(board: Path, project_name: str) -> None:
     """Undo files installed for a project, then drop the project entry."""
+    from agentcoop.projects import require_integrity
+
+    require_integrity(board)
     projects = load_projects(board)
     project = projects["projects"].get(project_name)
     if project is None:

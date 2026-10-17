@@ -80,6 +80,9 @@ label { display: block; margin: 0.45rem 0; }
   </div>
 </header>
 <main class="layout">
+  <section style="grid-column: 1 / -1">
+    <div class="card warn" id="banner" hidden></div>
+  </section>
   <section>
     <div class="card">
       <h2>Projects</h2>
@@ -129,6 +132,14 @@ async function load() {
 }
 
 function draw() {
+  const banner = document.getElementById("banner");
+  if (state.banner) {
+    banner.hidden = false;
+    banner.textContent = state.banner;
+  } else {
+    banner.hidden = true;
+    banner.textContent = "";
+  }
   const list = document.getElementById("projects");
   list.innerHTML = "";
   state.projects.forEach(function (project) {

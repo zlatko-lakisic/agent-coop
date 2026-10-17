@@ -12,6 +12,6 @@ Read-only lock: todo
 
 Status: untested
 
-Runs on this computer and calls a model in Google's cloud. TODO: Gemini CLI hook format is not verified, so hooks are not installed. TODO: detection paths per OS are not confirmed.
+User skill plus a project GEMINI.md section. Runs on this computer and calls a model in Google's cloud. TODO: Gemini CLI hook format is not verified, so hooks are not installed. TODO: detection paths per OS are not confirmed.
 
 See AGENTS-SUPPORT.md for the full table. Open questions there are not guesses.

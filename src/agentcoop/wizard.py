@@ -14,7 +14,10 @@ from agentcoop.errors import CoopError
 from agentcoop.install import (
     connect_agent,
     install_project_files,
+    preview_project_files,
     remove_project_files,
+    repair_project_files,
+    rollback_project_add,
     stage_runtime,
     undo_entry,
     write_board_readme,
@@ -31,7 +34,14 @@ from agentcoop.projects import (
     set_driver,
     validate_project_name,
 )
-from agentcoop.tools import get_tool, sanitize_agent_name, supported_tools, tool_can_drive
+from agentcoop.tools import (
+    find_tool,
+    get_tool,
+    sanitize_agent_name,
+    supported_tools,
+    tool_can_drive,
+    tool_choices_text,
+)
 
 
 class Prompter:
@@ -90,6 +100,9 @@ def setup_board(
         tools = _ask_tools(prompter)
     for tool_key in tools:
         names.append(_connect_named(board, tool_key, yes=yes, model=model, prompter=prompter))
+    from agentcoop.install import prune_out_of_scope_project_files
+
+    prune_out_of_scope_project_files(board)
     project = None
     if prompter is not None and prompter.yes("Do you want to add a project now?", default=False):
         project = add_project_flow(prompter=prompter, yes=yes)
@@ -133,11 +146,12 @@ def _connect_named(
     api: str | None = None,
     prompter: Prompter | None = None,
 ) -> str:
-    try:
-        tool = get_tool(tool_key)
-    except KeyError as exc:
-        known = ", ".join(item.key for item in supported_tools())
-        raise CoopError("Unknown tool " + tool_key + ". Known tools: " + known) from exc
+    tool = find_tool(tool_key)
+    if tool is None:
+        raise CoopError(
+            "Unknown agent " + tool_key + ". You can use: " + tool_choices_text()
+        )
+    tool_key = tool.key
     runner = None
     display = None
     if tool_key in ("ollama", "lmstudio", "runner"):
@@ -204,8 +218,15 @@ def add_project_flow(
     helper_map = dict(helpers or {})
     if prompter is not None and helpers is None:
         helper_map = _ask_helpers(prompter, agents, driver)
+    preview_project_files(board, driver, folder)
     add_project(board, chosen, folder, driver, helper_map)
-    install_project_files(board, chosen, driver, yes=yes, gitignore=gitignore)
+    try:
+        install_project_files(board, chosen, driver, yes=yes, gitignore=gitignore)
+    except Exception as exc:
+        rollback_project_add(board, chosen)
+        raise CoopError(
+            "Could not finish adding " + chosen + ". Nothing was changed. " + str(exc)
+        ) from exc
     lines = [
         "Project " + chosen + " is ready.",
         "Folder: " + str(folder),
@@ -290,6 +311,15 @@ def helper_remove(project_name: str, agent: str) -> str:
     save_projects(board, projects)
     remove_helper(board, project_name, agent)
     return agent + " is no longer a helper on " + project_name + "."
+
+
+def project_repair(project_name: str) -> str:
+    """Reinstall missing driver project files."""
+    board = board_root()
+    written = repair_project_files(board, project_name)
+    if not written:
+        return "Nothing to repair."
+    return "Repaired:\n" + "\n".join("  " + path for path in written)
 
 
 def project_remove(project_name: str, *, yes: bool) -> str:
@@ -407,11 +437,17 @@ def _default_folder() -> Path:
 def _found_sentence(found: list[dict]) -> str:
     if not found:
         return (
-            "Found no local model servers. App detection paths are still TODO, "
-            "so choose agents by name."
+            "Found no agents automatically. Connect one by name. "
+            "Example: agentcoop connect claude-code"
         )
-    names = ", ".join(item["display"] for item in found)
-    return "Found: " + names
+    parts = []
+    for item in found:
+        reason = item.get("reason") or ""
+        if reason:
+            parts.append(item["display"] + " (" + reason + ")")
+        else:
+            parts.append(item["display"])
+    return "Found: " + ", ".join(parts)
 
 
 def _ask_tools(prompter: Prompter) -> list[str]:

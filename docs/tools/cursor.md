@@ -12,6 +12,6 @@ Read-only lock: todo
 
 Status: untested
 
-Project rule and project skill only. TODO: hook format for Cursor is not verified, so hooks are not installed. TODO: detection paths per OS are not confirmed.
+Project rule only (loads every turn). TODO: hook format for Cursor is not verified, so hooks are not installed. TODO: detection paths per OS are not confirmed.
 
 See AGENTS-SUPPORT.md for the full table. Open questions there are not guesses.

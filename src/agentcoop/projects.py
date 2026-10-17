@@ -18,7 +18,12 @@ AGENT_NAME_RE = re.compile(r"^[a-z][a-z0-9_]{1,31}$")
 
 INTEGRITY_WARNING = (
     "projects.json was changed outside agentcoop. Roles may not be what you set. "
-    "Run: agentcoop doctor"
+    "Run: agentcoop project review"
+)
+
+INTEGRITY_PAUSED = (
+    "projects.json was changed outside agentcoop, so role changes are paused. "
+    "Run: agentcoop project review"
 )
 
 _EMPTY_PROJECTS = {"version": 1, "projects": {}}
@@ -85,6 +90,13 @@ def require_board(board: Path) -> None:
     """Raise exit code 3 when setup has not been run."""
     if not board_is_ready(board):
         raise CoopError("Agent Co-op is not set up yet. Run: agentcoop setup", code=3)
+    ensure_good_copy(board)
+
+
+def require_integrity(board: Path) -> None:
+    """Raise exit code 5 when projects.json was changed outside agentcoop."""
+    if not integrity_ok(board):
+        raise CoopError(INTEGRITY_PAUSED, code=5)
 
 
 def init_board_files(board: Path) -> None:
@@ -141,13 +153,32 @@ def integrity_path(board: Path) -> Path:
     return board / ".state" / "projects.sha256"
 
 
+def good_copy_path(board: Path) -> Path:
+    """Return the last good copy of projects.json."""
+    return board / ".state" / "projects.good.json"
+
+
 def save_projects(board: Path, data: dict) -> None:
-    """Write projects.json and refresh its integrity hash."""
+    """Write projects.json, refresh its integrity hash, and keep a good copy."""
     raw = dump_json(data)
     (board / ".state").mkdir(parents=True, exist_ok=True)
     atomic_write_bytes(board / "projects.json", raw)
     digest = hashlib.sha256(raw).hexdigest() + "\n"
     atomic_write_bytes(integrity_path(board), digest.encode("ascii"))
+    atomic_write_bytes(good_copy_path(board), raw)
+
+
+def ensure_good_copy(board: Path) -> None:
+    """Create the good copy when the hash matches and the copy is missing."""
+    good = good_copy_path(board)
+    if good.is_file():
+        return
+    if not integrity_ok(board):
+        return
+    path = board / "projects.json"
+    if path.is_file():
+        (board / ".state").mkdir(parents=True, exist_ok=True)
+        atomic_write_bytes(good, path.read_bytes())
 
 
 def integrity_ok(board: Path) -> bool:
@@ -286,6 +317,7 @@ def add_project(
     helpers: dict[str, str],
 ) -> None:
     """Add a project and create its board folders."""
+    require_integrity(board)
     validate_project_name(name)
     agents = load_agents(board)
     record = {
@@ -352,6 +384,7 @@ def set_driver(board: Path, name: str, agent: str) -> str:
     The previous driver is no longer a member unless you add them as a helper.
     A helper who becomes the driver is removed from the helper list.
     """
+    require_integrity(board)
     projects = load_projects(board)
     project = _require_project(projects, name)
     previous = project["driver"]
@@ -368,6 +401,7 @@ def set_driver(board: Path, name: str, agent: str) -> str:
 
 def add_helper(board: Path, name: str, agent: str, note: str) -> None:
     """Add or update a helper note."""
+    require_integrity(board)
     projects = load_projects(board)
     project = _require_project(projects, name)
     if agent == project["driver"]:
@@ -383,6 +417,7 @@ def add_helper(board: Path, name: str, agent: str, note: str) -> None:
 
 def remove_helper(board: Path, name: str, agent: str) -> None:
     """Remove a helper from a project."""
+    require_integrity(board)
     projects = load_projects(board)
     project = _require_project(projects, name)
     helpers = dict(project.get("helpers") or {})

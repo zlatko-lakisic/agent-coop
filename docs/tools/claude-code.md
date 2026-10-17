@@ -12,6 +12,6 @@ Read-only lock: todo
 
 Status: untested
 
-SessionStart and UserPromptSubmit hooks run check --summary. TODO: exact permission keys for a read-only lock are not confirmed. TODO: detection paths per OS are not confirmed. The Code side of the Claude desktop app uses this entry.
+User skill and user hooks only. SessionStart and UserPromptSubmit run check --summary, which stays quiet outside projects. TODO: exact permission keys for a read-only lock are not confirmed. TODO: detection paths per OS are not confirmed. The Code side of the Claude desktop app uses this entry.
 
 See AGENTS-SUPPORT.md for the full table. Open questions there are not guesses.
