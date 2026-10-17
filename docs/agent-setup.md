@@ -6,7 +6,7 @@ Do not run the interactive form. You cannot answer its prompts. Use flags, and a
 
 1. Get the code. Clone `https://github.com/zlatko-lakisic/agent-coop`, or download the latest release binary for this operating system. From a checkout, run commands as `PYTHONPATH=src python3 -m agentcoop`.
 2. Run `agentcoop setup --detect --json` and read the result. Detection of desktop apps is still incomplete, so an empty `found` list is normal. You can still connect tools by name.
-3. Ask the user which agents to connect. Offer the names they actually have: Cursor (`cursor`), Claude Code (`claude-code`), Codex (`codex`), ChatGPT desktop Codex (`chatgpt-codex`), Gemini CLI (`gemini-cli`). For Ollama, ask which model, and suggest a vision model if they want screenshot review: `ollama pull llava`.
+3. Ask the user which agents to connect. Offer the names they actually have: Cursor (`cursor`, command `agent`), Claude Code (`claude-code`), Codex (`codex`), ChatGPT desktop Codex (`chatgpt-codex`), Gemini CLI (`gemini-cli`). Ask which model each background tool should use. For Ollama, suggest a vision model if they want screenshot review: `ollama pull llava`. Ask whether to check the board every 5 minutes.
 4. Run `agentcoop setup --connect cursor,claude-code --yes` with the tools they chose. For a local model, run `agentcoop connect ollama --model llava --as ollama_llava --yes`.
 5. Ask if they want a project now. If yes, ask for the folder, the project name, which connected agent writes the files, and a short note for each helper. Then run, for example:
 

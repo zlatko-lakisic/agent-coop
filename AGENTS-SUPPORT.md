@@ -16,7 +16,7 @@ Web chat cannot join, because it cannot read files on this computer.
 - Background runs: yes
 - Status: untested
 - Suggested helper note: edits the project and asks helpers
-- Notes: Project rule only (loads every turn). TODO: hook format for Cursor is not verified, so hooks are not installed. TODO: detection paths per OS are not confirmed. Background helper runs use cursor-agent -p --mode ask (read only). Flags confirmed at https://cursor.com/docs/cli/reference/parameters : --print, --model, --workspace, --trust, --force, --mode ask. TODO: driver runs are not scheduled. Print mode without --force was not confirmed to run allowed actions with no prompt. cursor-agent is not installed on the machine that checked this, and the permissions page says to use allow, deny, and --force to control what runs without prompts. https://cursor.com/docs/cli/reference/permissions
+- Notes: Project rule only (loads every turn). TODO: hook format for Cursor is not verified, so hooks are not installed. TODO: detection paths per OS are not confirmed. The command is agent, installed into ~/.local/bin. cursor-agent is the older name. https://cursor.com/docs/cli/installation Flags confirmed at https://cursor.com/docs/cli/reference/parameters : -p, --trust, --workspace, --model, --mode ask. Scheduled runs never pass --force, -f, or --yolo. Before a driver run, Agent Co-op writes <worktree>/.cursor/cli.json so the agent may read broadly, write only the worktree and the board, and run git, agentcoop, and the commands in driver_shell_allow. Before a helper run, it writes <board>/projects/<project>/.cursor/cli.json with Read(**) allowed and Write(**) and Shell(*) denied. Permissions: https://cursor.com/docs/cli/reference/permissions A person's ~/.cursor/cli-config.json may also hold permissions. How the two files combine is not documented, so keep broad allow rules out of the global file. Sign in with agent login. https://cursor.com/docs/cli/reference/parameters
 
 ## Claude Code
 
@@ -29,7 +29,7 @@ Web chat cannot join, because it cannot read files on this computer.
 - Background runs: yes
 - Status: untested
 - Suggested helper note: reviews code
-- Notes: User skill and user hooks only. SessionStart and UserPromptSubmit run check --summary, which stays quiet outside projects. TODO: exact permission keys for a read-only lock are not confirmed. TODO: detection paths per OS are not confirmed. The Code side of the Claude desktop app uses this entry. Background flags confirmed at https://code.claude.com/docs/en/cli-reference : -p, --model, --tools, --permission-mode plan and dontAsk, --add-dir, --allowedTools, --disallowedTools. Helper runs are plan mode with Read, Grep, and Glob only. Driver runs use dontAsk and --add-dir for the board.
+- Notes: User skill and user hooks only. SessionStart and UserPromptSubmit run check --summary, which stays quiet outside projects. TODO: exact permission keys for a read-only lock are not confirmed. TODO: detection paths per OS are not confirmed. The Code side of the Claude desktop app uses this entry. Sign in with claude auth login (https://code.claude.com/docs/en/cli-reference). Background flags confirmed at https://code.claude.com/docs/en/cli-reference : -p, --model, --tools, --permission-mode plan and dontAsk, --add-dir, --allowedTools, --disallowedTools. Helper runs are plan mode with Read, Grep, and Glob only. Driver runs use dontAsk and --add-dir for the board.
 
 ## Codex CLI
 
@@ -42,7 +42,7 @@ Web chat cannot join, because it cannot read files on this computer.
 - Background runs: yes
 - Status: untested
 - Suggested helper note: answers coding questions
-- Notes: User skill only. TODO: Codex hook format is not verified, so hooks are not installed. TODO: exact sandbox config keys for a read-only lock are not confirmed. TODO: detection paths per OS are not confirmed. Background flags confirmed at https://developers.openai.com/codex/cli/reference : exec, --sandbox read-only and workspace-write, --cd, --skip-git-repo-check, --model, --ask-for-approval never, --add-dir. workspace-write has network off unless sandbox_workspace_write.network_access is set (https://github.com/openai/codex/blob/13c42a077c88a0d04ae7680a9891d2daf4558577/docs/sandbox.md).
+- Notes: User skill only. TODO: Codex hook format is not verified, so hooks are not installed. TODO: exact sandbox config keys for a read-only lock are not confirmed. TODO: detection paths per OS are not confirmed. Sign in with codex login (https://developers.openai.com/codex/cli/reference). Background flags confirmed at https://developers.openai.com/codex/cli/reference : exec, --sandbox read-only and workspace-write, --cd, --skip-git-repo-check, --model, --ask-for-approval never, --add-dir. workspace-write has network off unless sandbox_workspace_write.network_access is set (https://github.com/openai/codex/blob/13c42a077c88a0d04ae7680a9891d2daf4558577/docs/sandbox.md).
 
 ## ChatGPT desktop (Codex)
 
@@ -94,7 +94,7 @@ Web chat cannot join, because it cannot read files on this computer.
 - Background runs: yes
 - Status: untested
 - Suggested helper note: second opinion on a plan
-- Notes: User skill plus a project GEMINI.md section. Runs on this computer and calls a model in Google's cloud. TODO: Gemini CLI hook format is not verified, so hooks are not installed. TODO: detection paths per OS are not confirmed. Helper flag confirmed at https://google-gemini.github.io/gemini-cli/docs/cli/headless.html : -p, --model, --approval-mode plan (read only). TODO: driver runs are not scheduled. --approval-mode auto_edit still asks before shell commands, and no confirmed flag adds the board as a writable folder.
+- Notes: User skill plus a project GEMINI.md section. Runs on this computer and calls a model in Google's cloud. TODO: Gemini CLI hook format is not verified, so hooks are not installed. TODO: detection paths per OS are not confirmed. Sign in by running gemini and choosing Login with Google (https://google-gemini.github.io/gemini-cli/docs/get-started/authentication.html). Helper flag confirmed at https://google-gemini.github.io/gemini-cli/docs/cli/headless.html : -p, --model, --approval-mode plan (read only). TODO: driver runs are not scheduled. --approval-mode auto_edit still asks before shell commands, and no confirmed flag adds the board as a writable folder.
 
 ## GitHub Copilot
 

@@ -1,0 +1,8 @@
+# Frozen from a clean venv: pip install pyinstaller && pip freeze
+# TODO: hash pinning is still to do.
+altgraph==0.17.5
+macholib==1.16.4
+packaging==26.3
+pyinstaller==6.22.3
+pyinstaller-hooks-contrib==2026.8
+setuptools==84.0.0

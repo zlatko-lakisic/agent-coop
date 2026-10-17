@@ -6,7 +6,7 @@ import io
 import threading
 import time
 import unittest
-from contextlib import redirect_stdout
+from contextlib import redirect_stderr, redirect_stdout
 from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 
@@ -166,7 +166,8 @@ class ProgressTests(unittest.TestCase):
                 1,
             )
             note = io.StringIO()
-            with redirect_stdout(note), patch("agentcoop.rounds.spawn_round") as started:
+            err = io.StringIO()
+            with redirect_stdout(note), redirect_stderr(err), patch("agentcoop.rounds.spawn_round") as started:
                 self.assertEqual(
                     main(
                         [
@@ -187,7 +188,9 @@ class ProgressTests(unittest.TestCase):
                     0,
                 )
             started.assert_not_called()
-            self.assertIn("The schedule is off", note.getvalue())
+            self.assertEqual(note.getvalue(), note.getvalue().strip() + "\n")
+            self.assertNotIn("\n", note.getvalue().strip())
+            self.assertIn("The schedule is off", err.getvalue())
             both = io.StringIO()
             with redirect_stdout(both):
                 self.assertEqual(

@@ -34,6 +34,14 @@ Release binaries are not signed or notarized yet. That is a TODO. After Gatekeep
 
 Run `agentcoop archive --as NAME`. Handled messages older than 30 days move out of the inbox. `agentcoop log` still shows them.
 
+## An agent is not signed in
+
+`agentcoop status` and `agentcoop doctor` name the command. For Cursor, run `agent login`. Then check the board again.
+
+## There is no scheduler
+
+`agentcoop start` exits if this computer has neither a user scheduler nor cron. Install cron, or run the printed `agentcoop tick` command every 5 minutes some other way.
+
 ## Two agents wrote at once
 
 Message files are separate, so two sends do not share one inbox file. If a bare-mode agent rewrites a whole file by hand, it can still clobber a message. Prefer `agentcoop send`.

@@ -34,6 +34,7 @@ class Tool:
     # Placeholders: {cli} {prompt} {cwd} {model} {model_flag} {board_cmd} {project_path}
     headless: object = "none"
     cli_names: tuple[str, ...] = ()
+    login_hint: str = ""
 
     def __post_init__(self) -> None:
         if self.key == "cursor" or self.join_method in ("agents_md", "gemini_md"):
@@ -81,7 +82,7 @@ TOOLS: tuple[Tool, ...] = (
         read_only_lock="todo",
         detect=(
             _home_dir(".cursor"),
-            _command("cursor"),
+            _command("agent"),
             _app(
                 darwin="/Applications/Cursor.app",
                 win32="%LOCALAPPDATA%/Programs/cursor/Cursor.exe",
@@ -93,36 +94,46 @@ TOOLS: tuple[Tool, ...] = (
             "Project rule only (loads every turn). "
             "TODO: hook format for Cursor is not verified, so hooks are not installed. "
             "TODO: detection paths per OS are not confirmed. "
-            "Background helper runs use cursor-agent -p --mode ask (read only). "
+            "The command is agent, installed into ~/.local/bin. cursor-agent is the older name. "
+            "https://cursor.com/docs/cli/installation "
             "Flags confirmed at https://cursor.com/docs/cli/reference/parameters : "
-            "--print, --model, --workspace, --trust, --force, --mode ask. "
-            "TODO: driver runs are not scheduled. Print mode without --force was not "
-            "confirmed to run allowed actions with no prompt. cursor-agent is not installed "
-            "on the machine that checked this, and the permissions page says to use allow, "
-            "deny, and --force to control what runs without prompts. "
-            "https://cursor.com/docs/cli/reference/permissions"
+            "-p, --trust, --workspace, --model, --mode ask. "
+            "Scheduled runs never pass --force, -f, or --yolo. "
+            "Before a driver run, Agent Co-op writes <worktree>/.cursor/cli.json so the agent "
+            "may read broadly, write only the worktree and the board, and run git, agentcoop, "
+            "and the commands in driver_shell_allow. "
+            "Before a helper run, it writes <board>/projects/<project>/.cursor/cli.json with "
+            "Read(**) allowed and Write(**) and Shell(*) denied. "
+            "Permissions: https://cursor.com/docs/cli/reference/permissions "
+            "A person's ~/.cursor/cli-config.json may also hold permissions. How the two files "
+            "combine is not documented, so keep broad allow rules out of the global file. "
+            "Sign in with agent login. https://cursor.com/docs/cli/reference/parameters"
         ),
         helper_note="edits the project and asks helpers",
         headless={
             "helper": [
                 "{cli}",
                 "-p",
-                "{prompt}",
+                "--trust",
                 "--workspace",
                 "{cwd}",
                 "--mode",
                 "ask",
-                "--trust",
                 "{model_flag}",
+                "{prompt}",
             ],
-            "driver": "todo",
-            "driver_todo": (
-                "Cursor cannot be scheduled as the driver yet, because its command-line agent "
-                "cannot limit writes to the project copy and the board without asking. "
-                "It answers when you open it. Claude Code or Codex can be the driver for scheduled runs."
-            ),
+            "driver": [
+                "{cli}",
+                "-p",
+                "--trust",
+                "--workspace",
+                "{cwd}",
+                "{model_flag}",
+                "{prompt}",
+            ],
         },
-        cli_names=("cursor-agent",),
+        cli_names=("agent", "cursor-agent"),
+        login_hint="agent login",
     ),
     Tool(
         key="claude-code",
@@ -146,6 +157,7 @@ TOOLS: tuple[Tool, ...] = (
             "TODO: exact permission keys for a read-only lock are not confirmed. "
             "TODO: detection paths per OS are not confirmed. "
             "The Code side of the Claude desktop app uses this entry. "
+            "Sign in with claude auth login (https://code.claude.com/docs/en/cli-reference). "
             "Background flags confirmed at https://code.claude.com/docs/en/cli-reference : "
             "-p, --model, --tools, --permission-mode plan and dontAsk, --add-dir, "
             "--allowedTools, --disallowedTools. Helper runs are plan mode with Read, Grep, "
@@ -181,6 +193,7 @@ TOOLS: tuple[Tool, ...] = (
             ],
         },
         cli_names=("claude",),
+        login_hint="claude auth login",
     ),
     Tool(
         key="codex",
@@ -200,6 +213,7 @@ TOOLS: tuple[Tool, ...] = (
             "TODO: Codex hook format is not verified, so hooks are not installed. "
             "TODO: exact sandbox config keys for a read-only lock are not confirmed. "
             "TODO: detection paths per OS are not confirmed. "
+            "Sign in with codex login (https://developers.openai.com/codex/cli/reference). "
             "Background flags confirmed at https://developers.openai.com/codex/cli/reference : "
             "exec, --sandbox read-only and workspace-write, --cd, --skip-git-repo-check, "
             "--model, --ask-for-approval never, --add-dir. workspace-write has network off "
@@ -239,6 +253,7 @@ TOOLS: tuple[Tool, ...] = (
             ],
         },
         cli_names=("codex",),
+        login_hint="codex login",
     ),
     Tool(
         key="chatgpt-codex",
@@ -303,6 +318,7 @@ TOOLS: tuple[Tool, ...] = (
             ],
         },
         cli_names=("codex",),
+        login_hint="codex login",
     ),
     Tool(
         key="chatgpt-work",
@@ -379,6 +395,8 @@ TOOLS: tuple[Tool, ...] = (
             "Runs on this computer and calls a model in Google's cloud. "
             "TODO: Gemini CLI hook format is not verified, so hooks are not installed. "
             "TODO: detection paths per OS are not confirmed. "
+            "Sign in by running gemini and choosing Login with Google "
+            "(https://google-gemini.github.io/gemini-cli/docs/get-started/authentication.html). "
             "Helper flag confirmed at https://google-gemini.github.io/gemini-cli/docs/cli/headless.html : "
             "-p, --model, --approval-mode plan (read only). "
             "TODO: driver runs are not scheduled. --approval-mode auto_edit still asks "
@@ -401,6 +419,7 @@ TOOLS: tuple[Tool, ...] = (
             ),
         },
         cli_names=("gemini",),
+        login_hint="gemini",
     ),
     Tool(
         key="copilot",

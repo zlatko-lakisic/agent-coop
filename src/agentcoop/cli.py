@@ -424,7 +424,10 @@ def cmd_send(args: argparse.Namespace) -> int:
         if load_schedule(board):
             spawn_round(board)
         else:
-            print("The schedule is off, so the helper starts when someone opens it.")
+            print(
+                "The schedule is off, so the helper starts when someone opens it.",
+                file=sys.stderr,
+            )
     return 0
 
 

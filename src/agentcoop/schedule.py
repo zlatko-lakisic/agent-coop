@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import os
 import shutil
+import subprocess
 from pathlib import Path
 
 from agentcoop.errors import CoopError
@@ -29,9 +30,31 @@ def resolve_cli_path(tool: object) -> str | None:
         return str(Path(found).resolve()) if found else None
     for name in names:
         found = shutil.which(name)
-        if found:
-            return str(Path(found).resolve())
+        if not found:
+            continue
+        path = str(Path(found).resolve())
+        if name == "agent" and not cursor_cli_matches(path):
+            continue
+        return path
     return None
+
+
+def cursor_cli_matches(path: str) -> bool:
+    """Return True when this `agent` binary's version or help mentions Cursor."""
+    chunks: list[str] = []
+    for flag in ("--version", "--help"):
+        try:
+            completed = subprocess.run(
+                [path, flag],
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+        except (OSError, subprocess.TimeoutExpired):
+            continue
+        chunks.append(completed.stdout or "")
+        chunks.append(completed.stderr or "")
+    return "Cursor" in "".join(chunks)
 
 
 def role_template(tool: object, role: str) -> object:

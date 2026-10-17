@@ -1,28 +1,20 @@
-"""Cursor CLI permission file for a scheduled worktree.
-
-Print mode without --force was not confirmed to run allowed actions unattended,
-so Cursor stays off the schedule. This writer is what a later change would use.
-"""
+"""Cursor CLI permission files for scheduled driver and helper runs."""
 
 from __future__ import annotations
 
 import json
 from pathlib import Path
 
-from agentcoop.pathenv import command_argv
-
-
 def cursor_permissions(worktree: Path, board: Path, shell_allow: list[str]) -> dict:
-    """Return the cli.json object for one worktree."""
+    """Return the cli.json object for one driver worktree."""
     work = str(worktree.resolve())
     board_path = str(board.resolve())
-    command = Path(command_argv(board)[0]).name
     allow = [
         "Read(**)",
         "Write(" + work + "/**)",
         "Write(" + board_path + "/**)",
         "Shell(git)",
-        "Shell(" + command + ")",
+        "Shell(agentcoop)",
     ]
     for name in shell_allow:
         token = "Shell(" + name + ")"
@@ -43,6 +35,20 @@ def cursor_permissions(worktree: Path, board: Path, shell_allow: list[str]) -> d
             ],
         }
     }
+
+
+def cursor_helper_permissions() -> dict:
+    """Return the read-only cli.json object for a helper run."""
+    return {"permissions": {"allow": ["Read(**)"], "deny": ["Write(**)", "Shell(*)"]}}
+
+
+def write_cursor_helper_cli(project_dir: Path) -> Path:
+    """Write the helper permissions file under the project's board folder."""
+    folder = project_dir / ".cursor"
+    folder.mkdir(parents=True, exist_ok=True)
+    path = folder / "cli.json"
+    path.write_text(json.dumps(cursor_helper_permissions(), indent=2) + "\n", encoding="utf-8")
+    return path
 
 
 def write_cursor_cli(worktree: Path, board: Path, shell_allow: list[str]) -> Path:

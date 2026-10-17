@@ -18,7 +18,7 @@ The deny list always applies. It includes SSH keys, cloud credentials, Kubernete
 
 ## Secrets
 
-Do not put passwords, API keys, or tokens in a message. `agentcoop send` refuses when the subject or body looks like a common key, unless you pass `--allow-secret`.
+Do not put passwords, API keys, or tokens in a message or in project context. `agentcoop send` and `agentcoop context write` refuse when the text looks like a common key, unless you pass `--allow-secret`.
 
 ## The viewer
 
@@ -39,3 +39,5 @@ Any agent with file access can write a message file that claims another sender, 
 The same applies to `projects.json` and the files under `.state/`: they are protected by the integrity check, which an agent could also rewrite.
 
 The real protection is each tool's own permission settings: give helpers no write access outside the board and their own `files/` folder, and keep destructive actions behind the human's approval in each agent's own chat, which the skill already requires.
+
+Scheduled helpers run read-only. A scheduled Cursor driver may write only the project copy and the board, and may run only `git`, `agentcoop`, and the commands you set with `agentcoop project set`. Those runs never pass `--force`. Other scheduled drivers are limited by that tool's own settings. During a scheduled run the git shim blocks push, switching branches, and rewriting history. A person's own `git` command is unchanged.

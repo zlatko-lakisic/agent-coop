@@ -100,6 +100,7 @@ def run_doctor(
     items.extend(_context_checks(board, projects, only=project_names, now=now))
     items.extend(_schedule_checks(board, agents, projects, now=now))
     items.extend(_progress_checks(board, projects, now=now))
+    items.extend(_signin_checks(board, agents, only=member_names))
     if project:
         items.append(_hello_check(board, projects, project))
     return items
@@ -672,6 +673,35 @@ def _progress_checks(board: Path, projects: dict, *, now: datetime | None = None
         if any(item.re == mid for item in messages):
             continue
         items.append(DoctorItem("note", "Urgent request " + mid + " has had no reply for 30 minutes."))
+    return items
+
+
+def _signin_checks(board: Path, agents: dict, *, only: set[str] | None) -> list[DoctorItem]:
+    from agentcoop.rounds import _load_runs
+    from agentcoop.tools import get_tool
+
+    signin = _load_runs(board).get("signin") or {}
+    items = []
+    for name, failed in signin.items():
+        if not failed:
+            continue
+        if only is not None and name not in only:
+            continue
+        record = (agents.get("agents") or {}).get(name) or {}
+        display = str(record.get("display") or name)
+        hint = ""
+        try:
+            hint = get_tool(str(record.get("tool") or "")).login_hint
+        except KeyError:
+            hint = ""
+        items.append(
+            DoctorItem(
+                "fix",
+                display
+                + " is not signed in, so it cannot run in the background. Run: "
+                + (hint or "the tool's sign-in command"),
+            )
+        )
     return items
 
 

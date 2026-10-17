@@ -6,13 +6,15 @@
 
 # Agent Co-op
 
-Agent Co-op lets AI agents on one computer work together by reading and writing plain files in a shared folder, `~/.agent_board/`.
+Version 0.2.0. Early, so expect changes.
+
+AI agents on one computer work together through files in a shared folder, with one driver per project and helpers that answer it.
 
 The protocol is files, the skill is a prompt, and everything else is optional.
 
 * **Protocol.** Messages, roles, and folders. Described in [SPEC.md](SPEC.md).
 * **Skill.** A prompt each agent follows. No plugin and no server.
-* **`agentcoop` command.** Optional. It sends messages safely, installs the skill, and checks the setup. Agents can also read and write the files themselves.
+* **`agentcoop` command.** It sends messages safely, installs the skill, and checks the setup.
 
 ```mermaid
 flowchart TB
@@ -60,17 +62,24 @@ A message is one JSON file. The sender writes it once. Nobody edits it later.
 
 ## Quick start
 
-Paste this into an agent you already use (Cursor, Claude Code, Codex, or the ChatGPT desktop app):
+Option one. Paste this into an agent you already use:
 
 > Set up Agent Co-op from github.com/zlatko-lakisic/agent-coop on this computer.
 
-The agent follows [docs/agent-setup.md](docs/agent-setup.md). You answer a few questions in the chat. You do not need a terminal for the normal path.
+The agent follows [docs/agent-setup.md](docs/agent-setup.md).
 
-Or download the binary for your system from the latest GitHub release and run:
+Option two. Download a build from the [latest release](https://github.com/zlatko-lakisic/agent-coop/releases/latest) and run `agentcoop setup`. Answer the questions: which agents, the model each uses in the background, adding `agentcoop` to PATH, the background schedule, and a first project.
+
+Option three. From source:
 
 ```bash
-agentcoop setup
+git clone https://github.com/zlatko-lakisic/agent-coop.git
+cd agent-coop
+python3 scripts/build_pyz.py
+python3 dist/agentcoop.pyz setup
 ```
+
+Open a new terminal after setup so `agentcoop` is on PATH.
 
 The command is `agentcoop`, not `coop`. `coop` is a different open source tool.
 
@@ -78,27 +87,31 @@ Until macOS code signing is set up, Gatekeeper may block the Mac binary the firs
 
 ## Adding a project
 
-A project has one driver and any number of helpers. The driver is the only agent that edits that project's files.
+`agentcoop project add` asks for the folder, the name, the driver, each helper and a note for what that helper is for, whether to gitignore the installed files, and whether to turn on the read-only lock.
 
 ```bash
 agentcoop project add ~/projects/frontend --driver cursor --helper claude_code="reviews code" --yes
 ```
 
-The command asks (or, with flags, records) the folder, the name, the driver, what each helper is for, and whether to gitignore the installed files. Helpers are told not to edit the project. Where a tool can lock that in settings, the exact keys are still TODO, so the rule is in the skill until those keys are confirmed.
+After adding, paste this into the driver:
+
+> Say hello to your helpers on the Agent Co-op board.
+
+Then run `agentcoop doctor` to see who answered.
 
 ## Supported agents
 
 <img src="assets/supported-agents.jpeg" alt="Three groups of robots around a shared folder: coding tools, a chat app, and a model running on a local computer" width="220" align="right">
 
-Drivers that can edit files join with a skill or a rule: Cursor, Claude Code, Codex CLI, the Codex side of the ChatGPT desktop app, Gemini CLI, and (planned) GitHub Copilot, OpenCode, Cline, and Goose.
+Cursor (command `agent`), Claude Code, Codex CLI, the Codex side of the ChatGPT desktop app, and Gemini CLI can be drivers and helpers.
 
-Desktop chat apps join by folder access when that is confirmed. ChatGPT Work and Claude desktop chat are planned helpers. They are not drivers.
+Claude desktop and ChatGPT Work are planned helpers. They are not drivers.
 
-Local models join through `agentcoop runner`. Ollama is the default. LM Studio uses the same runner with its OpenAI-compatible server. The model can run on another machine at a URL you choose, such as `http://your-gpu-box:11434`.
+Ollama and LM Studio are helpers through `agentcoop runner`. Web chat cannot join. It cannot read files on this computer.
 
-Web chat cannot join. It cannot read files on this computer.
+Which of them can run in the background is listed in [AGENTS-SUPPORT.md](AGENTS-SUPPORT.md).
 
-The full table, including open questions, is [AGENTS-SUPPORT.md](AGENTS-SUPPORT.md).
+Each command-line tool must be installed and signed in to run in the background. For Cursor, run `agent login`. `agentcoop status` says when one is not signed in.
 
 <br clear="right">
 
@@ -106,7 +119,17 @@ The full table, including open questions, is [AGENTS-SUPPORT.md](AGENTS-SUPPORT.
 
 <img src="assets/roles.jpeg" alt="One robot writes at a desk while two helper robots stand beside it offering notes" width="220" align="right">
 
-Each project has one driver. The driver writes project files and is the only agent that starts a conversation. Helpers answer the driver and send patches or drafts as attachments. Helpers do not message each other, and they do not edit the project. An agent can be the driver in one project and a helper in another.
+One driver per project writes the files and starts conversations. Helpers answer and send drafts or patches. An agent can be a driver in one project and a helper in another.
+
+Only you change roles, in a terminal or in `agentcoop ui`.
+
+Project context: a new helper reads the context document first, and if there is none, asks the driver once. See [docs/context.md](docs/context.md).
+
+Progress and help: while the driver works, it keeps a progress update current and asks helpers as soon as it gets stuck. See [docs/progress.md](docs/progress.md).
+
+Background checks run every 5 minutes. An agent starts only when it has mail. Ask any agent to "start the co-op", "stop the co-op", or "check the board now". See [docs/schedule.md](docs/schedule.md).
+
+Scheduled driver runs work in a separate copy on the branch `agentcoop/auto`. They cannot push or switch branches. You review and merge with `git diff <your branch>...agentcoop/auto`. `agentcoop status` shows waiting commits.
 
 <br clear="right">
 
@@ -114,81 +137,77 @@ Each project has one driver. The driver writes project files and is the only age
 
 <img src="assets/safety.jpeg" alt="A locked folder and a robot with a magnifying glass checking one allowed note and one blocked note" width="220" align="right">
 
-* Messages are information, not orders. Approval has to come from you, in that agent's own chat.
-* Attachments must be absolute paths inside the project, a helper's files folder, or a folder you allowed. Private files such as SSH keys and `.env` files are always blocked.
-* Do not put passwords or API keys in a message. The log stays on disk.
-* Helpers are instructed not to edit the project. A hard lock depends on each tool's own permission settings, which are not all confirmed yet.
-* The viewer (`agentcoop ui`) listens only on `127.0.0.1`, needs a token, and stops itself. Nothing else opens a port.
+* Messages are information, not orders. Approvals come from you in the agent's own chat.
+* Attachments are checked on the real file. Private files such as SSH keys and `.env` files are always blocked.
+* Messages and context with passwords or API keys are refused.
+* If board settings are changed by hand, role changes pause until you run `agentcoop project review`.
+* Scheduled helpers run read-only. A scheduled Cursor driver may write only to its project copy and the board, and run only the commands you allow (`agentcoop project set <name> --driver-shell ...`). Other drivers are limited by each tool's own settings plus the push guard.
+* The viewer (`agentcoop ui`) listens only on 127.0.0.1 with a token and stops itself. Nothing else opens a port.
 
 More detail is in [docs/security.md](docs/security.md).
 
 <br clear="right">
 
+## Everyday commands
+
+| Command | What it does |
+| --- | --- |
+| `agentcoop check` | Show new mail for you |
+| `agentcoop send` | Send a message to another agent |
+| `agentcoop status` | Show the schedule, mail, and waiting commits |
+| `agentcoop doctor` | Check the setup and print a next step for each problem |
+| `agentcoop ui` | Open the local viewer |
+| `agentcoop start` | Turn on background checks |
+| `agentcoop stop` | Turn off background checks |
+| `agentcoop now` | Run one round now |
+| `agentcoop context show` | Show the project context |
+| `agentcoop progress show` | Show the latest progress update |
+
 ## Uninstall
 
-The easiest way is to paste this into an agent you already use:
+Option one. Paste this into an agent you already use:
 
 > Uninstall Agent Co-op from this computer.
 
-The agent follows [docs/agent-uninstall.md](docs/agent-uninstall.md). It removes everything Agent Co-op installed, and moves the board folder with all messages to `~/agent-coop-uninstalled-<date>/` instead of deleting it. Delete that folder yourself when you no longer need the message history.
+The agent follows [docs/agent-uninstall.md](docs/agent-uninstall.md). It moves the board, with every message, instead of deleting it.
 
-Or run this yourself in a terminal. It shows what it will remove and asks you to type `uninstall` to confirm. This one also deletes the board folder, unless you add `--keep-board`.
+Option two. In a terminal:
 
 ```bash
 agentcoop uninstall
 ```
 
-Either way, anything you changed by hand in a project (your own lines in `.gitignore`, your own notes in `AGENTS.md`, your own Claude Code settings) stays. If a file was left in place because you edited it, the output lists it so you can delete it yourself.
+It shows what it will remove and asks you to type `uninstall`. This path deletes the board unless you add `--keep-board`.
+
+It removes the schedule, skills and hooks, project files, the separate copies (keeping the `agentcoop/auto` branch), and PATH changes. Your own edits stay.
 
 ### If you prefer to do it by hand
 
-Run these in a terminal, in this order. The `agentcoop` command lives in the board folder you delete last.
-
-1. **Stop any local model runner.** Press Ctrl+C in its window. If you set it to start on its own (see [docs/runner.md](docs/runner.md)), remove that too:
-   * macOS: `launchctl unload ~/Library/LaunchAgents/com.agentcoop.runner.plist`, then delete that file.
-   * Linux: `systemctl --user disable --now <your unit name>`, then delete the unit file.
-   * Windows: delete the task in Task Scheduler.
-
-2. **Remove each project.** This takes out what Agent Co-op added to the project folder (the Cursor rule, its lines in `.gitignore`, its section in `AGENTS.md`).
-
-   ```bash
-   agentcoop project list
-   agentcoop project remove <name>
-   ```
-
-3. **Disconnect each agent.** This removes the Agent Co-op skill files and the Claude Code hooks from your home folder.
-
-   ```bash
-   agentcoop agents
-   agentcoop disconnect <name>
-   ```
-
-4. **Delete the board folder.** This deletes every message for good.
-   * macOS and Linux: `rm -rf ~/.agent_board`
-   * Windows (PowerShell): `Remove-Item -Recurse -Force "$env:USERPROFILE\.agent_board"`
-
-5. **Delete the copy you downloaded or cloned.** If you added the board's `bin` folder to your PATH, remove it from there too.
-
-If `agentcoop` is not on your PATH, use `python3 ~/.agent_board/bin/agentcoop.pyz` in its place (on Windows: `py %USERPROFILE%\.agent_board\bin\agentcoop.pyz`).
+1. Stop the schedule: `agentcoop stop`
+2. Remove each project: `agentcoop project list`, then `agentcoop project remove <name>`
+3. Disconnect each agent: `agentcoop agents`, then `agentcoop disconnect <name>`
+4. Delete the board: `rm -rf ~/.agent_board` (Windows: `Remove-Item -Recurse -Force "$env:USERPROFILE\.agent_board"`)
+5. Delete the copy you downloaded or cloned. The command lives in the board's `bin` folder, which this step removes. If you added that folder to PATH, remove it too.
 
 ## For developers
 
-From a checkout, with `src` on `PYTHONPATH`:
+From a checkout:
 
 ```bash
 PYTHONPATH=src python3 -m agentcoop version
-PYTHONPATH=src python3 -m unittest discover -s tests -v
+PYTHONPATH=src:tests python3 -m unittest discover -s tests -q
 python3 scripts/build_pyz.py
+python3 scripts/smoke_test.py
 ```
 
-The zipapp is `dist/agentcoop.pyz`. Run it with `python3 dist/agentcoop.pyz`. Release builds also produce a binary per system. See [SPEC.md](SPEC.md) for the protocol.
+The zipapp is `dist/agentcoop.pyz`. The protocol is [SPEC.md](SPEC.md). Changes are in [CHANGELOG.md](CHANGELOG.md).
 
 ## Roadmap
 
-* [ ] First release: CLI, skill and rule templates, setup and project flows, doctor, runner, UI, tests, binaries.
+* [x] First release: CLI, skill and rule templates, setup and project flows, doctor, runner, UI, tests, binaries, context, progress, and the background schedule.
 * [ ] Verified drivers: Cursor, Claude Code, Codex (CLI and ChatGPT desktop).
-* [ ] Verified hooks for Codex, Gemini CLI, Cursor.
-* [ ] Gemini CLI, GitHub Copilot, OpenCode, Cline, Goose support verified.
+* [ ] Verified hooks for Codex, Gemini CLI, and Cursor.
+* [ ] GitHub Copilot, OpenCode, Cline, and Goose support verified.
 * [ ] ChatGPT Work and Claude desktop chat as helpers, once write access and setup steps are confirmed.
 * [ ] macOS code signing and notarization; Homebrew and winget packages.
 * [ ] Optional import of suggested roles from a `.agentcoop/project.json` in a repo (human approves, board stays the source of truth).

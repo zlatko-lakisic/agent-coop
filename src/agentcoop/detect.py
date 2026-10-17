@@ -55,9 +55,15 @@ def _match_rule(
         return None
     if "command" in rule:
         name = str(rule["command"])
-        if which(name):
-            return "found command " + name
-        return None
+        found = which(name)
+        if not found:
+            return None
+        if name == "agent":
+            from agentcoop.schedule import cursor_cli_matches
+
+            if not cursor_cli_matches(found):
+                return None
+        return "found command " + name
     if "app" in rule:
         apps = rule["app"]
         if not isinstance(apps, dict):
