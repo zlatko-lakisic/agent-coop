@@ -62,7 +62,11 @@ def atomic_write_bytes(path: Path, data: bytes) -> None:
     private_dir(path.parent)
     tmp = path.with_name("." + path.name + "." + str(os.getpid()) + ".tmp")
     mode = 0o600 if os.name != "nt" else 0o666
-    fd = os.open(str(tmp), os.O_CREAT | os.O_EXCL | os.O_WRONLY, mode)
+    fd = os.open(
+        str(tmp),
+        os.O_CREAT | os.O_EXCL | os.O_WRONLY | getattr(os, "O_BINARY", 0),
+        mode,
+    )
     try:
         os.write(fd, data)
     finally:
@@ -231,7 +235,7 @@ class board_lock:
         folder = self.board / ".state"
         folder.mkdir(parents=True, exist_ok=True)
         path = folder / "board.lock"
-        self._fd = os.open(str(path), os.O_CREAT | os.O_RDWR, 0o600)
+        self._fd = os.open(str(path), os.O_CREAT | os.O_RDWR | getattr(os, "O_BINARY", 0), 0o600)
         if os.path.getsize(path) == 0:
             os.write(self._fd, b"\0")
         os.lseek(self._fd, 0, os.SEEK_SET)

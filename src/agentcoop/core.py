@@ -152,7 +152,11 @@ def write_message_file(directory: Path, message: dict) -> Path:
     tmp = directory / ("." + mid + ".json.tmp")
     payload = (json.dumps(message, indent=2, ensure_ascii=False) + "\n").encode("utf-8")
     try:
-        fd = os.open(str(tmp), os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600 if os.name != "nt" else 0o666)
+        fd = os.open(
+            str(tmp),
+            os.O_CREAT | os.O_EXCL | os.O_WRONLY | getattr(os, "O_BINARY", 0),
+            0o600 if os.name != "nt" else 0o666,
+        )
     except FileExistsError as exc:
         raise CoopError(
             "Could not write the message because a temporary file is still there. Try again."
