@@ -55,7 +55,7 @@ def write_command_wrapper(board: Path, launcher: str) -> Path | None:
     if os.name == "nt":
         path = bindir / "agentcoop.cmd"
         line = '@"' + launcher + '" "' + str(pyz) + '" %*\r\n'
-        path.write_text(line, encoding="utf-8", newline="")
+        path.write_bytes(line.encode("utf-8"))
         return path
     path = bindir / "agentcoop"
     path.write_text(
