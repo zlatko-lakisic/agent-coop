@@ -65,6 +65,7 @@ class CursorPermissionTests(unittest.TestCase):
             self.assertIn("Write(**/.env)", deny)
             self.assertIn("Write(" + str(env.board.resolve()) + "/projects.json)", deny)
             self.assertIn("Write(" + str(env.board.resolve()) + "/.state/**)", deny)
+            self.assertIn("Write(" + str(env.board.resolve()) + "/bin/**)", deny)
             check = subprocess.run(
                 ["git", "-C", str(dest), "check-ignore", "-v", ".cursor/cli.json"],
                 capture_output=True,
@@ -270,6 +271,10 @@ class CursorPermissionTests(unittest.TestCase):
                     "Shell(git)",
                     "Shell(agentcoop)",
                 ],
+            )
+            self.assertIn(
+                "Write(" + str(env.board.resolve()) + "/bin/**)",
+                data["permissions"]["deny"],
             )
             helper_dir = env.board / "projects" / "demo"
             from agentcoop.cursorperm import write_cursor_helper_cli

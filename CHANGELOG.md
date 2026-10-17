@@ -7,6 +7,7 @@
 - Background checks, a separate `agentcoop/auto` worktree, and a git push guard that also blocks new-branch checkouts.
 - Scheduled helpers answer read-only. The schedule posts the reply.
 - Cursor's command is `agent`. A scheduled Cursor driver uses `.cursor/cli.json` and never `--force`.
+- A scheduled Cursor driver cannot write the board's bin folder, so it cannot replace the git guard.
 - A run that is not signed in is reported, and an empty helper reply counts as a failure.
 - Send notes go to standard error, so a captured id stays a single line.
 

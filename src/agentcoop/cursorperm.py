@@ -32,6 +32,7 @@ def cursor_permissions(worktree: Path, board: Path, shell_allow: list[str]) -> d
                 "Write(" + board_path + "/agents.json)",
                 "Write(" + board_path + "/config.json)",
                 "Write(" + board_path + "/.state/**)",
+                "Write(" + board_path + "/bin/**)",
             ],
         }
     }
