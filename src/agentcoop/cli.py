@@ -41,11 +41,13 @@ from agentcoop.projects import (
 )
 from agentcoop.review import review_projects
 from agentcoop.wizard import (
+    Prompter,
     add_project_flow,
     change_driver,
     connect_one,
     format_agents,
     format_projects,
+    format_setup_summary,
     helper_add,
     helper_remove,
     project_remove,
@@ -537,20 +539,27 @@ def cmd_setup(args: argparse.Namespace) -> int:
                     else:
                         print("Found: " + item["display"])
         return 0
+    tools = _tool_list(args.connect)
+    interactive = (
+        not tools
+        and not args.yes
+        and not args.json
+        and sys.stdin.isatty()
+        and sys.stdout.isatty()
+    )
+    prompter = Prompter() if interactive else None
     result = setup_board(
-        connect=_tool_list(args.connect),
+        connect=tools,
         yes=args.yes,
         model=args.model or None,
+        prompter=prompter,
     )
     if args.json:
         print(json.dumps({"board": result["board"], "connected": result["connected"]}, indent=2))
         return 0
     print("Agent Co-op is set up.")
     print("Board: " + result["board"])
-    if result["connected"]:
-        print("Connected: " + ", ".join(result["connected"]))
-    else:
-        print("No agents connected yet. Example: agentcoop connect cursor")
+    print(format_setup_summary(_board(), result["connected"]))
     return 0
 
 
@@ -606,16 +615,31 @@ def cmd_agents(_args: argparse.Namespace) -> int:
 
 
 def cmd_project_add(args: argparse.Namespace) -> int:
-    """Add a project from flags."""
+    """Add a project from flags or by asking questions in a terminal."""
+    prompter = None
+    if not args.driver:
+        if sys.stdin.isatty() and sys.stdout.isatty():
+            prompter = Prompter()
+        else:
+            raise CoopError(
+                "Run this in a terminal to answer questions, or pass the flags. "
+                "Example: agentcoop project add . --driver cursor --yes",
+                code=2,
+            )
+    if prompter is not None and not args.helper:
+        helpers = None
+    else:
+        helpers = _helpers(args.helper)
     print(
         add_project_flow(
             path=Path(args.path) if args.path else None,
             name=args.name,
             driver=args.driver,
-            helpers=_helpers(args.helper),
+            helpers=helpers,
             lock_helpers=args.lock_helpers == "yes",
             gitignore=args.gitignore != "no",
             yes=args.yes,
+            prompter=prompter,
         )
     )
     return 0
