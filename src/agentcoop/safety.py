@@ -134,13 +134,9 @@ def require_attachment(
         raise CoopError("This attachment is not allowed: " + raw + ". " + reason)
 
 
-def secret_warning(body: str) -> str | None:
-    """Return a warning when the body looks like it contains a key."""
+def secret_warning(text: str) -> str | None:
+    """Return a short reason when text looks like it contains a key."""
     for pattern in _SECRET_PATTERNS:
-        if pattern.search(body):
-            return (
-                "This message looks like it contains a password or API key. "
-                "Remove it before you send. Nothing was blocked, but the board "
-                "keeps messages forever."
-            )
+        if pattern.search(text):
+            return "looks like an API key"
     return None

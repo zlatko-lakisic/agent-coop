@@ -142,7 +142,7 @@ After `Path.resolve()`, the path MUST sit inside the message's project folder, t
 
 `send` MUST reject violations. `check` MUST mark them `BLOCKED: do not open`.
 
-If the body looks like a common API key or private key, `send` SHOULD warn and MUST NOT block on that warning alone.
+If the subject or body looks like a common API key or private key, `send` MUST refuse unless `--allow-secret` is given.
 
 ## 10. Safety model
 

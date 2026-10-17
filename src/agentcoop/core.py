@@ -321,9 +321,10 @@ def send(
     re: str | None = None,
     attachments: list[str] | None = None,
     needs_reply: bool = False,
+    allow_secret: bool = False,
     now: datetime | None = None,
 ) -> tuple[str, str | None]:
-    """Write a message and return its id plus an optional secret warning."""
+    """Write a message and return its id (second value always None)."""
     require_board(board)
     validate_agent_name(sender)
     validate_agent_name(recipient)
@@ -333,6 +334,12 @@ def send(
         )
     if len(subject) > 120:
         raise CoopError("The subject is too long. Keep it to 120 characters.")
+    if not allow_secret and (secret_warning(subject) or secret_warning(body)):
+        raise CoopError(
+            "This message looks like it contains a password or API key, so it was "
+            "not sent. Remove the secret and send again. If this is a false alarm, "
+            "add --allow-secret."
+        )
     config = load_config(board)
     limit = int(config.get("body_limit_bytes") or 16384)
     if len(body.encode("utf-8")) > limit:
@@ -351,7 +358,6 @@ def send(
             project=project,
             allowed_roots=roots,
         )
-    warning = secret_warning(body)
     moment = utc_now(now)
     ensure_agent_dirs(board, project, sender)
     ensure_agent_dirs(board, project, recipient)
@@ -381,7 +387,7 @@ def send(
             write_message_file(sent_dir(board, project, sender), payload)
         except FileExistsError:
             pass
-        return mid, warning
+        return mid, None
     raise CoopError("Could not pick a unique message id. Try again.") from last_error
 
 

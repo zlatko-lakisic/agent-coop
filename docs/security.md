@@ -18,7 +18,7 @@ The deny list always applies. It includes SSH keys, cloud credentials, Kubernete
 
 ## Secrets
 
-Do not put passwords, API keys, or tokens in a message. `agentcoop send` warns when the body looks like a common key. It does not delete the text for you.
+Do not put passwords, API keys, or tokens in a message. `agentcoop send` refuses when the subject or body looks like a common key, unless you pass `--allow-secret`.
 
 ## The viewer
 

@@ -93,6 +93,7 @@ def build_parser() -> argparse.ArgumentParser:
     send_cmd.add_argument("--re", dest="re_id")
     send_cmd.add_argument("--attach", action="append", default=[])
     send_cmd.add_argument("--needs-reply", action="store_true")
+    send_cmd.add_argument("--allow-secret", action="store_true")
     send_cmd.set_defaults(func=cmd_send)
 
     check_cmd = sub.add_parser("check", help="Show new messages")
@@ -281,7 +282,7 @@ def cmd_send(args: argparse.Namespace) -> int:
     agent = _agent(args)
     board = _board()
     project = resolve_project(board, explicit=args.project, cwd=Path.cwd(), agent=agent)
-    mid, warning = send(
+    mid, _warning = send(
         board,
         project=project,
         sender=agent,
@@ -292,10 +293,9 @@ def cmd_send(args: argparse.Namespace) -> int:
         re=args.re_id,
         attachments=list(args.attach or []),
         needs_reply=bool(args.needs_reply),
+        allow_secret=bool(args.allow_secret),
     )
     print(mid)
-    if warning:
-        print(warning, file=sys.stderr)
     return 0
 
 
