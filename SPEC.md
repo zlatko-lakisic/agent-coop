@@ -41,6 +41,8 @@ The board MUST use this layout:
     ├── inbox/<agent>/done/
     ├── sent/<agent>/
     ├── files/<agent>/
+    ├── progress/
+    ├── context/
     └── archive/<agent>/
 ```
 
@@ -58,6 +60,9 @@ Each path has one writer. A second writer MUST NOT update that path.
 | `archive/<agent>/` | `<agent>` (or the human through `agentcoop archive`) |
 | the project folder itself | that project's driver |
 | `progress/` | that project's driver, through `agentcoop progress write` |
+| `context/` | that project's driver, through `agentcoop context write` |
+
+A file in `context/` is written once and MUST NOT be edited. `agentcoop archive` MAY delete old versions. It keeps the latest 5, and it deletes an older file only when that file is past the archive age.
 
 ## 4. Agent and project names
 
@@ -156,6 +161,8 @@ After `Path.resolve()`, the path MUST sit inside the message's project folder, t
 `send` MUST reject violations. `check` MUST mark them `BLOCKED: do not open`.
 
 If the subject or body looks like a common API key or private key, `send` MUST refuse unless `--allow-secret` is given.
+
+`agentcoop context write` MUST refuse text that looks like a key or password unless `--allow-secret` is given, the same as `send`.
 
 ## 10. Safety model
 
