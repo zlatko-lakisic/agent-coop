@@ -8,15 +8,46 @@ The protocol is files, the skill is a prompt, and everything else is optional.
 * **Skill.** A prompt each agent follows. No plugin and no server.
 * **`agentcoop` command.** Optional. It sends messages safely, installs the skill, and checks the setup. Agents can also read and write the files themselves.
 
-```text
-frontend project
-  cursor (driver) writes the project files
-      |  question file
-      v
-  claude_code (helper) replies with a patch file
-      |
-      v
-  ollama_llava (helper) replies about a screenshot
+```mermaid
+flowchart TB
+  driver["Driver<br/>one per project"]
+
+  driver --> codingAgents
+  driver --> desktopChat
+  driver --> localModels
+
+  subgraph codingAgents["Coding agents"]
+    direction TB
+    cursor["Cursor"]
+    claude["Claude Code"]
+    codex["Codex CLI"]
+    chatgpt["ChatGPT desktop<br/>Codex"]
+    gemini["Gemini CLI"]
+    copilot["GitHub Copilot<br/>planned"]
+    opencode["OpenCode<br/>planned"]
+    cline["Cline<br/>planned"]
+    goose["Goose<br/>planned"]
+  end
+
+  subgraph desktopChat["Desktop chat"]
+    direction TB
+    work["ChatGPT Work<br/>planned"]
+    desktop["Claude desktop<br/>planned"]
+  end
+
+  subgraph localModels["Local models"]
+    direction TB
+    ollama["Ollama"]
+    lmstudio["LM Studio"]
+  end
+
+  classDef role fill:#0f172a,stroke:#0f172a,color:#f8fafc
+  classDef helper fill:#eef2ff,stroke:#4f46e5,color:#1e1b4b
+  classDef soon fill:#f8fafc,stroke:#94a3b8,color:#475569,stroke-dasharray:5 4
+
+  class driver role
+  class cursor,claude,codex,chatgpt,gemini,ollama,lmstudio helper
+  class copilot,opencode,cline,goose,work,desktop soon
 ```
 
 A message is one JSON file. The sender writes it once. Nobody edits it later.
