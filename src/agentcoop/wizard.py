@@ -34,7 +34,14 @@ from agentcoop.projects import (
     set_driver,
     validate_project_name,
 )
-from agentcoop.tools import get_tool, sanitize_agent_name, supported_tools, tool_can_drive
+from agentcoop.tools import (
+    find_tool,
+    get_tool,
+    sanitize_agent_name,
+    supported_tools,
+    tool_can_drive,
+    tool_choices_text,
+)
 
 
 class Prompter:
@@ -139,11 +146,12 @@ def _connect_named(
     api: str | None = None,
     prompter: Prompter | None = None,
 ) -> str:
-    try:
-        tool = get_tool(tool_key)
-    except KeyError as exc:
-        known = ", ".join(item.key for item in supported_tools())
-        raise CoopError("Unknown tool " + tool_key + ". Known tools: " + known) from exc
+    tool = find_tool(tool_key)
+    if tool is None:
+        raise CoopError(
+            "Unknown agent " + tool_key + ". You can use: " + tool_choices_text()
+        )
+    tool_key = tool.key
     runner = None
     display = None
     if tool_key in ("ollama", "lmstudio", "runner"):

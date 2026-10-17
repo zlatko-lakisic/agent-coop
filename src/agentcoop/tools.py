@@ -391,6 +391,34 @@ def get_tool(key: str) -> Tool:
     return _BY_KEY[key]
 
 
+def find_tool(name: str) -> Tool | None:
+    """Resolve a user-facing tool name to a Tool, or None if unknown."""
+    if not name:
+        return None
+    lowered = name.casefold()
+    for tool in TOOLS:
+        if tool.key.casefold() == lowered:
+            return tool
+    dashed = lowered.replace("_", "-")
+    for tool in TOOLS:
+        if tool.key.casefold() == dashed:
+            return tool
+    for tool in TOOLS:
+        if tool.default_agent_name.casefold() == lowered:
+            return tool
+    for tool in TOOLS:
+        if tool.display.casefold() == lowered:
+            return tool
+    return None
+
+
+def tool_choices_text() -> str:
+    """Return Display (key) pairs for unknown-name errors."""
+    return ", ".join(
+        tool.display + " (" + tool.key + ")" for tool in supported_tools()
+    )
+
+
 def tool_can_drive(key: str) -> bool:
     """Return True when this tool may be a project driver."""
     tool = _BY_KEY.get(key)
