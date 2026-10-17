@@ -222,9 +222,9 @@ def serve(*, open_browser: bool = True, idle_seconds: int = 1800) -> int:
                 return
 
     threading.Thread(target=idle, daemon=True).start()
-    print(url)
-    print("This page is for you. Agents do not connect to it.")
-    print("Press Ctrl+C to stop. It also stops after 30 minutes with no requests.")
+    print(url, flush=True)
+    print("This page is for you. Agents do not connect to it.", flush=True)
+    print("Press Ctrl+C to stop. It also stops after 30 minutes with no requests.", flush=True)
     if open_browser:
         webbrowser.open(url)
     try:
