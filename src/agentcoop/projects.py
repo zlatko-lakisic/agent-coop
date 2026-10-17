@@ -477,6 +477,23 @@ def connect_agent_record(
     mutate_agents(board, change)
 
 
+def _role_entry(driver: str, helpers: dict, since: str) -> dict:
+    return {"since": since, "driver": driver, "helpers": sorted(helpers.keys())}
+
+
+def _record_membership(project: dict, before_driver: str, before_helpers: dict) -> None:
+    """Append roles_history when the driver or the helper names change."""
+    after_helpers = dict(project.get("helpers") or {})
+    same = before_driver == project.get("driver") and set(before_helpers) == set(after_helpers)
+    if same:
+        return
+    history = list(project.get("roles_history") or [])
+    if not history:
+        history.append(_role_entry(before_driver, before_helpers, str(project.get("created") or now_stamp())))
+    history.append(_role_entry(str(project.get("driver")), after_helpers, now_stamp()))
+    project["roles_history"] = history
+
+
 def add_project(
     board: Path,
     name: str,
@@ -492,7 +509,11 @@ def add_project(
         "helpers": dict(helpers),
         "created": now_stamp(),
         "installed": [],
+        "roles_history": [
+            {"since": "", "driver": driver, "helpers": sorted(helpers.keys())}
+        ],
     }
+    record["roles_history"][0]["since"] = record["created"]
 
     def change(projects: dict) -> None:
         if name in projects["projects"]:
@@ -557,10 +578,12 @@ def set_driver(board: Path, name: str, agent: str) -> str:
     def change(projects: dict) -> None:
         project = _require_project(projects, name)
         previous = project["driver"]
-        helpers = dict(project.get("helpers") or {})
+        before_helpers = dict(project.get("helpers") or {})
+        helpers = dict(before_helpers)
         helpers.pop(agent, None)
         project["helpers"] = helpers
         project["driver"] = agent
+        _record_membership(project, previous, before_helpers)
         agents = load_agents(board)
         _validate_new_project(board, name, project, projects, agents)
         found["previous"] = previous
@@ -577,9 +600,13 @@ def add_helper(board: Path, name: str, agent: str, note: str) -> None:
         project = _require_project(projects, name)
         if agent == project["driver"]:
             raise CoopError(agent + " is the driver, so it cannot also be a helper.")
-        helpers = dict(project.get("helpers") or {})
+        before_driver = project["driver"]
+        before_helpers = dict(project.get("helpers") or {})
+        helpers = dict(before_helpers)
         helpers[agent] = note
         project["helpers"] = helpers
+        if agent not in before_helpers:
+            _record_membership(project, before_driver, before_helpers)
         agents = load_agents(board)
         _validate_new_project(board, name, project, projects, agents)
 
@@ -592,11 +619,14 @@ def remove_helper(board: Path, name: str, agent: str) -> None:
 
     def change(projects: dict) -> None:
         project = _require_project(projects, name)
-        helpers = dict(project.get("helpers") or {})
-        if agent not in helpers:
+        before_driver = project["driver"]
+        before_helpers = dict(project.get("helpers") or {})
+        if agent not in before_helpers:
             raise CoopError(agent + " is not a helper on " + name + ".")
+        helpers = dict(before_helpers)
         helpers.pop(agent)
         project["helpers"] = helpers
+        _record_membership(project, before_driver, before_helpers)
 
     mutate_projects(board, change)
 

@@ -35,6 +35,7 @@ from agentcoop.projects import (
 from agentcoop.safety import check_attachment, require_attachment, secret_warning
 
 ID_RE = re.compile(r"^[A-Za-z0-9_.-]{1,96}$")
+TS_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
 KNOWN_TYPES = {"question", "answer", "task", "status", "ack", "patch"}
 YOUNG_SECONDS = 5
 
@@ -256,6 +257,28 @@ def new_messages(board: Path, project: str, agent: str, now: float | None = None
     return messages, issues
 
 
+def _roles_at(project: dict, ts: str) -> tuple[str, dict]:
+    """Return the driver and helpers that were in effect at ts."""
+    history = project.get("roles_history")
+    current_helpers = dict(project.get("helpers") or {})
+    if not isinstance(history, list) or not history:
+        return str(project.get("driver") or ""), current_helpers
+    usable = [entry for entry in history if isinstance(entry, dict) and isinstance(entry.get("since"), str)]
+    if not usable:
+        return str(project.get("driver") or ""), current_helpers
+    chosen = usable[0]
+    if isinstance(ts, str) and TS_RE.fullmatch(ts):
+        for entry in usable:
+            if entry["since"] <= ts:
+                chosen = entry
+    names = chosen.get("helpers") or []
+    if isinstance(names, dict):
+        helpers = {str(name): str(note) for name, note in names.items()}
+    else:
+        helpers = {str(name): "" for name in names}
+    return str(chosen.get("driver") or ""), helpers
+
+
 def file_id(message: Message) -> str:
     """Return the file name stem, which is the id readers use."""
     if message.path is not None:
@@ -282,8 +305,7 @@ def protocol_violation(project: dict, message: Message, board: Path, project_nam
         limit = int(load_config(board).get("body_limit_bytes") or 16384)
         if len(message.subject) > 120 or len(message.body.encode("utf-8")) > limit:
             return "This message is larger than the board allows."
-    driver = project.get("driver")
-    helpers = project.get("helpers") or {}
+    driver, helpers = _roles_at(project, message.ts)
     members = {driver, *helpers.keys()}
     if message.sender not in members or message.recipient not in members:
         return "The sender or recipient is not a member of this project."

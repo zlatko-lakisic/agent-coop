@@ -7,10 +7,10 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from agentcoop import __version__
-from agentcoop.core import load_message, log_messages, new_messages, protocol_violation
+from agentcoop.core import file_id, load_message, log_messages, new_messages, protocol_violation
 from agentcoop.detect import probe_json
 from agentcoop.install import file_sha256
-from agentcoop.paths import inbox_msgs, is_same_or_inside
+from agentcoop.paths import inbox_done, inbox_msgs, is_same_or_inside
 from agentcoop.projects import (
     INTEGRITY_WARNING,
     board_is_ready,
@@ -355,9 +355,12 @@ def _message_checks(board: Path, projects: dict) -> list[DoctorItem]:
                         + name,
                     )
                 )
+            done = inbox_done(board, name, agent)
             paths = folder.glob("*.json") if folder.is_dir() else []
             for path in paths:
                 if path.name.startswith("."):
+                    continue
+                if (done / path.stem).exists():
                     continue
                 message = load_message(path)
                 if message is None:
@@ -367,7 +370,7 @@ def _message_checks(board: Path, projects: dict) -> list[DoctorItem]:
                         DoctorItem(
                             False,
                             "Out of protocol message "
-                            + message.id
+                            + file_id(message)
                             + " in "
                             + agent
                             + "'s inbox. Ignore it.",
