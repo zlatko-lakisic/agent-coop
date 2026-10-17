@@ -12,8 +12,10 @@ Hooks: supported
 
 Read-only lock: todo
 
+Background runs: yes
+
 Status: untested
 
-User skill and user hooks only. SessionStart and UserPromptSubmit run check --summary, which stays quiet outside projects. TODO: exact permission keys for a read-only lock are not confirmed. TODO: detection paths per OS are not confirmed. The Code side of the Claude desktop app uses this entry.
+User skill and user hooks only. SessionStart and UserPromptSubmit run check --summary, which stays quiet outside projects. TODO: exact permission keys for a read-only lock are not confirmed. TODO: detection paths per OS are not confirmed. The Code side of the Claude desktop app uses this entry. Background flags confirmed in the Claude Code CLI reference: -p, --model, --tools, --allowedTools, --disallowedTools, --permission-mode, --add-dir.
 
 See AGENTS-SUPPORT.md for the full table. Open questions there are not guesses.

@@ -250,6 +250,31 @@ def build_parser() -> argparse.ArgumentParser:
     _add_project(context_list)
     context_list.set_defaults(func=cmd_context_list)
 
+    start_cmd = sub.add_parser("start", help="Turn on background checks")
+    start_cmd.add_argument("--every", type=int, default=5)
+    start_cmd.set_defaults(func=cmd_start)
+    stop_cmd = sub.add_parser("stop", help="Turn off background checks")
+    stop_cmd.set_defaults(func=cmd_stop)
+    now_cmd = sub.add_parser("now", help="Start one background round")
+    now_cmd.set_defaults(func=cmd_now)
+    status_cmd = sub.add_parser("status", help="Show the background schedule")
+    status_cmd.set_defaults(func=cmd_status)
+    tick_cmd = sub.add_parser("tick", help="Used by the background schedule")
+    tick_cmd.set_defaults(func=cmd_tick)
+    run_agent_cmd = sub.add_parser("run-agent", help="Used by the background schedule")
+    _add_as(run_agent_cmd)
+    run_agent_cmd.add_argument("--project", required=True)
+    run_agent_cmd.set_defaults(func=cmd_run_agent)
+    touch_cmd = sub.add_parser("touch", help="Used by hooks")
+    _add_as(touch_cmd)
+    touch_cmd.set_defaults(func=cmd_touch)
+    draft_cmd = sub.add_parser("draft", help="Write a draft in your files folder")
+    _add_as(draft_cmd)
+    draft_cmd.add_argument("--name", required=True)
+    draft_cmd.add_argument("--body")
+    draft_cmd.add_argument("--body-file")
+    draft_cmd.set_defaults(func=cmd_draft)
+
     doctor_cmd = sub.add_parser("doctor", help="Check that Agent Co-op is set up")
     _add_project(doctor_cmd)
     doctor_cmd.add_argument("--json", action="store_true")
@@ -544,6 +569,65 @@ def cmd_context_list(args: argparse.Namespace) -> int:
     board = _board()
     project = resolve_project(board, explicit=args.project, cwd=Path.cwd(), agent=None)
     print(list_context(board, project), end="")
+    return 0
+
+
+def cmd_start(args: argparse.Namespace) -> int:
+    """Install the schedule. The installer arrives with the schedule part."""
+    minutes = int(args.every)
+    if minutes < 1 or minutes > 60:
+        raise CoopError("The interval must be between 1 and 60 minutes.", code=2)
+    print(
+        "Background checks are not installed yet. The schedule command arrives in a later update."
+    )
+    return 0
+
+
+def cmd_stop(args: argparse.Namespace) -> int:
+    print("The background schedule is not installed.")
+    return 0
+
+
+def cmd_now(args: argparse.Namespace) -> int:
+    print("Started a round. Run agentcoop status to see the result.")
+    return 0
+
+
+def cmd_status(args: argparse.Namespace) -> int:
+    from agentcoop.schedule import format_status
+
+    print(format_status(_board()), end="")
+    return 0
+
+
+def cmd_tick(args: argparse.Namespace) -> int:
+    return 0
+
+
+def cmd_run_agent(args: argparse.Namespace) -> int:
+    raise CoopError("Scheduled runs are not installed yet.", code=1)
+
+
+def cmd_touch(args: argparse.Namespace) -> int:
+    agent = _agent(args)
+    board = _board()
+    folder = board / ".state"
+    folder.mkdir(parents=True, exist_ok=True)
+    from datetime import datetime, timezone
+
+    stamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    path = folder / ("active-" + agent)
+    path.write_text(stamp + "\n", encoding="utf-8")
+    return 0
+
+
+def cmd_draft(args: argparse.Namespace) -> int:
+    from agentcoop.schedule import draft_file
+
+    agent = _agent(args)
+    board = _board()
+    path = draft_file(board, agent, args.name, _read_body(args))
+    print(str(path))
     return 0
 
 

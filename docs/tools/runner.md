@@ -12,6 +12,8 @@ Hooks: none
 
 Read-only lock: advisory
 
+Background runs: yes
+
 Status: untested
 
 Ollama is the default local runtime. LM Studio uses the same runner with an OpenAI-compatible API. The runner is a helper only.

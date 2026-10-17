@@ -467,6 +467,8 @@ def connect_agent_record(
     *,
     display: str | None = None,
     runner: dict | None = None,
+    model: str | None = None,
+    cli_path: str | None = None,
 ) -> None:
     """Register an agent. Does nothing destructive if it already exists."""
     validate_agent_name(name)
@@ -489,11 +491,20 @@ def connect_agent_record(
                     "host": "http://localhost:1234" if tool_key == "lmstudio" else "http://localhost:11434",
                     "model": name,
                 }
+            if model:
+                record["model"] = model
+            if cli_path:
+                record["cli_path"] = cli_path
             agents["agents"][name] = record
-        elif runner and current.get("tool") == "runner":
-            current["runner"] = runner
-            if display:
-                current["display"] = display
+        else:
+            if runner and current.get("tool") == "runner":
+                current["runner"] = runner
+                if display:
+                    current["display"] = display
+            if model:
+                current["model"] = model
+            if cli_path:
+                current["cli_path"] = cli_path
 
     mutate_agents(board, change)
 

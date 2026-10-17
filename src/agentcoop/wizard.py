@@ -231,6 +231,7 @@ def _connect_named(
         yes=yes,
         display=display,
         runner=runner,
+        model=None if tool_key in ("ollama", "lmstudio", "runner") else model,
     )
 
 

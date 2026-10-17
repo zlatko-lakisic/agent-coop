@@ -101,6 +101,12 @@ def check_agents(data: object) -> list[str]:
                 for key in ("api", "host", "model"):
                     if not isinstance(runner.get(key), str):
                         problems.append(name + " runner " + key + " must be text")
+        model = record.get("model")
+        if model is not None and not isinstance(model, str):
+            problems.append(name + " model must be text")
+        cli_path = record.get("cli_path")
+        if cli_path is not None and not isinstance(cli_path, str):
+            problems.append(name + " cli_path must be text")
     return problems
 
 

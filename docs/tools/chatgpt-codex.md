@@ -12,8 +12,10 @@ Hooks: todo
 
 Read-only lock: todo
 
+Background runs: yes
+
 Status: untested
 
-The ChatGPT desktop app on macOS and Windows includes Codex. It does not read ~/.codex/config.toml (only the CLI does). TODO: confirm whether it reads .codex/skills/. TODO: detection paths per OS are not confirmed.
+The ChatGPT desktop app on macOS and Windows includes Codex. It does not read ~/.codex/config.toml (only the CLI does). TODO: confirm whether it reads .codex/skills/. TODO: detection paths per OS are not confirmed. Background runs only when the codex command is installed. Otherwise it answers when you open the ChatGPT desktop app.
 
 See AGENTS-SUPPORT.md for the full table. Open questions there are not guesses.

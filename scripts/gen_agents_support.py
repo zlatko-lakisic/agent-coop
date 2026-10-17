@@ -12,6 +12,17 @@ if str(SRC) not in sys.path:
 
 from agentcoop.tools import all_tools  # noqa: E402
 
+def _background_label(headless: object) -> str:
+    """Return the support-page label for a tool's headless field."""
+    if headless == "todo":
+        return "todo"
+    if headless == "none" or not headless:
+        return "no"
+    if isinstance(headless, dict):
+        return "yes"
+    return "no"
+
+
 OPEN_QUESTIONS = (
     "Exact setup of the existing Claude desktop workflow. The Claude desktop entry stays unfinished until those details are provided.",
     "Whether ChatGPT Work can write to granted local folders.",
@@ -46,6 +57,7 @@ def render() -> str:
         lines.append("- Project files for: " + tool.project_files_for)
         lines.append("- Hooks: " + tool.hooks)
         lines.append("- Read-only lock: " + tool.read_only_lock)
+        lines.append("- Background runs: " + _background_label(tool.headless))
         lines.append("- Status: " + tool.status)
         if tool.helper_note:
             lines.append("- Suggested helper note: " + tool.helper_note)
@@ -76,6 +88,8 @@ def render_tool_page(tool: object) -> str:
     lines.append("Hooks: " + tool.hooks)  # type: ignore[attr-defined]
     lines.append("")
     lines.append("Read-only lock: " + tool.read_only_lock)  # type: ignore[attr-defined]
+    lines.append("")
+    lines.append("Background runs: " + _background_label(tool.headless))  # type: ignore[attr-defined]
     lines.append("")
     lines.append("Status: " + tool.status)  # type: ignore[attr-defined]
     lines.append("")

@@ -417,6 +417,7 @@ def connect_agent(
     yes: bool = False,
     display: str | None = None,
     runner: dict | None = None,
+    model: str | None = None,
 ) -> str:
     """Connect one agent at user scope and return its name."""
     tool = get_tool(tool_key)
@@ -426,7 +427,7 @@ def connect_agent(
     if not name:
         raise CoopError(tool.display + " needs a name. Add --as NAME.")
     if tool_key in ("ollama", "lmstudio", "runner"):
-        connect_agent_record(board, name, tool_key, display=display, runner=runner)
+        connect_agent_record(board, name, tool_key, display=display, runner=runner, model=model)
         return name
 
     planned = _plan_user_files(board, tool, name)
@@ -465,6 +466,13 @@ def connect_agent(
             elif display:
                 record["display"] = display
             record["installed"] = manifest
+            if model:
+                record["model"] = model
+            from agentcoop.schedule import resolve_cli_path
+
+            found = resolve_cli_path(tool)
+            if found:
+                record["cli_path"] = found
 
         mutate_agents(board, change)
     except Exception as exc:

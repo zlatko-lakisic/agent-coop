@@ -12,6 +12,8 @@ Hooks: none
 
 Read-only lock: none
 
+Background runs: no
+
 Status: planned
 
 Not supported. Web chat cannot read files on this computer.
