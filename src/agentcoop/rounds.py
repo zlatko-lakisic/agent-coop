@@ -186,6 +186,19 @@ def format_status(board: Path) -> str:
         lines.append("  New mail: " + ("yes" if mail else "no"))
         info = (runs.get("agents") or {}).get(name) or {}
         lines.append("  Last run: " + str(info.get("last") or "none") + " " + str(info.get("result") or ""))
+        if (runs.get("signin") or {}).get(name):
+            from agentcoop.tools import get_tool
+
+            hint = ""
+            try:
+                hint = get_tool(str(agent.get("tool") or "")).login_hint
+            except KeyError:
+                hint = ""
+            lines.append(
+                display
+                + " is not signed in, so it cannot run in the background. Run: "
+                + (hint or "the tool's sign-in command")
+            )
         count = int((info.get("days") or {}).get(today) or 0)
         limit = int(load_config(board).get("max_runs_per_day") or 48)
         lines.append("  Runs today: " + str(count) + " of " + str(limit))
@@ -282,6 +295,11 @@ def _run_helper(board, agent, project, record, *, popen, timeout_minutes) -> int
             project_path=Path(record["path"]),
         )
         code, output = _execute(board, agent, project, argv, cwd, popen=popen, timeout_minutes=timeout_minutes)
+        if _needs_login(board, agent, output):
+            _set_signin(board, agent, True)
+            _count_run(board, agent, "not signed in")
+            continue
+        _set_signin(board, agent, False)
         _count_run(board, agent, "exit " + str(code))
         if code != 0:
             fails = _bump_failure(board, file_id(message))
@@ -351,6 +369,12 @@ def _run_driver(board, agent, project, record, *, popen, timeout_minutes) -> int
         project_path=folder,
     )
     code, output = _execute(board, agent, project, argv, dest, popen=popen, timeout_minutes=timeout_minutes)
+    if _needs_login(board, agent, output):
+        _set_signin(board, agent, True)
+        _count_run(board, agent, "not signed in")
+        finish_worktree(dest, auto_branch(board))
+        return 0
+    _set_signin(board, agent, False)
     switched = finish_worktree(dest, auto_branch(board))
     if switched:
         _remember_switch(board, project, switched)
@@ -550,6 +574,31 @@ def _count_run(board, agent, result) -> None:
     _write_json(board / ".state" / "runs.json", data)
 
 
+def _needs_login(board, agent: str, output: str) -> bool:
+    from agentcoop.tools import get_tool
+
+    lowered = (output or "").lower()
+    phrases = ("authentication required", "not logged in", "please log in", "login required")
+    if any(phrase in lowered for phrase in phrases):
+        return True
+    try:
+        tool = get_tool(_tool_key(board, agent))
+    except KeyError:
+        return False
+    message = str(getattr(tool, "login_message", "") or "").lower()
+    return bool(message) and message in lowered
+
+
+def _set_signin(board, agent: str, failed: bool) -> None:
+    data = _load_runs(board)
+    signin = data.setdefault("signin", {})
+    if failed:
+        signin[agent] = True
+    else:
+        signin.pop(agent, None)
+    _write_json(board / ".state" / "runs.json", data)
+
+
 def _bump_failure(board, mid: str) -> int:
     data = _load_runs(board)
     fails = data.setdefault("failures", {})
@@ -578,6 +627,7 @@ def _load_runs(board: Path) -> dict:
     data.setdefault("agents", {})
     data.setdefault("failures", {})
     data.setdefault("switches", {})
+    data.setdefault("signin", {})
     return data
 
 
