@@ -68,6 +68,8 @@ def schedulable_reason(board: Path, agent_name: str, role: str | None = None) ->
             detail = ""
             if isinstance(tool.headless, dict):
                 detail = str(tool.headless.get(role + "_todo") or "")
+            if detail.startswith(display + " cannot be scheduled"):
+                return detail
             reason = display + " cannot be scheduled as the " + role + "."
             if detail:
                 reason += " " + detail

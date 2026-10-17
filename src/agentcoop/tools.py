@@ -96,9 +96,11 @@ TOOLS: tuple[Tool, ...] = (
             "Background helper runs use cursor-agent -p --mode ask (read only). "
             "Flags confirmed at https://cursor.com/docs/cli/reference/parameters : "
             "--print, --model, --workspace, --trust, --force, --mode ask. "
-            "TODO: driver runs are not scheduled. No confirmed flag adds the board "
-            "as a writable folder beside the workspace. --force allows writes everywhere, "
-            "which is broader than the worktree plus the board."
+            "TODO: driver runs are not scheduled. Print mode without --force was not "
+            "confirmed to run allowed actions with no prompt. cursor-agent is not installed "
+            "on the machine that checked this, and the permissions page says to use allow, "
+            "deny, and --force to control what runs without prompts. "
+            "https://cursor.com/docs/cli/reference/permissions"
         ),
         helper_note="edits the project and asks helpers",
         headless={
@@ -115,8 +117,9 @@ TOOLS: tuple[Tool, ...] = (
             ],
             "driver": "todo",
             "driver_todo": (
-                "No confirmed flag adds the board as a writable folder beside the workspace. "
-                "--force allows writes everywhere."
+                "Cursor cannot be scheduled as the driver yet, because its command-line agent "
+                "cannot limit writes to the project copy and the board without asking. "
+                "It answers when you open it. Claude Code or Codex can be the driver for scheduled runs."
             ),
         },
         cli_names=("cursor-agent",),

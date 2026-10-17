@@ -61,6 +61,10 @@ def check_projects(data: object) -> list[str]:
             for entry in installed:
                 if not isinstance(entry, dict) or not isinstance(entry.get("path"), str):
                     problems.append(name + " installed entries must include a path")
+        shells = record.get("driver_shell_allow")
+        if shells is not None:
+            if not isinstance(shells, list) or any(not isinstance(item, str) or not item for item in shells):
+                problems.append(name + " driver_shell_allow must be a list of command names")
         history = record.get("roles_history")
         if history is not None:
             if not isinstance(history, list) or any(not isinstance(item, dict) for item in history):

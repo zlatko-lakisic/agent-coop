@@ -172,7 +172,9 @@ def format_status(board: Path) -> str:
             lines.append(display + " as a helper: " + helper_reason)
         else:
             lines.append(display + ": can run in the background as a helper.")
-        if driver_reason and not helper_reason:
+        if driver_reason and driver_reason.startswith(display + " cannot be scheduled as the driver"):
+            lines.append(driver_reason)
+        elif driver_reason and not helper_reason:
             lines.append(display + " as a driver: " + driver_reason)
         elif driver_reason is None and helper_reason is None:
             lines.append(display + ": can run in the background as a driver.")

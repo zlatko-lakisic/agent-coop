@@ -218,6 +218,10 @@ def build_parser() -> argparse.ArgumentParser:
     project_review.add_argument("--restore", action="store_true")
     project_review.add_argument("--accept", action="store_true")
     project_review.set_defaults(func=cmd_project_review)
+    project_set = project_sub.add_parser("set", help="Change a project setting")
+    project_set.add_argument("name")
+    project_set.add_argument("--driver-shell", required=True)
+    project_set.set_defaults(func=cmd_project_set)
 
     ui_cmd = sub.add_parser("ui", help="Open the local viewer")
     ui_cmd.set_defaults(func=cmd_ui)
@@ -1010,6 +1014,33 @@ def cmd_project_remove(args: argparse.Namespace) -> int:
 def cmd_project_repair(args: argparse.Namespace) -> int:
     """Reinstall missing driver project files."""
     print(project_repair(args.name))
+    return 0
+
+
+def cmd_project_set(args: argparse.Namespace) -> int:
+    """Set the extra shell commands a scheduled driver may run."""
+    _require_person(
+        args.name,
+        "This changes which commands a scheduled driver may run in " + args.name + ".",
+        kind="project",
+    )
+    names = []
+    for part in str(args.driver_shell).split(","):
+        token = part.strip()
+        if not token or any(char.isspace() for char in token):
+            raise CoopError("Each shell command must be a single word, separated by commas.", code=2)
+        names.append(token)
+    from agentcoop.projects import load_projects, mutate_projects
+
+    board = _board()
+    if args.name not in (load_projects(board).get("projects") or {}):
+        raise CoopError("There is no project named " + args.name + ". Run: agentcoop project list")
+
+    def change(data: dict) -> None:
+        data["projects"][args.name]["driver_shell_allow"] = names
+
+    mutate_projects(board, change)
+    print("Scheduled driver commands for " + args.name + ": " + ", ".join(names))
     return 0
 
 
