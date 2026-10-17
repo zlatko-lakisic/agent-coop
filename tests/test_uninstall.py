@@ -256,7 +256,8 @@ class UninstallTests(unittest.TestCase):
             self.assertTrue(rule.is_file())
             self.assertIn("extra line", rule.read_text(encoding="utf-8"))
             self.assertIn("Files you changed, left in place:", out)
-            self.assertIn(str(rule), out)
+            self.assertIn("agent-coop.mdc", out)
+            self.assertIn("in place", out)
 
     @unittest.skipUnless(sys.platform == "linux", "systemd user units are only removed on Linux")
     def test_systemd_unit_is_removed(self) -> None:
