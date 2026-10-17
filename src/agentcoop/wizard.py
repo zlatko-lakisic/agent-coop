@@ -223,9 +223,10 @@ def add_project_flow(
     try:
         install_project_files(board, chosen, driver, yes=yes, gitignore=gitignore)
     except Exception as exc:
-        rollback_project_add(board, chosen)
+        notes = rollback_project_add(board, chosen)
+        extra = (" " + " ".join(notes)) if notes else ""
         raise CoopError(
-            "Could not finish adding " + chosen + ". Nothing was changed. " + str(exc)
+            "Could not finish adding " + chosen + ". Nothing was changed. " + str(exc) + extra
         ) from exc
     lines = [
         "Project " + chosen + " is ready.",
@@ -273,16 +274,22 @@ def change_driver(project_name: str, agent: str, *, yes: bool) -> str:
             re=item.id,
         )
     kept = []
+    notes = []
     for entry in list(project.get("installed") or []):
         if entry.get("agent") == previous:
-            undo_entry(entry)
+            note = undo_entry(entry)
+            if note:
+                notes.append(note)
         else:
             kept.append(entry)
     project["installed"] = kept
     save_projects(board, projects)
     set_driver(board, project_name, agent)
     install_project_files(board, project_name, agent, yes=yes, gitignore=False)
-    return "Driver for " + project_name + " is now " + agent + ". It was " + previous + "."
+    text = "Driver for " + project_name + " is now " + agent + ". It was " + previous + "."
+    if notes:
+        text += "\n" + "\n".join(notes)
+    return text
 
 
 def helper_add(project_name: str, agent: str, note: str) -> str:
@@ -302,15 +309,21 @@ def helper_remove(project_name: str, agent: str) -> str:
     if project is None:
         raise CoopError("There is no project named " + project_name + ".")
     kept = []
+    notes = []
     for entry in list(project.get("installed") or []):
         if entry.get("agent") == agent:
-            undo_entry(entry)
+            note = undo_entry(entry)
+            if note:
+                notes.append(note)
         else:
             kept.append(entry)
     project["installed"] = kept
     save_projects(board, projects)
     remove_helper(board, project_name, agent)
-    return agent + " is no longer a helper on " + project_name + "."
+    text = agent + " is no longer a helper on " + project_name + "."
+    if notes:
+        text += "\n" + "\n".join(notes)
+    return text
 
 
 def project_repair(project_name: str) -> str:
@@ -332,8 +345,11 @@ def project_remove(project_name: str, *, yes: bool) -> str:
             "Run again with --yes."
         )
     board = board_root()
-    remove_project_files(board, project_name)
-    return "Removed " + project_name + ". A copy of its board folder is under the removed folder."
+    notes = remove_project_files(board, project_name)
+    text = "Removed " + project_name + ". A copy of its board folder is under the removed folder."
+    if notes:
+        text += "\n" + "\n".join(notes)
+    return text
 
 
 def format_agents(board: Path | None = None) -> str:

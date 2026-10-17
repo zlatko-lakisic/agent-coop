@@ -72,10 +72,13 @@ def text_sha256(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
-def backup_file(path: Path) -> Path:
-    """Copy a file next to itself before Agent Co-op changes it."""
+def backup_file(path: Path, board: Path, scope: str) -> Path:
+    """Copy a file under the board before Agent Co-op changes it."""
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-    dest = path.with_name(path.name + ".agentcoop-backup-" + stamp)
+    digest = hashlib.sha256(str(path.resolve()).encode("utf-8")).hexdigest()[:16]
+    folder = board / ".state" / "backups" / (scope or "user") / digest
+    folder.mkdir(parents=True, exist_ok=True)
+    dest = folder / (path.name + "." + stamp)
     shutil.copy2(path, dest)
     return dest
 
@@ -230,6 +233,7 @@ def connect_agent(
             manifest=manifest,
             yes=yes,
             tool_key=tool.key,
+            scope="user",
         )
     save_agents(board, agents)
     return name
@@ -311,26 +315,31 @@ def install_project_files(
             manifest=manifest,
             yes=yes,
             tool_key=tool.key,
+            scope=project_name,
         )
         written.append(item["path"])
     if gitignore and written:
-        _install_gitignore(root, written, manifest, agent_name)
+        _install_gitignore(root, written, manifest, agent_name, board, project_name)
     save_projects(board, projects)
     return written
 
 
-def rollback_project_add(board: Path, name: str) -> None:
+def rollback_project_add(board: Path, name: str) -> list[str]:
     """Undo a half-finished project add: installed files, record, and board folder."""
+    notes: list[str] = []
     projects = load_projects(board)
     project = projects["projects"].get(name)
     if project is not None:
         for entry in list(project.get("installed") or []):
-            undo_entry(entry)
+            note = undo_entry(entry)
+            if note:
+                notes.append(note)
         projects["projects"].pop(name, None)
         save_projects(board, projects)
     board_dir = board / "projects" / name
     if board_dir.exists():
         shutil.rmtree(board_dir)
+    return notes
 
 
 def repair_project_files(board: Path, project_name: str) -> list[str]:
@@ -415,7 +424,10 @@ def prune_out_of_scope_project_files(board: Path, project_name: str | None = Non
             if path_obj.is_file() and entry.get("sha256") and file_sha256(path_obj) != entry.get("sha256"):
                 kept.append(entry)
                 continue
-            undo_entry(entry)
+            note = undo_entry(entry)
+            if note:
+                kept.append(entry)
+                continue
             removed.append(path)
             changed = True
         if kept != list(project.get("installed") or []):
@@ -426,7 +438,7 @@ def prune_out_of_scope_project_files(board: Path, project_name: str | None = Non
     return removed
 
 
-def disconnect_agent(board: Path, name: str) -> None:
+def disconnect_agent(board: Path, name: str) -> list[str]:
     """Remove what connect installed and unregister the agent."""
     projects = load_projects(board)
     for project_name, project in (projects.get("projects") or {}).items():
@@ -452,14 +464,18 @@ def disconnect_agent(board: Path, name: str) -> None:
     agents = load_agents(board)
     if name not in agents["agents"]:
         raise CoopError(name + " is not connected. Run: agentcoop agents")
+    notes: list[str] = []
     record = agents["agents"].pop(name)
     for entry in list(record.get("installed") or []):
         if not _path_used_elsewhere(board, entry.get("path", ""), skip_agent=name):
-            undo_entry(entry)
+            note = undo_entry(entry)
+            if note:
+                notes.append(note)
     save_agents(board, agents)
+    return notes
 
 
-def remove_project_files(board: Path, project_name: str) -> None:
+def remove_project_files(board: Path, project_name: str) -> list[str]:
     """Undo files installed for a project, then drop the project entry."""
     from agentcoop.projects import require_integrity
 
@@ -468,8 +484,11 @@ def remove_project_files(board: Path, project_name: str) -> None:
     project = projects["projects"].get(project_name)
     if project is None:
         raise CoopError("There is no project named " + project_name + ".")
+    notes: list[str] = []
     for entry in list(project.get("installed") or []):
-        undo_entry(entry)
+        note = undo_entry(entry)
+        if note:
+            notes.append(note)
     removed = board / "removed"
     removed.mkdir(parents=True, exist_ok=True)
     src = board / "projects" / project_name
@@ -481,19 +500,20 @@ def remove_project_files(board: Path, project_name: str) -> None:
         shutil.move(str(src), str(dest))
     projects["projects"].pop(project_name)
     save_projects(board, projects)
+    return notes
 
 
-def undo_entry(entry: dict) -> None:
-    """Undo one manifest row."""
+def undo_entry(entry: dict) -> str | None:
+    """Undo one manifest row. Return a note when a changed file is left in place."""
     path = Path(entry.get("path", ""))
     if not path.exists():
-        return
+        return None
     kind = entry.get("kind")
     if kind == "hook":
         try:
             data = json.loads(path.read_text(encoding="utf-8"))
         except json.JSONDecodeError:
-            return
+            return None
         command = entry.get("command") or ""
         updated = remove_hook_command(data, command) if command else data
         hooks = updated.get("hooks") or {}
@@ -501,16 +521,16 @@ def undo_entry(entry: dict) -> None:
         other_keys = [key for key in updated.keys() if key != "hooks"]
         if entry.get("created") and empty_hooks and not other_keys:
             path.unlink()
-            return
+            return None
         path.write_text(json.dumps(updated, indent=2) + "\n", encoding="utf-8")
-        return
+        return None
     if kind in ("agents_md", "gemini_md"):
         text = remove_marked_section(path.read_text(encoding="utf-8"))
         if entry.get("created") and not text.strip():
             path.unlink()
         else:
             path.write_text(text, encoding="utf-8")
-        return
+        return None
     if kind == "gitignore":
         lines = path.read_text(encoding="utf-8").splitlines()
         remove = set(entry.get("lines") or [])
@@ -522,13 +542,16 @@ def undo_entry(entry: dict) -> None:
             if body:
                 body += "\n"
             path.write_text(body, encoding="utf-8")
-        return
+        return None
+    if path.is_file() and entry.get("sha256") and file_sha256(path) != entry.get("sha256"):
+        return "Left " + str(path) + " in place because it was changed after Agent Co-op installed it."
     if entry.get("created"):
         path.unlink()
-        return
+        return None
     backup = entry.get("backup")
     if backup and Path(backup).is_file():
         shutil.copy2(backup, path)
+    return None
 
 
 def _path_used_elsewhere(board: Path, path: str, *, skip_agent: str) -> bool:
@@ -558,13 +581,14 @@ def _install_one(
     manifest: list,
     yes: bool,
     tool_key: str,
+    scope: str,
 ) -> None:
     kind = item["kind"]
     path = root / item["path"]
     if kind == "hook":
         if get_tool(tool_key).hooks != "supported":
             return
-        _install_hook(board, agent_name, path, manifest, yes, tool_key)
+        _install_hook(board, agent_name, path, manifest, yes, tool_key, scope)
         return
     template_name = _KIND_TEMPLATE.get(kind)
     if template_name is None:
@@ -582,6 +606,8 @@ def _install_one(
         agent=agent_name,
         kind=kind,
         yes=yes,
+        board=board,
+        scope=scope,
     )
 
 
@@ -607,6 +633,7 @@ def _install_hook(
     manifest: list,
     yes: bool,
     tool_key: str,
+    scope: str,
 ) -> None:
     if tool_key != "claude-code":
         return
@@ -625,7 +652,17 @@ def _install_hook(
             existing = loaded
     merged = merge_hook_settings(existing, addition)
     content = json.dumps(merged, indent=2) + "\n"
-    _write_content(path, content, manifest=manifest, agent=agent_name, kind="hook", yes=yes, command=command)
+    _write_content(
+        path,
+        content,
+        manifest=manifest,
+        agent=agent_name,
+        kind="hook",
+        yes=yes,
+        command=command,
+        board=board,
+        scope=scope,
+    )
 
 
 def _write_content(
@@ -636,6 +673,8 @@ def _write_content(
     agent: str,
     kind: str,
     yes: bool,
+    board: Path,
+    scope: str,
     command: str = "",
 ) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -656,7 +695,7 @@ def _write_content(
                 + " already exists. Agent Co-op will not replace it unless you confirm. "
                 "Run the command again with --yes."
             )
-        backup = str(backup_file(path))
+        backup = str(backup_file(path, board, scope))
     path.write_text(content, encoding="utf-8")
     record_installed(
         manifest,
@@ -687,7 +726,14 @@ def _entry(path: Path, agent: str, kind: str, digest: str, *, created: bool, bac
     return row
 
 
-def _install_gitignore(root: Path, relative_paths: list[str], manifest: list, agent: str) -> None:
+def _install_gitignore(
+    root: Path,
+    relative_paths: list[str],
+    manifest: list,
+    agent: str,
+    board: Path,
+    scope: str,
+) -> None:
     path = root / ".gitignore"
     existing = path.read_text(encoding="utf-8") if path.is_file() else ""
     lines = existing.splitlines()
@@ -703,7 +749,7 @@ def _install_gitignore(root: Path, relative_paths: list[str], manifest: list, ag
         body += "\n"
     created = not path.exists()
     if path.exists() and path.read_text(encoding="utf-8") != body:
-        backup_file(path)
+        backup_file(path, board, scope)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(body, encoding="utf-8")
     record_installed(
@@ -714,7 +760,7 @@ def _install_gitignore(root: Path, relative_paths: list[str], manifest: list, ag
             "kind": "gitignore",
             "sha256": file_sha256(path),
             "created": created,
-            "lines": relative_paths,
+            "lines": added,
         },
     )
 

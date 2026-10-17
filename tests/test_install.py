@@ -48,7 +48,7 @@ class InstallTests(unittest.TestCase):
             self.assertEqual(skill.read_text(encoding="utf-8"), "mine\n")
             connect_agent(env.board, "claude-code", yes=True)
             self.assertIn("Agent Co-op", skill.read_text(encoding="utf-8"))
-            backups = list(skill.parent.glob("SKILL.md.agentcoop-backup-*"))
+            backups = list((env.board / ".state" / "backups").rglob("SKILL.md.*"))
             self.assertEqual(len(backups), 1)
             self.assertEqual(backups[0].read_text(encoding="utf-8"), "mine\n")
 

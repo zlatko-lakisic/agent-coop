@@ -546,8 +546,10 @@ def cmd_connect(args: argparse.Namespace) -> int:
 
 def cmd_disconnect(args: argparse.Namespace) -> int:
     """Disconnect one agent."""
-    disconnect_agent(_board(), args.name)
+    notes = disconnect_agent(_board(), args.name)
     print(args.name + " is disconnected.")
+    for note in notes:
+        print(note)
     return 0
 
 

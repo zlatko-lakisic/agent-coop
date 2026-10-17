@@ -215,6 +215,14 @@ def _project_checks(projects: dict, agents: dict, config: dict) -> list[DoctorIt
                 )
             )
         items.extend(_driver_files_check(name, project, known))
+        if path.is_dir():
+            for backup in sorted(path.glob("*.agentcoop-backup-*")):
+                items.append(
+                    DoctorItem(
+                        False,
+                        str(backup) + " is an old Agent Co-op backup. You can delete it.",
+                    )
+                )
     return items
 
 
