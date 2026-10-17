@@ -189,7 +189,7 @@ def stage_runtime(board: Path) -> None:
         if src.resolve() != dest.resolve():
             shutil.copy2(src, dest)
         if os.name != "nt":
-            dest.chmod(dest.stat().st_mode | 0o755)
+            dest.chmod(0o700)
     else:
         argv0 = Path(sys.argv[0]).resolve() if sys.argv and sys.argv[0] else None
         dest = bindir / "agentcoop.pyz"
@@ -197,7 +197,12 @@ def stage_runtime(board: Path) -> None:
             shutil.copy2(argv0, dest)
         elif not (argv0 is not None and argv0.suffix == ".pyz"):
             build_zipapp(dest)
-    (bindir / "VERSION").write_text(__version__ + "\n", encoding="utf-8")
+        if os.name != "nt" and dest.is_file():
+            dest.chmod(0o700)
+    version = bindir / "VERSION"
+    version.write_text(__version__ + "\n", encoding="utf-8")
+    if os.name != "nt":
+        version.chmod(0o600)
 
 
 def connect_agent(

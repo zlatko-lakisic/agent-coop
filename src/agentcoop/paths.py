@@ -82,6 +82,13 @@ def archive_dir(board: Path, project: str, agent: str) -> Path:
     return project_dir(board, project) / "archive" / agent
 
 
+def private_dir(folder: Path) -> None:
+    """Create a folder and, on POSIX, keep it private to this account."""
+    folder.mkdir(parents=True, exist_ok=True)
+    if os.name != "nt":
+        os.chmod(folder, 0o700)
+
+
 def ensure_agent_dirs(board: Path, project: str, agent: str) -> None:
     """Create the folders only this agent, or its senders, write."""
     for folder in (
@@ -92,7 +99,7 @@ def ensure_agent_dirs(board: Path, project: str, agent: str) -> None:
         archive_dir(board, project, agent) / "msgs",
         archive_dir(board, project, agent) / "done",
     ):
-        folder.mkdir(parents=True, exist_ok=True)
+        private_dir(folder)
 
 
 def quote_path(path: str) -> str:

@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Callable
 
 from agentcoop.errors import CoopError
-from agentcoop.paths import ensure_agent_dirs, home_dir, is_same_or_inside, paths_conflict
+from agentcoop.paths import ensure_agent_dirs, home_dir, is_same_or_inside, paths_conflict, private_dir
 from agentcoop.schema import check_agents, check_config, check_projects, format_problem
 from agentcoop.tools import get_tool, tool_can_drive
 
@@ -59,9 +59,14 @@ def validate_agent_name(name: str) -> None:
 
 def atomic_write_bytes(path: Path, data: bytes) -> None:
     """Write bytes by renaming a temp file into place."""
-    path.parent.mkdir(parents=True, exist_ok=True)
+    private_dir(path.parent)
     tmp = path.with_name("." + path.name + "." + str(os.getpid()) + ".tmp")
-    tmp.write_bytes(data)
+    mode = 0o600 if os.name != "nt" else 0o666
+    fd = os.open(str(tmp), os.O_CREAT | os.O_EXCL | os.O_WRONLY, mode)
+    try:
+        os.write(fd, data)
+    finally:
+        os.close(fd)
     os.replace(tmp, path)
 
 
@@ -102,12 +107,22 @@ def require_integrity(board: Path) -> None:
         raise CoopError(INTEGRITY_PAUSED, code=5)
 
 
+def tighten_board_modes(board: Path) -> None:
+    """On POSIX, make every board folder private and every board file private."""
+    if os.name == "nt" or not board.exists():
+        return
+    for dirpath, _dirnames, filenames in os.walk(board):
+        os.chmod(dirpath, 0o700)
+        for name in filenames:
+            os.chmod(os.path.join(dirpath, name), 0o600)
+
+
 def init_board_files(board: Path) -> None:
     """Create missing board files. Never rewrite files that already exist."""
-    board.mkdir(parents=True, exist_ok=True)
-    (board / ".state").mkdir(parents=True, exist_ok=True)
-    (board / "projects").mkdir(parents=True, exist_ok=True)
-    (board / "bin").mkdir(parents=True, exist_ok=True)
+    private_dir(board)
+    private_dir(board / ".state")
+    private_dir(board / "projects")
+    private_dir(board / "bin")
     if not (board / "config.json").is_file():
         atomic_write_bytes(board / "config.json", dump_json(dict(_EMPTY_CONFIG)))
     if not (board / "agents.json").is_file():

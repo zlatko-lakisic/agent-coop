@@ -32,6 +32,7 @@ from agentcoop.projects import (
     mutate_projects,
     remove_helper,
     set_driver,
+    tighten_board_modes,
     validate_project_name,
 )
 from agentcoop.tools import (
@@ -93,6 +94,7 @@ def setup_board(
     init_board_files(board)
     write_board_readme(board)
     stage_runtime(board)
+    tighten_board_modes(board)
     names: list[str] = []
     tools = list(connect or [])
     if prompter is not None and not tools:

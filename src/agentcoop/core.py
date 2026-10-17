@@ -21,7 +21,9 @@ from agentcoop.paths import (
     sent_dir,
 )
 from agentcoop.projects import (
+    INTEGRITY_PAUSED,
     INTEGRITY_WARNING,
+    load_agents,
     load_config,
     load_projects,
     read_projects_checked,
@@ -149,7 +151,7 @@ def write_message_file(directory: Path, message: dict) -> Path:
     tmp = directory / ("." + mid + ".json.tmp")
     payload = (json.dumps(message, indent=2, ensure_ascii=False) + "\n").encode("utf-8")
     try:
-        fd = os.open(str(tmp), os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
+        fd = os.open(str(tmp), os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600 if os.name != "nt" else 0o666)
     except FileExistsError as exc:
         raise CoopError(
             "Could not write the message because a temporary file is still there. Try again."
@@ -282,7 +284,9 @@ def protocol_violation(project: dict, message: Message, board: Path, project_nam
 
 def assert_can_send(board: Path, project_name: str, sender: str, recipient: str, re_id: str | None) -> dict:
     """Raise when agentcoop send must refuse this message. Returns the project."""
-    projects, _ok = read_projects_checked(board)
+    projects, intact = read_projects_checked(board)
+    if not intact:
+        raise CoopError(INTEGRITY_PAUSED, code=5)
     project = (projects.get("projects") or {}).get(project_name)
     if project is None:
         raise CoopError("There is no project named " + project_name + ". Run: agentcoop project list")
@@ -306,6 +310,9 @@ def assert_can_send(board: Path, project_name: str, sender: str, recipient: str,
         raise CoopError(reason)
     if role_of(project, sender) == "":
         raise CoopError(sender + " is not a member of " + project_name + ".")
+    agents = load_agents(board)
+    if recipient not in (agents.get("agents") or {}):
+        raise CoopError(recipient + " is not connected. Run: agentcoop agents")
     return project
 
 

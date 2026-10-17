@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -41,6 +42,9 @@ def run_doctor(board: Path, project: str | None = None) -> list[DoctorItem]:
     else:
         items.append(DoctorItem(True, "Board folder is ready."))
     items.append(_bin_check(board))
+    loose = _loose_permissions(board)
+    if loose is not None:
+        items.append(loose)
     projects, intact = read_projects_checked(board)
     if intact:
         items.append(DoctorItem(True, "projects.json matches the saved check."))
@@ -70,6 +74,32 @@ def os_access_write(path: Path) -> bool:
         return True
     except OSError:
         return False
+
+
+def _loose_permissions(board: Path) -> DoctorItem | None:
+    """Report once when another account on this computer can read the board."""
+    if os.name == "nt":
+        return None
+    seen = 0
+    for dirpath, _dirnames, filenames in os.walk(board):
+        if seen >= 5000:
+            break
+        seen += 1
+        if os.stat(dirpath).st_mode & 0o077:
+            return DoctorItem(
+                False,
+                "other accounts on this computer can read the board. Run: agentcoop setup",
+            )
+        for name in filenames:
+            seen += 1
+            if seen > 5000:
+                break
+            if os.stat(os.path.join(dirpath, name)).st_mode & 0o077:
+                return DoctorItem(
+                    False,
+                    "other accounts on this computer can read the board. Run: agentcoop setup",
+                )
+    return None
 
 
 def _bin_check(board: Path) -> DoctorItem:
