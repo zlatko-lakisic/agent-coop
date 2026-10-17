@@ -1,0 +1,102 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  zipapp:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Build zipapp
+        run: python3 scripts/build_pyz.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: agentcoop-pyz
+          path: dist/agentcoop.pyz
+
+  binary:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            artifact: agentcoop-macos-arm64
+          - os: macos-13
+            artifact: agentcoop-macos-x86_64
+          - os: windows-latest
+            artifact: agentcoop-windows-x64
+          - os: ubuntu-latest
+            artifact: agentcoop-linux-x64
+          - os: ubuntu-24.04-arm
+            artifact: agentcoop-linux-arm64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install PyInstaller
+        run: python -m pip install pyinstaller
+      # TODO: macOS code signing and notarization are not set up.
+      # Until then, document the Gatekeeper workaround in docs/troubleshooting.md.
+      - name: Build binary
+        shell: bash
+        run: |
+          mkdir -p dist/out
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            python -m PyInstaller --onefile --name agentcoop --paths src \
+              --add-data "src/agentcoop/templates;templates" \
+              src/agentcoop/__main__.py
+            mv dist/agentcoop.exe "dist/out/${{ matrix.artifact }}.exe"
+          else
+            python -m PyInstaller --onefile --name agentcoop --paths src \
+              --add-data "src/agentcoop/templates:templates" \
+              src/agentcoop/__main__.py
+            mv dist/agentcoop "dist/out/${{ matrix.artifact }}"
+            chmod +x "dist/out/${{ matrix.artifact }}"
+          fi
+      - name: Smoke test
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            BIN="dist/out/${{ matrix.artifact }}.exe"
+          else
+            BIN="dist/out/${{ matrix.artifact }}"
+          fi
+          export AGENTCOOP_BOARD="${RUNNER_TEMP}/board"
+          "$BIN" version
+          "$BIN" setup --detect --json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: dist/out/*
+
+  publish:
+    needs: [zipapp, binary]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: release
+          merge-multiple: true
+      - name: Checksums
+        run: |
+          cd release
+          if command -v sha256sum >/dev/null; then
+            sha256sum * > SHA256SUMS
+          else
+            shasum -a 256 * > SHA256SUMS
+          fi
+      - name: Publish
+        uses: softprops/action-gh-release@v2
+        with:
+          files: release/*

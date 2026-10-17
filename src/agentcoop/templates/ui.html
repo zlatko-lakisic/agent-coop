@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Agent Co-op</title>
+<style>
+:root {
+  color-scheme: light dark;
+  --bg: #f6f4ef;
+  --ink: #1c1b19;
+  --muted: #5c574e;
+  --line: #d9d3c7;
+  --card: #fffdf8;
+  --accent: #0f6b4c;
+  --warn: #8a3d12;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #1b1c1a;
+    --ink: #f3f0e8;
+    --muted: #b7b1a6;
+    --line: #3a3b38;
+    --card: #242522;
+    --accent: #7dcea8;
+    --warn: #f0a070;
+  }
+}
+body.light {
+  --bg: #f6f4ef; --ink: #1c1b19; --muted: #5c574e; --line: #d9d3c7; --card: #fffdf8; --accent: #0f6b4c; --warn: #8a3d12;
+}
+body.dark {
+  --bg: #1b1c1a; --ink: #f3f0e8; --muted: #b7b1a6; --line: #3a3b38; --card: #242522; --accent: #7dcea8; --warn: #f0a070;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  font: 16px/1.45 "Iowan Old Style", Palatino, Georgia, serif;
+  background: var(--bg);
+  color: var(--ink);
+}
+header, main { max-width: 980px; margin: 0 auto; padding: 1.2rem; }
+header { display: flex; justify-content: space-between; gap: 1rem; align-items: baseline; }
+h1 { font-size: 1.6rem; margin: 0; }
+h2 { font-size: 1.15rem; margin: 0 0 0.6rem; }
+p.note { color: var(--muted); margin: 0.3rem 0 0; }
+button, input, select, textarea {
+  font: inherit;
+  color: inherit;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 0.35rem 0.55rem;
+}
+button { cursor: pointer; }
+button.primary { background: var(--accent); color: #fff; border-color: transparent; }
+.layout { display: grid; grid-template-columns: 240px 1fr; gap: 1rem; }
+.card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 0.9rem; margin-bottom: 1rem; }
+.project { display: block; width: 100%; text-align: left; margin-bottom: 0.4rem; }
+.project.active { border-color: var(--accent); }
+.msg { border-top: 1px solid var(--line); padding: 0.7rem 0; }
+.meta { color: var(--muted); font-size: 0.92rem; }
+.warn { color: var(--warn); }
+label { display: block; margin: 0.45rem 0; }
+.row { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+@media (max-width: 800px) {
+  .layout { grid-template-columns: 1fr; }
+}
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <h1>Agent Co-op</h1>
+    <p class="note">This page is for you. Agents do not connect to it.</p>
+  </div>
+  <div class="row">
+    <button type="button" id="theme">Theme</button>
+    <button type="button" id="close">Close viewer</button>
+  </div>
+</header>
+<main class="layout">
+  <section>
+    <div class="card">
+      <h2>Projects</h2>
+      <div id="projects"></div>
+    </div>
+  </section>
+  <section>
+    <div class="card" id="talk"></div>
+    <div class="card">
+      <h2>Roles</h2>
+      <div id="roles"></div>
+    </div>
+    <div class="card">
+      <h2>Add project</h2>
+      <form id="add">
+        <label>Folder <input name="path" required style="width:100%"></label>
+        <div id="suggestions"></div>
+        <label>Name <input name="name" required></label>
+        <label>Driver <select name="driver" id="driver"></select></label>
+        <div id="helper-picks"></div>
+        <button class="primary" type="submit">Add project</button>
+      </form>
+    </div>
+    <div class="card">
+      <h2>Doctor</h2>
+      <button type="button" id="doctor">Run doctor</button>
+      <pre id="doctor-out"></pre>
+    </div>
+  </section>
+</main>
+<script>
+const token = new URLSearchParams(location.search).get("t") || "";
+const headers = {"Content-Type": "application/json", "X-Agentcoop-Token": token};
+let state = {projects: [], agents: []};
+let current = "";
+
+function api(path, options) {
+  const sep = path.indexOf("?") >= 0 ? "&" : "?";
+  return fetch(path + sep + "t=" + encodeURIComponent(token), options || {});
+}
+
+async function load() {
+  const response = await api("/api/state");
+  state = await response.json();
+  if (!current && state.projects.length) current = state.projects[0].name;
+  draw();
+}
+
+function draw() {
+  const list = document.getElementById("projects");
+  list.innerHTML = "";
+  state.projects.forEach(function (project) {
+    const button = document.createElement("button");
+    button.className = "project" + (project.name === current ? " active" : "");
+    button.textContent = project.name + " (" + project.driver + ")";
+    button.onclick = function () { current = project.name; draw(); };
+    list.appendChild(button);
+  });
+  if (!state.projects.length) list.textContent = "No projects yet.";
+  drawTalk();
+  drawRoles();
+  drawAdd();
+}
+
+function drawTalk() {
+  const box = document.getElementById("talk");
+  const project = state.projects.find(function (item) { return item.name === current; });
+  if (!project) { box.innerHTML = "<h2>Conversation</h2><p>Add a project to see messages.</p>"; return; }
+  let html = "<h2>" + escapeHtml(project.name) + "</h2>";
+  html += "<p class='meta'>Driver: " + escapeHtml(project.driver) + "</p>";
+  const helpers = Object.keys(project.helpers || {});
+  html += "<p class='meta'>Helpers: " + (helpers.length ? helpers.map(escapeHtml).join(", ") : "none") + "</p>";
+  if (!project.messages.length) html += "<p>No messages yet.</p>";
+  project.messages.forEach(function (message) {
+    html += "<div class='msg'><div class='meta'>" + escapeHtml(message.ts) + " " + escapeHtml(message.sender) + " to " + escapeHtml(message.recipient) + " (" + escapeHtml(message.type) + ")</div>";
+    html += "<strong>" + escapeHtml(message.subject) + "</strong>";
+    if (message.re) html += "<div class='meta'>Reply to " + escapeHtml(message.re) + "</div>";
+    html += "<p>" + escapeHtml(message.body) + "</p>";
+    (message.attachments || []).forEach(function (path) {
+      html += "<div class='meta'>" + escapeHtml(path) + "</div>";
+    });
+    html += "</div>";
+  });
+  box.innerHTML = html;
+}
+
+function drawRoles() {
+  const box = document.getElementById("roles");
+  const project = state.projects.find(function (item) { return item.name === current; });
+  if (!project) { box.textContent = "Select a project."; return; }
+  let html = "<label>Driver <select id='new-driver'>";
+  state.agents.filter(function (agent) { return agent.can_drive; }).forEach(function (agent) {
+    html += "<option" + (agent.name === project.driver ? " selected" : "") + ">" + escapeHtml(agent.name) + "</option>";
+  });
+  html += "</select></label><button type='button' id='save-driver'>Change driver</button>";
+  html += "<h2>Helpers</h2>";
+  Object.keys(project.helpers || {}).forEach(function (name) {
+    html += "<div class='row'><span>" + escapeHtml(name) + " (" + escapeHtml(project.helpers[name]) + ")</span> <button type='button' data-remove='" + escapeHtml(name) + "'>Remove</button></div>";
+  });
+  html += "<div class='row'><select id='add-helper'>";
+  state.agents.forEach(function (agent) {
+    if (agent.name !== project.driver && !project.helpers[agent.name]) {
+      html += "<option>" + escapeHtml(agent.name) + "</option>";
+    }
+  });
+  html += "</select><input id='helper-note' placeholder='Short note'><button type='button' id='save-helper'>Add helper</button></div>";
+  box.innerHTML = html;
+  document.getElementById("save-driver").onclick = async function () {
+    await api("/api/driver", {method: "POST", headers: headers, body: JSON.stringify({project: project.name, agent: document.getElementById("new-driver").value})});
+    await load();
+  };
+  const add = document.getElementById("save-helper");
+  if (add) add.onclick = async function () {
+    await api("/api/helper/add", {method: "POST", headers: headers, body: JSON.stringify({project: project.name, agent: document.getElementById("add-helper").value, note: document.getElementById("helper-note").value || "helps the driver"})});
+    await load();
+  };
+  box.querySelectorAll("[data-remove]").forEach(function (button) {
+    button.onclick = async function () {
+      await api("/api/helper/remove", {method: "POST", headers: headers, body: JSON.stringify({project: project.name, agent: button.getAttribute("data-remove")})});
+      await load();
+    };
+  });
+}
+
+function drawAdd() {
+  const driver = document.getElementById("driver");
+  driver.innerHTML = "";
+  state.agents.filter(function (agent) { return agent.can_drive; }).forEach(function (agent) {
+    const option = document.createElement("option");
+    option.textContent = agent.name;
+    driver.appendChild(option);
+  });
+  const picks = document.getElementById("helper-picks");
+  picks.innerHTML = "";
+  state.agents.forEach(function (agent) {
+    if (agent.can_drive && agent.name === driver.value) return;
+    const label = document.createElement("label");
+    label.innerHTML = "<input type='checkbox' value='" + escapeHtml(agent.name) + "'> " + escapeHtml(agent.display) + " <input data-note='" + escapeHtml(agent.name) + "' value='" + escapeHtml(agent.note || "") + "'>";
+    picks.appendChild(label);
+  });
+}
+
+document.getElementById("add").onsubmit = async function (event) {
+  event.preventDefault();
+  const form = event.target;
+  const helpers = {};
+  form.querySelectorAll("input[type=checkbox]:checked").forEach(function (box) {
+    const note = form.querySelector("[data-note='" + box.value + "']");
+    helpers[box.value] = note ? note.value : "helps the driver";
+  });
+  const response = await api("/api/project", {method: "POST", headers: headers, body: JSON.stringify({
+    path: form.path.value, name: form.name.value, driver: form.driver.value, helpers: helpers
+  })});
+  if (!response.ok) {
+    alert(await response.text());
+    return;
+  }
+  current = form.name.value;
+  await load();
+};
+
+document.getElementById("doctor").onclick = async function () {
+  const response = await api("/api/doctor" + (current ? "?project=" + encodeURIComponent(current) : ""));
+  document.getElementById("doctor-out").textContent = await response.text();
+};
+
+document.getElementById("close").onclick = async function () {
+  await api("/api/shutdown", {method: "POST", headers: headers, body: "{}"});
+  document.body.innerHTML = "<main><h1>Viewer closed</h1><p>You can close this tab.</p></main>";
+};
+
+document.getElementById("theme").onclick = function () {
+  if (document.body.classList.contains("dark")) {
+    document.body.classList.remove("dark");
+    document.body.classList.add("light");
+  } else if (document.body.classList.contains("light")) {
+    document.body.classList.remove("light");
+    document.body.classList.add("dark");
+  } else if (window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches) {
+    document.body.classList.add("light");
+  } else {
+    document.body.classList.add("dark");
+  }
+};
+
+function escapeHtml(value) {
+  return String(value == null ? "" : value).replace(/[&<>"']/g, function (char) {
+    return {"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[char];
+  });
+}
+
+api("/api/suggestions").then(function (response) { return response.json(); }).then(function (paths) {
+  const box = document.getElementById("suggestions");
+  paths.forEach(function (path) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.textContent = path;
+    button.onclick = function () {
+      document.querySelector("#add [name=path]").value = path;
+      const parts = path.split(/[/\\\\]/);
+      document.querySelector("#add [name=name]").value = (parts[parts.length - 1] || "").toLowerCase().replace(/[^a-z0-9]+/g, "-");
+    };
+    box.appendChild(button);
+  });
+});
+
+load();
+</script>
+</body>
+</html>
