@@ -74,7 +74,9 @@ class ProjectAddTests(unittest.TestCase):
             out = io.StringIO()
             with redirect_stdout(out):
                 self.assertEqual(main(["project", "repair", "demo"]), 0)
-            self.assertIn(str(rule), out.getvalue())
+            repaired = out.getvalue()
+            self.assertIn("Repaired:", repaired)
+            self.assertIn("agent-coop.mdc", repaired)
             self.assertTrue(rule.is_file())
             out = io.StringIO()
             err = io.StringIO()

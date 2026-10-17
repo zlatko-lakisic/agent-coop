@@ -103,11 +103,10 @@ class InstallTests(unittest.TestCase):
             self.assertEqual(data["hooks"]["PreToolUse"][0]["hooks"][0]["command"], "echo hi")
             self.assertIn("SessionStart", data["hooks"])
             self.assertIn("UserPromptSubmit", data["hooks"])
-            command = data["hooks"]["SessionStart"][0]["hooks"][0]["command"]
-            self.assertEqual(
-                json.dumps(data).count(command),
-                2,
-            )
+            session = data["hooks"]["SessionStart"][0]["hooks"][0]["command"]
+            prompt = data["hooks"]["UserPromptSubmit"][0]["hooks"][0]["command"]
+            self.assertEqual(session, prompt)
+            self.assertIn("check --as claude_code --summary", session)
             folder = env.workspace / "frontend"
             folder.mkdir()
             add_project(env.board, "frontend", folder, "claude_code", {})
