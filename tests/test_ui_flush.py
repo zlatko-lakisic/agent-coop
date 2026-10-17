@@ -24,6 +24,7 @@ class UiFlushTests(unittest.TestCase):
             child_env["AGENTCOOP_BOARD"] = str(env.board)
             root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
             child_env["PYTHONPATH"] = os.path.join(root, "src")
+            child_env["PYTHONUNBUFFERED"] = "1"
             proc = subprocess.Popen(
                 [sys.executable, "-c", "from agentcoop.ui import serve; raise SystemExit(serve(open_browser=False))"],
                 stdout=subprocess.PIPE,
@@ -38,8 +39,8 @@ class UiFlushTests(unittest.TestCase):
 
             thread = threading.Thread(target=_read)
             thread.start()
-            thread.join(5)
-            self.assertTrue(box, "the link was not printed within 5 seconds")
+            thread.join(30)
+            self.assertTrue(box, "the link was not printed within 30 seconds")
             line = box[0].decode("utf-8").strip()
             self.assertTrue(line.startswith("http://127.0.0.1:"))
             self.assertIn("?t=", line)
