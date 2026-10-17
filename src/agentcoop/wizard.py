@@ -376,6 +376,15 @@ def helper_add(project_name: str, agent: str, note: str) -> str:
     tool_key = (agents["agents"].get(agent) or {}).get("tool", "")
     if tool_key and tool_key != "runner" and get_tool(tool_key).project_files_for == "members":
         install_project_files(board, project_name, agent, yes=False, gitignore=False)
+    if tool_key == "runner":
+        return (
+            agent
+            + " is a helper on "
+            + project_name
+            + ". "
+            + agent
+            + " is a local model runner. It only answers questions and cannot edit files."
+        )
     return agent + " is a helper on " + project_name + ". " + lock_notice(tool_key)
 
 

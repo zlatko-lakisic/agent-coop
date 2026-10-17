@@ -380,8 +380,8 @@ def send(
     needs_reply: bool = False,
     allow_secret: bool = False,
     now: datetime | None = None,
-) -> tuple[str, str | None]:
-    """Write a message and return its id (second value always None)."""
+) -> str:
+    """Write a message and return its id."""
     require_board(board)
     validate_agent_name(sender)
     validate_agent_name(recipient)
@@ -444,7 +444,7 @@ def send(
             write_message_file(sent_dir(board, project, sender), payload)
         except FileExistsError:
             pass
-        return mid, None
+        return mid
     raise CoopError("Could not pick a unique message id. Try again.") from last_error
 
 

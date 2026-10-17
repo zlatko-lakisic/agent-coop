@@ -395,8 +395,21 @@ def validate_project_record(board: Path, name: str, project: dict, agents: dict)
         if other_name == name:
             continue
         other_path = other.get("path")
-        if isinstance(other_path, str) and paths_conflict(project_path, Path(other_path)):
-            raise CoopError("This folder is already part of the " + other_name + " project.")
+        if isinstance(other_path, str):
+            _raise_folder_conflict(project_path, Path(other_path), other_name)
+
+
+def _raise_folder_conflict(project_path: Path, other_path: Path, other_name: str) -> None:
+    """Refuse nested project folders with the right message for each direction."""
+    if not paths_conflict(project_path, other_path):
+        return
+    if project_path != other_path and is_same_or_inside(other_path, project_path):
+        raise CoopError(
+            "This folder contains the "
+            + other_name
+            + " project. Projects cannot be inside each other."
+        )
+    raise CoopError("This folder is already part of the " + other_name + " project.")
 
 
 def validate_all(board: Path, projects: dict | None = None) -> None:
@@ -409,8 +422,7 @@ def validate_all(board: Path, projects: dict | None = None) -> None:
         validate_project_record(board, name, project, agents)
         path = Path(project["path"])
         for other_name, other_path in seen:
-            if paths_conflict(path, other_path):
-                raise CoopError("This folder is already part of the " + other_name + " project.")
+            _raise_folder_conflict(path, other_path, other_name)
         seen.append((name, path))
 
 
@@ -567,8 +579,8 @@ def _validate_new_project(board: Path, name: str, record: dict, projects: dict, 
         if other_name == name:
             continue
         other_path = other.get("path")
-        if isinstance(other_path, str) and paths_conflict(project_path, Path(other_path)):
-            raise CoopError("This folder is already part of the " + other_name + " project.")
+        if isinstance(other_path, str):
+            _raise_folder_conflict(project_path, Path(other_path), other_name)
 
 
 def set_driver(board: Path, name: str, agent: str) -> str:
