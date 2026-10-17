@@ -29,6 +29,11 @@ class Tool:
     notes: str
     helper_note: str = ""
     supported: bool = True
+    project_files_for: str = "driver"
+
+    def __post_init__(self) -> None:
+        if self.key == "cursor" or self.join_method in ("agents_md", "gemini_md"):
+            object.__setattr__(self, "project_files_for", "members")
 
 
 def _skill(scope: str, path: str) -> dict[str, str]:

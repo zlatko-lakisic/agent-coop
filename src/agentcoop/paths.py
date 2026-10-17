@@ -23,14 +23,17 @@ def board_root() -> Path:
     return home_dir() / ".agent_board"
 
 
-def casefold_key(path: Path) -> tuple[str, ...]:
+def casefold_key(path: Path, *, fold: bool | None = None) -> tuple[str, ...]:
     """Return path parts for comparison.
 
     macOS and Windows treat paths as case-insensitive. Linux does not.
+    Pass fold=True to compare case-insensitively on every OS.
     """
     resolved = path.expanduser().resolve()
     parts = resolved.parts
-    if sys.platform == "darwin" or os.name == "nt":
+    if fold is None:
+        fold = sys.platform == "darwin" or os.name == "nt"
+    if fold:
         return tuple(part.casefold() for part in parts)
     return tuple(parts)
 
@@ -79,6 +82,13 @@ def archive_dir(board: Path, project: str, agent: str) -> Path:
     return project_dir(board, project) / "archive" / agent
 
 
+def private_dir(folder: Path) -> None:
+    """Create a folder and, on POSIX, keep it private to this account."""
+    folder.mkdir(parents=True, exist_ok=True)
+    if os.name != "nt":
+        os.chmod(folder, 0o700)
+
+
 def ensure_agent_dirs(board: Path, project: str, agent: str) -> None:
     """Create the folders only this agent, or its senders, write."""
     for folder in (
@@ -89,7 +99,7 @@ def ensure_agent_dirs(board: Path, project: str, agent: str) -> None:
         archive_dir(board, project, agent) / "msgs",
         archive_dir(board, project, agent) / "done",
     ):
-        folder.mkdir(parents=True, exist_ok=True)
+        private_dir(folder)
 
 
 def quote_path(path: str) -> str:

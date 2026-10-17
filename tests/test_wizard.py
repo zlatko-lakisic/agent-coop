@@ -73,7 +73,8 @@ class WizardTests(unittest.TestCase):
                     ),
                     0,
                 )
-                self.assertEqual(main(["project", "driver", "frontend", "claude_code", "--yes"]), 0)
+                with support.person("frontend"):
+                    self.assertEqual(main(["project", "driver", "frontend", "claude_code", "--yes"]), 0)
             finally:
                 os.chdir(previous)
             self.assertFalse(rule.exists())
@@ -82,7 +83,8 @@ class WizardTests(unittest.TestCase):
             inbox = env.board / "projects" / "frontend" / "inbox" / "claude_code" / "msgs"
             bodies = [json.loads(path.read_text(encoding="utf-8"))["body"] for path in inbox.glob("*.json")]
             self.assertTrue(any("Driver changed to claude_code" in body for body in bodies))
-            self.assertEqual(main(["project", "remove", "frontend", "--yes"]), 0)
+            with support.person("frontend"):
+                self.assertEqual(main(["project", "remove", "frontend", "--yes"]), 0)
             self.assertFalse((env.board / "projects" / "frontend").exists())
             self.assertTrue(any(Path(env.board / "removed").iterdir()))
 

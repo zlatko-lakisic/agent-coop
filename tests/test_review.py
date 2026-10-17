@@ -56,7 +56,7 @@ class ReviewTests(unittest.TestCase):
             _tamper(env.board)
             self.assertFalse(integrity_ok(env.board))
             err = io.StringIO()
-            with redirect_stderr(err):
+            with support.person("demo"), redirect_stderr(err):
                 code = main(["project", "helper", "add", "demo", "claude_code", "--note", "new"])
             self.assertEqual(code, 5)
             self.assertIn("role changes are paused", err.getvalue())
@@ -92,7 +92,7 @@ class ReviewTests(unittest.TestCase):
             )
             _tamper(env.board)
             out = io.StringIO()
-            with redirect_stdout(out):
+            with support.person("review"), redirect_stdout(out):
                 self.assertEqual(main(["project", "review", "--restore"]), 0)
             self.assertIn("Restored", out.getvalue())
             self.assertTrue(integrity_ok(env.board))
@@ -123,7 +123,7 @@ class ReviewTests(unittest.TestCase):
             )
             _tamper(env.board)
             out = io.StringIO()
-            with redirect_stdout(out):
+            with support.person("review"), redirect_stdout(out):
                 self.assertEqual(main(["project", "review", "--accept"]), 0)
             self.assertIn("Accepted", out.getvalue())
             self.assertTrue(integrity_ok(env.board))
@@ -155,7 +155,7 @@ class ReviewTests(unittest.TestCase):
             data["projects"]["demo"]["driver"] = "missing_agent"
             path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
             err = io.StringIO()
-            with redirect_stderr(err):
+            with support.person("review"), redirect_stderr(err):
                 code = main(["project", "review", "--accept"])
             self.assertEqual(code, 1)
             self.assertFalse(integrity_ok(env.board))

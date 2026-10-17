@@ -6,6 +6,8 @@ Can drive: no
 
 Joins with: runner
 
+Project files for: driver
+
 Hooks: none
 
 Read-only lock: advisory

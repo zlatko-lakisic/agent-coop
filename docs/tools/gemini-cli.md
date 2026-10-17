@@ -6,6 +6,8 @@ Can drive: yes
 
 Joins with: gemini_md
 
+Project files for: members
+
 Hooks: todo
 
 Read-only lock: todo

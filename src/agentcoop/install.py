@@ -19,15 +19,25 @@ from agentcoop.projects import (
     connect_agent_record,
     load_agents,
     load_projects,
+    mutate_agents,
+    mutate_projects,
     now_stamp,
     record_installed,
-    save_agents,
-    save_projects,
 )
 from agentcoop.tools import get_tool
 
 MARKER_START = "<!-- agentcoop:start -->"
 MARKER_END = "<!-- agentcoop:end -->"
+
+
+def marker_start(agent: str) -> str:
+    """Return the section start marker for one agent."""
+    return "<!-- agentcoop:start " + agent + " -->"
+
+
+def marker_end(agent: str) -> str:
+    """Return the section end marker for one agent."""
+    return "<!-- agentcoop:end " + agent + " -->"
 
 _KIND_TEMPLATE = {
     "skill": "SKILL.md.tmpl",
@@ -72,23 +82,39 @@ def text_sha256(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
-def backup_file(path: Path) -> Path:
-    """Copy a file next to itself before Agent Co-op changes it."""
+def backup_file(path: Path, board: Path, scope: str) -> Path:
+    """Copy a file under the board before Agent Co-op changes it."""
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-    dest = path.with_name(path.name + ".agentcoop-backup-" + stamp)
+    digest = hashlib.sha256(str(path.resolve()).encode("utf-8")).hexdigest()[:16]
+    folder = board / ".state" / "backups" / (scope or "user") / digest
+    folder.mkdir(parents=True, exist_ok=True)
+    dest = folder / (path.name + "." + stamp)
     shutil.copy2(path, dest)
     return dest
 
 
-def upsert_marked_section(original: str, section: str) -> str:
-    """Insert or replace only the Agent Co-op section of a text file."""
-    block = MARKER_START + "\n" + section.strip() + "\n" + MARKER_END + "\n"
-    if MARKER_START in original and MARKER_END in original:
-        pre, rest = original.split(MARKER_START, 1)
-        _old, post = rest.split(MARKER_END, 1)
-        if post.startswith("\n"):
-            post = post[1:]
-        return pre + block + post
+def _replace_marked(original: str, start: str, end: str, block: str) -> str | None:
+    if start not in original or end not in original:
+        return None
+    pre, rest = original.split(start, 1)
+    _old, post = rest.split(end, 1)
+    if post.startswith("\n"):
+        post = post[1:]
+    return pre + block + post
+
+
+def upsert_marked_section(original: str, section: str, agent: str = "") -> str:
+    """Insert or replace one agent's Agent Co-op section."""
+    start = marker_start(agent) if agent else MARKER_START
+    end = marker_end(agent) if agent else MARKER_END
+    block = start + "\n" + section.strip() + "\n" + end + "\n"
+    updated = _replace_marked(original, start, end, block)
+    if updated is not None:
+        return updated
+    if agent and MARKER_START in original and marker_start(agent) not in original and "<!-- agentcoop:start " not in original:
+        updated = _replace_marked(original, MARKER_START, MARKER_END, block)
+        if updated is not None:
+            return updated
     base = original
     if base and not base.endswith("\n"):
         base += "\n"
@@ -97,15 +123,20 @@ def upsert_marked_section(original: str, section: str) -> str:
     return base + block
 
 
-def remove_marked_section(original: str) -> str:
-    """Remove the Agent Co-op section and leave the rest of the file."""
-    if MARKER_START not in original or MARKER_END not in original:
-        return original
-    pre, rest = original.split(MARKER_START, 1)
-    _old, post = rest.split(MARKER_END, 1)
-    if post.startswith("\n"):
-        post = post[1:]
-    return pre + post
+def remove_marked_section(original: str, agent: str = "") -> str:
+    """Remove one agent's section. The old marker form is removed when it is the only one."""
+    if agent:
+        start = marker_start(agent)
+        end = marker_end(agent)
+        updated = _replace_marked(original, start, end, "")
+        text = original if updated is None else updated
+        if "<!-- agentcoop:start " not in text and MARKER_START in text:
+            legacy = _replace_marked(text, MARKER_START, MARKER_END, "")
+            if legacy is not None:
+                text = legacy
+        return text
+    updated = _replace_marked(original, MARKER_START, MARKER_END, "")
+    return original if updated is None else updated
 
 
 def merge_hook_settings(existing: dict, addition: dict) -> dict:
@@ -186,7 +217,7 @@ def stage_runtime(board: Path) -> None:
         if src.resolve() != dest.resolve():
             shutil.copy2(src, dest)
         if os.name != "nt":
-            dest.chmod(dest.stat().st_mode | 0o755)
+            dest.chmod(0o700)
     else:
         argv0 = Path(sys.argv[0]).resolve() if sys.argv and sys.argv[0] else None
         dest = bindir / "agentcoop.pyz"
@@ -194,7 +225,71 @@ def stage_runtime(board: Path) -> None:
             shutil.copy2(argv0, dest)
         elif not (argv0 is not None and argv0.suffix == ".pyz"):
             build_zipapp(dest)
-    (bindir / "VERSION").write_text(__version__ + "\n", encoding="utf-8")
+        if os.name != "nt" and dest.is_file():
+            dest.chmod(0o700)
+    version = bindir / "VERSION"
+    version.write_text(__version__ + "\n", encoding="utf-8")
+    if os.name != "nt":
+        version.chmod(0o600)
+
+
+def _plan_user_files(board: Path, tool: object, agent_name: str) -> list[dict]:
+    """Render every user-scope file into memory. Nothing is written."""
+    planned = []
+    for item in tool.install_paths:  # type: ignore[attr-defined]
+        if item["scope"] != "user":
+            continue
+        kind = item["kind"]
+        path = home_dir() / item["path"]
+        if kind == "hook":
+            if tool.hooks != "supported":  # type: ignore[attr-defined]
+                continue
+            addition = claude_code_hooks(board, agent_name)
+            existing: dict = {}
+            if path.is_file():
+                try:
+                    loaded = json.loads(path.read_text(encoding="utf-8"))
+                except json.JSONDecodeError as exc:
+                    raise CoopError(str(path) + " is not valid JSON, so hooks were not changed.") from exc
+                if isinstance(loaded, dict):
+                    existing = loaded
+            merged = merge_hook_settings(existing, addition)
+            command = ""
+            for entries in (addition.get("hooks") or {}).values():
+                for entry in entries:
+                    command = _hook_command(entry) or command
+            planned.append(
+                {
+                    "path": path,
+                    "content": json.dumps(merged, indent=2) + "\n",
+                    "kind": kind,
+                    "command": command,
+                }
+            )
+            continue
+        template_name = _KIND_TEMPLATE.get(kind)
+        if template_name is None:
+            continue
+        rendered = render_template(template_name, agent_name=agent_name, board=board)
+        if kind in ("agents_md", "gemini_md"):
+            original = path.read_text(encoding="utf-8") if path.is_file() else ""
+            rendered = upsert_marked_section(original, rendered, agent_name)
+        planned.append({"path": path, "content": rendered, "kind": kind, "command": ""})
+    return planned
+
+
+def _refuse_foreign(path: Path, content: str, manifest: list, *, yes: bool) -> None:
+    """Stop before any write when a target exists and is not ours."""
+    if not path.exists() or yes:
+        return
+    current = path.read_text(encoding="utf-8")
+    if current == content or _owned(manifest, path, current):
+        return
+    raise CoopError(
+        str(path)
+        + " already exists. Agent Co-op will not replace it unless you confirm. "
+        "Run the command again with --yes."
+    )
 
 
 def connect_agent(
@@ -213,25 +308,55 @@ def connect_agent(
     name = agent_name or tool.default_agent_name
     if not name:
         raise CoopError(tool.display + " needs a name. Add --as NAME.")
-    connect_agent_record(board, name, tool_key, display=display, runner=runner)
     if tool_key in ("ollama", "lmstudio", "runner"):
+        connect_agent_record(board, name, tool_key, display=display, runner=runner)
         return name
-    agents = load_agents(board)
-    record = agents["agents"][name]
-    manifest = record.setdefault("installed", [])
-    for item in tool.install_paths:
-        if item["scope"] != "user":
-            continue
-        _install_one(
-            board,
-            agent_name=name,
-            item=item,
-            root=home_dir(),
-            manifest=manifest,
-            yes=yes,
-            tool_key=tool.key,
-        )
-    save_agents(board, agents)
+
+    planned = _plan_user_files(board, tool, name)
+    current_agents = load_agents(board)
+    current = (current_agents.get("agents") or {}).get(name) or {}
+    manifest = list(current.get("installed") or [])
+    for item in planned:
+        _refuse_foreign(item["path"], item["content"], manifest, yes=yes)
+    written: list[dict] = []
+    try:
+        for item in planned:
+            before = len(manifest)
+            _write_content(
+                item["path"],
+                item["content"],
+                manifest=manifest,
+                agent=name,
+                kind=item["kind"],
+                yes=yes,
+                board=board,
+                scope="user",
+                command=item.get("command") or "",
+            )
+            written.extend(manifest[before:])
+
+        def change(agents: dict) -> None:
+            record = agents["agents"].get(name)
+            if record is None:
+                record = {
+                    "tool": tool_key,
+                    "display": display or tool.display,
+                    "connected": now_stamp(),
+                    "installed": [],
+                }
+                agents["agents"][name] = record
+            elif display:
+                record["display"] = display
+            record["installed"] = manifest
+
+        mutate_agents(board, change)
+    except Exception as exc:
+        for entry in reversed(written):
+            undo_entry(entry)
+        reason = str(exc)
+        raise CoopError(
+            "Could not connect " + tool.display + ". Nothing was changed. " + reason
+        ) from exc
     return name
 
 
@@ -274,6 +399,25 @@ def preview_project_files(board: Path, agent_name: str, project_path: Path) -> l
     return planned
 
 
+def project_instruction_agents(board: Path, project: dict) -> list[str]:
+    """Return members who should have project-scope instruction files."""
+    agents = load_agents(board)
+    driver = project.get("driver") or ""
+    names = [driver] + list((project.get("helpers") or {}).keys())
+    chosen = []
+    for name in names:
+        if not name:
+            continue
+        record = (agents.get("agents") or {}).get(name) or {}
+        tool_key = record.get("tool") or ""
+        if not tool_key or tool_key == "runner":
+            continue
+        tool = get_tool(tool_key)
+        if name == driver or tool.project_files_for == "members":
+            chosen.append(name)
+    return chosen
+
+
 def install_project_files(
     board: Path,
     project_name: str,
@@ -283,89 +427,95 @@ def install_project_files(
     gitignore: bool = False,
 ) -> list[str]:
     """Install project-scoped files for one agent. Returns relative paths written."""
-    projects = load_projects(board)
-    project = projects["projects"].get(project_name)
-    if project is None:
-        raise CoopError("There is no project named " + project_name + ".")
     agents = load_agents(board)
     agent = agents["agents"].get(agent_name)
     if agent is None:
         raise CoopError(agent_name + " is not connected yet. Run: agentcoop connect")
-    tool = get_tool(agent["tool"] if agent["tool"] != "runner" else "runner")
-    # Runner agents have no project files. Cursor is stored as tool cursor.
     if agent["tool"] == "runner":
         return []
-    root = Path(project["path"])
-    manifest = project.setdefault("installed", [])
+    tool = get_tool(agent["tool"])
     written: list[str] = []
-    for item in tool.install_paths:
-        if item["scope"] != "project":
-            continue
-        if item["kind"] == "hook" and tool.hooks != "supported":
-            continue
-        _install_one(
-            board,
-            agent_name=agent_name,
-            item=item,
-            root=root,
-            manifest=manifest,
-            yes=yes,
-            tool_key=tool.key,
-        )
-        written.append(item["path"])
-    if gitignore and written:
-        _install_gitignore(root, written, manifest, agent_name)
-    save_projects(board, projects)
+
+    def change(projects: dict) -> None:
+        project = projects["projects"].get(project_name)
+        if project is None:
+            raise CoopError("There is no project named " + project_name + ".")
+        root = Path(project["path"])
+        manifest = project.setdefault("installed", [])
+        for item in tool.install_paths:
+            if item["scope"] != "project":
+                continue
+            if item["kind"] == "hook" and tool.hooks != "supported":
+                continue
+            _install_one(
+                board,
+                agent_name=agent_name,
+                item=item,
+                root=root,
+                manifest=manifest,
+                yes=yes,
+                tool_key=tool.key,
+                scope=project_name,
+            )
+            written.append(item["path"])
+        if gitignore and written:
+            _install_gitignore(root, written, manifest, agent_name, board, project_name)
+
+    mutate_projects(board, change)
     return written
 
 
-def rollback_project_add(board: Path, name: str) -> None:
+def rollback_project_add(board: Path, name: str) -> list[str]:
     """Undo a half-finished project add: installed files, record, and board folder."""
-    projects = load_projects(board)
-    project = projects["projects"].get(name)
-    if project is not None:
+    notes: list[str] = []
+
+    def change(projects: dict) -> None:
+        project = projects["projects"].get(name)
+        if project is None:
+            return
         for entry in list(project.get("installed") or []):
-            undo_entry(entry)
+            note = undo_entry(entry)
+            if note:
+                notes.append(note)
         projects["projects"].pop(name, None)
-        save_projects(board, projects)
+
+    mutate_projects(board, change)
     board_dir = board / "projects" / name
     if board_dir.exists():
         shutil.rmtree(board_dir)
+    return notes
 
 
 def repair_project_files(board: Path, project_name: str) -> list[str]:
     """Reinstall missing driver project files. Returns absolute paths written."""
-    from agentcoop.projects import require_integrity
-
-    require_integrity(board)
     pruned = prune_out_of_scope_project_files(board, project_name)
     projects = load_projects(board)
     project = projects["projects"].get(project_name)
     if project is None:
         raise CoopError("There is no project named " + project_name + ".")
-    driver = project.get("driver", "")
     before = {entry.get("path") for entry in (project.get("installed") or [])}
     root = Path(project["path"])
     agents = load_agents(board)
-    agent = agents["agents"].get(driver)
-    if agent is None:
-        raise CoopError(driver + " is not connected yet. Run: agentcoop connect")
-    if agent["tool"] == "runner":
-        return pruned
-    tool = get_tool(agent["tool"])
     to_fix: list[str] = []
-    for item in tool.install_paths:
-        if item["scope"] != "project":
-            continue
-        if item["kind"] == "hook" and tool.hooks != "supported":
-            continue
-        path = root / item["path"]
-        in_manifest = str(path) in before
-        if not path.is_file() or not in_manifest:
-            to_fix.append(str(path))
+    targets = project_instruction_agents(board, project)
+    for name in targets:
+        record = (agents.get("agents") or {}).get(name)
+        if record is None:
+            raise CoopError(name + " is not connected yet. Run: agentcoop connect")
+        tool = get_tool(record["tool"])
+        for item in tool.install_paths:
+            if item["scope"] != "project":
+                continue
+            if item["kind"] == "hook" and tool.hooks != "supported":
+                continue
+            path = root / item["path"]
+            in_manifest = str(path) in before
+            if not path.is_file() or not in_manifest:
+                to_fix.append(str(path))
     if not to_fix:
         return pruned
-    install_project_files(board, project_name, driver, yes=False, gitignore=False)
+    for name in targets:
+        install_project_files(board, project_name, name, yes=False, gitignore=False)
     repaired = [path for path in to_fix if Path(path).is_file()]
     return pruned + repaired
 
@@ -375,58 +525,56 @@ def prune_out_of_scope_project_files(board: Path, project_name: str | None = Non
 
     Only removes files that are in the manifest and still match the saved hash.
     """
-    from agentcoop.projects import require_integrity
-
-    require_integrity(board)
-    projects = load_projects(board)
     agents = load_agents(board)
-    names = [project_name] if project_name else list((projects.get("projects") or {}).keys())
     removed: list[str] = []
-    changed = False
-    for name in names:
-        project = (projects.get("projects") or {}).get(name)
-        if project is None:
-            continue
-        root = Path(project.get("path", ""))
-        kept = []
-        for entry in list(project.get("installed") or []):
-            agent_name = entry.get("agent", "")
-            agent = (agents.get("agents") or {}).get(agent_name) or {}
-            tool_key = agent.get("tool", "")
-            if tool_key in ("", "runner"):
-                kept.append(entry)
+
+    def change(projects: dict) -> None:
+        names = [project_name] if project_name else list((projects.get("projects") or {}).keys())
+        for name in names:
+            project = (projects.get("projects") or {}).get(name)
+            if project is None:
                 continue
-            try:
-                tool = get_tool(tool_key)
-            except KeyError:
-                kept.append(entry)
-                continue
-            allowed = {
-                str(root / item["path"])
-                for item in tool.install_paths
-                if item["scope"] == "project"
-                and not (item["kind"] == "hook" and tool.hooks != "supported")
-            }
-            path = entry.get("path", "")
-            if path in allowed or entry.get("kind") == "gitignore":
-                kept.append(entry)
-                continue
-            path_obj = Path(path)
-            if path_obj.is_file() and entry.get("sha256") and file_sha256(path_obj) != entry.get("sha256"):
-                kept.append(entry)
-                continue
-            undo_entry(entry)
-            removed.append(path)
-            changed = True
-        if kept != list(project.get("installed") or []):
-            project["installed"] = kept
-            changed = True
-    if changed:
-        save_projects(board, projects)
+            root = Path(project.get("path", ""))
+            kept = []
+            for entry in list(project.get("installed") or []):
+                agent_name = entry.get("agent", "")
+                agent = (agents.get("agents") or {}).get(agent_name) or {}
+                tool_key = agent.get("tool", "")
+                if tool_key in ("", "runner"):
+                    kept.append(entry)
+                    continue
+                try:
+                    tool = get_tool(tool_key)
+                except KeyError:
+                    kept.append(entry)
+                    continue
+                allowed = {
+                    str(root / item["path"])
+                    for item in tool.install_paths
+                    if item["scope"] == "project"
+                    and not (item["kind"] == "hook" and tool.hooks != "supported")
+                }
+                path = entry.get("path", "")
+                if path in allowed or entry.get("kind") == "gitignore":
+                    kept.append(entry)
+                    continue
+                path_obj = Path(path)
+                if path_obj.is_file() and entry.get("sha256") and file_sha256(path_obj) != entry.get("sha256"):
+                    kept.append(entry)
+                    continue
+                note = undo_entry(entry)
+                if note:
+                    kept.append(entry)
+                    continue
+                removed.append(path)
+            if kept != list(project.get("installed") or []):
+                project["installed"] = kept
+
+    mutate_projects(board, change)
     return removed
 
 
-def disconnect_agent(board: Path, name: str) -> None:
+def disconnect_agent(board: Path, name: str) -> list[str]:
     """Remove what connect installed and unregister the agent."""
     projects = load_projects(board)
     for project_name, project in (projects.get("projects") or {}).items():
@@ -449,27 +597,37 @@ def disconnect_agent(board: Path, name: str) -> None:
                 + " "
                 + name
             )
-    agents = load_agents(board)
-    if name not in agents["agents"]:
-        raise CoopError(name + " is not connected. Run: agentcoop agents")
-    record = agents["agents"].pop(name)
-    for entry in list(record.get("installed") or []):
-        if not _path_used_elsewhere(board, entry.get("path", ""), skip_agent=name):
-            undo_entry(entry)
-    save_agents(board, agents)
+    notes: list[str] = []
+
+    def change(agents: dict) -> None:
+        if name not in agents["agents"]:
+            raise CoopError(name + " is not connected. Run: agentcoop agents")
+        record = agents["agents"].pop(name)
+        for entry in list(record.get("installed") or []):
+            if not _path_used_elsewhere(board, entry.get("path", ""), skip_agent=name):
+                note = undo_entry(entry)
+                if note:
+                    notes.append(note)
+
+    mutate_agents(board, change)
+    return notes
 
 
-def remove_project_files(board: Path, project_name: str) -> None:
+def remove_project_files(board: Path, project_name: str) -> list[str]:
     """Undo files installed for a project, then drop the project entry."""
-    from agentcoop.projects import require_integrity
+    notes: list[str] = []
 
-    require_integrity(board)
-    projects = load_projects(board)
-    project = projects["projects"].get(project_name)
-    if project is None:
-        raise CoopError("There is no project named " + project_name + ".")
-    for entry in list(project.get("installed") or []):
-        undo_entry(entry)
+    def change(projects: dict) -> None:
+        project = projects["projects"].get(project_name)
+        if project is None:
+            raise CoopError("There is no project named " + project_name + ".")
+        for entry in list(project.get("installed") or []):
+            note = undo_entry(entry)
+            if note:
+                notes.append(note)
+        projects["projects"].pop(project_name)
+
+    mutate_projects(board, change)
     removed = board / "removed"
     removed.mkdir(parents=True, exist_ok=True)
     src = board / "projects" / project_name
@@ -479,21 +637,20 @@ def remove_project_files(board: Path, project_name: str) -> None:
         dest = removed / (project_name + "-" + now_stamp().replace(":", ""))
     if src.exists():
         shutil.move(str(src), str(dest))
-    projects["projects"].pop(project_name)
-    save_projects(board, projects)
+    return notes
 
 
-def undo_entry(entry: dict) -> None:
-    """Undo one manifest row."""
+def undo_entry(entry: dict) -> str | None:
+    """Undo one manifest row. Return a note when a changed file is left in place."""
     path = Path(entry.get("path", ""))
     if not path.exists():
-        return
+        return None
     kind = entry.get("kind")
     if kind == "hook":
         try:
             data = json.loads(path.read_text(encoding="utf-8"))
         except json.JSONDecodeError:
-            return
+            return None
         command = entry.get("command") or ""
         updated = remove_hook_command(data, command) if command else data
         hooks = updated.get("hooks") or {}
@@ -501,16 +658,16 @@ def undo_entry(entry: dict) -> None:
         other_keys = [key for key in updated.keys() if key != "hooks"]
         if entry.get("created") and empty_hooks and not other_keys:
             path.unlink()
-            return
+            return None
         path.write_text(json.dumps(updated, indent=2) + "\n", encoding="utf-8")
-        return
+        return None
     if kind in ("agents_md", "gemini_md"):
-        text = remove_marked_section(path.read_text(encoding="utf-8"))
+        text = remove_marked_section(path.read_text(encoding="utf-8"), str(entry.get("agent") or ""))
         if entry.get("created") and not text.strip():
             path.unlink()
         else:
             path.write_text(text, encoding="utf-8")
-        return
+        return None
     if kind == "gitignore":
         lines = path.read_text(encoding="utf-8").splitlines()
         remove = set(entry.get("lines") or [])
@@ -522,13 +679,16 @@ def undo_entry(entry: dict) -> None:
             if body:
                 body += "\n"
             path.write_text(body, encoding="utf-8")
-        return
+        return None
+    if path.is_file() and entry.get("sha256") and file_sha256(path) != entry.get("sha256"):
+        return "Left " + str(path) + " in place because it was changed after Agent Co-op installed it."
     if entry.get("created"):
         path.unlink()
-        return
+        return None
     backup = entry.get("backup")
     if backup and Path(backup).is_file():
         shutil.copy2(backup, path)
+    return None
 
 
 def _path_used_elsewhere(board: Path, path: str, *, skip_agent: str) -> bool:
@@ -558,13 +718,14 @@ def _install_one(
     manifest: list,
     yes: bool,
     tool_key: str,
+    scope: str,
 ) -> None:
     kind = item["kind"]
     path = root / item["path"]
     if kind == "hook":
         if get_tool(tool_key).hooks != "supported":
             return
-        _install_hook(board, agent_name, path, manifest, yes, tool_key)
+        _install_hook(board, agent_name, path, manifest, yes, tool_key, scope)
         return
     template_name = _KIND_TEMPLATE.get(kind)
     if template_name is None:
@@ -572,7 +733,7 @@ def _install_one(
     rendered = render_template(template_name, agent_name=agent_name, board=board)
     if kind in ("agents_md", "gemini_md"):
         original = path.read_text(encoding="utf-8") if path.is_file() else ""
-        content = upsert_marked_section(original, rendered)
+        content = upsert_marked_section(original, rendered, agent_name)
     else:
         content = rendered
     _write_content(
@@ -582,6 +743,8 @@ def _install_one(
         agent=agent_name,
         kind=kind,
         yes=yes,
+        board=board,
+        scope=scope,
     )
 
 
@@ -607,6 +770,7 @@ def _install_hook(
     manifest: list,
     yes: bool,
     tool_key: str,
+    scope: str,
 ) -> None:
     if tool_key != "claude-code":
         return
@@ -625,7 +789,17 @@ def _install_hook(
             existing = loaded
     merged = merge_hook_settings(existing, addition)
     content = json.dumps(merged, indent=2) + "\n"
-    _write_content(path, content, manifest=manifest, agent=agent_name, kind="hook", yes=yes, command=command)
+    _write_content(
+        path,
+        content,
+        manifest=manifest,
+        agent=agent_name,
+        kind="hook",
+        yes=yes,
+        command=command,
+        board=board,
+        scope=scope,
+    )
 
 
 def _write_content(
@@ -636,6 +810,8 @@ def _write_content(
     agent: str,
     kind: str,
     yes: bool,
+    board: Path,
+    scope: str,
     command: str = "",
 ) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -656,7 +832,7 @@ def _write_content(
                 + " already exists. Agent Co-op will not replace it unless you confirm. "
                 "Run the command again with --yes."
             )
-        backup = str(backup_file(path))
+        backup = str(backup_file(path, board, scope))
     path.write_text(content, encoding="utf-8")
     record_installed(
         manifest,
@@ -687,7 +863,14 @@ def _entry(path: Path, agent: str, kind: str, digest: str, *, created: bool, bac
     return row
 
 
-def _install_gitignore(root: Path, relative_paths: list[str], manifest: list, agent: str) -> None:
+def _install_gitignore(
+    root: Path,
+    relative_paths: list[str],
+    manifest: list,
+    agent: str,
+    board: Path,
+    scope: str,
+) -> None:
     path = root / ".gitignore"
     existing = path.read_text(encoding="utf-8") if path.is_file() else ""
     lines = existing.splitlines()
@@ -703,7 +886,7 @@ def _install_gitignore(root: Path, relative_paths: list[str], manifest: list, ag
         body += "\n"
     created = not path.exists()
     if path.exists() and path.read_text(encoding="utf-8") != body:
-        backup_file(path)
+        backup_file(path, board, scope)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(body, encoding="utf-8")
     record_installed(
@@ -714,7 +897,7 @@ def _install_gitignore(root: Path, relative_paths: list[str], manifest: list, ag
             "kind": "gitignore",
             "sha256": file_sha256(path),
             "created": created,
-            "lines": relative_paths,
+            "lines": added,
         },
     )
 

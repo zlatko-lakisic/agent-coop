@@ -2,21 +2,21 @@
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from pathlib import Path
 
 from agentcoop import __version__
-from agentcoop.core import load_message, log_messages, new_messages, protocol_violation
+from agentcoop.core import file_id, load_message, log_messages, new_messages, protocol_violation
 from agentcoop.detect import probe_json
 from agentcoop.install import file_sha256
-from agentcoop.paths import inbox_msgs, is_same_or_inside
+from agentcoop.paths import home_dir, inbox_done, inbox_msgs, is_same_or_inside
 from agentcoop.projects import (
     INTEGRITY_WARNING,
     board_is_ready,
-    integrity_ok,
     load_agents,
     load_config,
-    load_projects,
+    read_projects_checked,
     role_of,
 )
 from agentcoop.tools import get_tool, tool_can_drive
@@ -42,12 +42,15 @@ def run_doctor(board: Path, project: str | None = None) -> list[DoctorItem]:
     else:
         items.append(DoctorItem(True, "Board folder is ready."))
     items.append(_bin_check(board))
-    if integrity_ok(board):
+    loose = _loose_permissions(board)
+    if loose is not None:
+        items.append(loose)
+    projects, intact = read_projects_checked(board)
+    if intact:
         items.append(DoctorItem(True, "projects.json matches the saved check."))
     else:
         items.append(DoctorItem(False, INTEGRITY_WARNING))
     agents = load_agents(board)
-    projects = load_projects(board)
     config = load_config(board)
     for name, record in (agents.get("agents") or {}).items():
         items.extend(_agent_checks(name, record))
@@ -73,6 +76,32 @@ def os_access_write(path: Path) -> bool:
         return False
 
 
+def _loose_permissions(board: Path) -> DoctorItem | None:
+    """Report once when another account on this computer can read the board."""
+    if os.name == "nt":
+        return None
+    seen = 0
+    for dirpath, _dirnames, filenames in os.walk(board):
+        if seen >= 5000:
+            break
+        seen += 1
+        if os.stat(dirpath).st_mode & 0o077:
+            return DoctorItem(
+                False,
+                "other accounts on this computer can read the board. Run: agentcoop setup",
+            )
+        for name in filenames:
+            seen += 1
+            if seen > 5000:
+                break
+            if os.stat(os.path.join(dirpath, name)).st_mode & 0o077:
+                return DoctorItem(
+                    False,
+                    "other accounts on this computer can read the board. Run: agentcoop setup",
+                )
+    return None
+
+
 def _bin_check(board: Path) -> DoctorItem:
     version_file = board / "bin" / "VERSION"
     if not version_file.is_file():
@@ -90,6 +119,20 @@ def _bin_check(board: Path) -> DoctorItem:
     return DoctorItem(True, "The agentcoop command on the board is current.")
 
 
+def _foreign_install_path(tool: object, installed: list) -> Path | None:
+    """Return a user file that exists and is not the copy Agent Co-op installed."""
+    known = {entry.get("path"): entry.get("sha256") for entry in installed}
+    for item in tool.install_paths:  # type: ignore[attr-defined]
+        if item["scope"] != "user":
+            continue
+        path = home_dir() / item["path"]
+        if not path.is_file():
+            continue
+        if known.get(str(path)) != file_sha256(path):
+            return path
+    return None
+
+
 def _agent_checks(name: str, record: dict) -> list[DoctorItem]:
     items = []
     display = record.get("display", name)
@@ -101,12 +144,24 @@ def _agent_checks(name: str, record: dict) -> list[DoctorItem]:
         except KeyError:
             tool = None
         if tool is not None and any(item["scope"] == "user" for item in tool.install_paths):
-            items.append(
-                DoctorItem(
-                    False,
-                    display + " is registered but its skill is missing. Run: agentcoop connect " + tool_key,
+            foreign = _foreign_install_path(tool, installed)
+            if foreign is not None:
+                items.append(
+                    DoctorItem(
+                        False,
+                        str(foreign)
+                        + " belongs to you, not Agent Co-op. Move it, or run: agentcoop connect "
+                        + tool_key
+                        + " --yes to replace it.",
+                    )
                 )
-            )
+            else:
+                items.append(
+                    DoctorItem(
+                        False,
+                        display + " is registered but its skill is missing. Run: agentcoop connect " + tool_key,
+                    )
+                )
         else:
             items.append(DoctorItem(True, display + ": connected."))
     for entry in installed:
@@ -127,7 +182,10 @@ def _agent_checks(name: str, record: dict) -> list[DoctorItem]:
             items.append(
                 DoctorItem(
                     False,
-                    str(path) + " was edited by hand. Run: agentcoop connect " + record.get("tool", name) + " --yes",
+                    str(path)
+                    + " belongs to you, not Agent Co-op. Move it, or run: agentcoop connect "
+                    + record.get("tool", name)
+                    + " --yes to replace it.",
                 )
             )
         else:
@@ -215,6 +273,14 @@ def _project_checks(projects: dict, agents: dict, config: dict) -> list[DoctorIt
                 )
             )
         items.extend(_driver_files_check(name, project, known))
+        if path.is_dir():
+            for backup in sorted(path.glob("*.agentcoop-backup-*")):
+                items.append(
+                    DoctorItem(
+                        False,
+                        str(backup) + " is an old Agent Co-op backup. You can delete it.",
+                    )
+                )
     return items
 
 
@@ -318,9 +384,12 @@ def _message_checks(board: Path, projects: dict) -> list[DoctorItem]:
                         + name,
                     )
                 )
+            done = inbox_done(board, name, agent)
             paths = folder.glob("*.json") if folder.is_dir() else []
             for path in paths:
                 if path.name.startswith("."):
+                    continue
+                if (done / path.stem).exists():
                     continue
                 message = load_message(path)
                 if message is None:
@@ -330,7 +399,7 @@ def _message_checks(board: Path, projects: dict) -> list[DoctorItem]:
                         DoctorItem(
                             False,
                             "Out of protocol message "
-                            + message.id
+                            + file_id(message)
                             + " in "
                             + agent
                             + "'s inbox. Ignore it.",

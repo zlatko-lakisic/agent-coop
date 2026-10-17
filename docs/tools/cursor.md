@@ -6,6 +6,8 @@ Can drive: yes
 
 Joins with: rule
 
+Project files for: members
+
 Hooks: todo
 
 Read-only lock: todo

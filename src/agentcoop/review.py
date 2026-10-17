@@ -11,9 +11,7 @@ from agentcoop.errors import CoopError
 from agentcoop.projects import (
     good_copy_path,
     integrity_ok,
-    load_projects,
-    save_projects,
-    validate_all,
+    mutate_projects,
 )
 
 
@@ -35,13 +33,15 @@ def review_projects(board: Path, *, restore: bool = False, accept: bool = False)
         )
     if restore:
         data = json.loads(good.read_text(encoding="utf-8"))
-        save_projects(board, data)
+
+        def restore_change(current_data: dict) -> None:
+            current_data.clear()
+            current_data.update(data)
+
+        mutate_projects(board, restore_change, enforce_integrity=False, skip_schema=True)
         return "Restored the last roles saved by agentcoop."
     if accept:
-        load_projects(board)
-        validate_all(board)
-        data = json.loads(current.read_text(encoding="utf-8"))
-        save_projects(board, data)
+        mutate_projects(board, lambda current_data: None, enforce_integrity=False, schema_code=1)
         return "Accepted the current projects.json."
     left = _pretty(good.read_bytes())
     right = _pretty(current.read_bytes())

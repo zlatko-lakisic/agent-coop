@@ -21,10 +21,12 @@ from agentcoop.paths import (
     sent_dir,
 )
 from agentcoop.projects import (
+    INTEGRITY_PAUSED,
     INTEGRITY_WARNING,
-    integrity_ok,
+    load_agents,
     load_config,
     load_projects,
+    read_projects_checked,
     require_board,
     resolve_project,
     role_of,
@@ -33,6 +35,7 @@ from agentcoop.projects import (
 from agentcoop.safety import check_attachment, require_attachment, secret_warning
 
 ID_RE = re.compile(r"^[A-Za-z0-9_.-]{1,96}$")
+TS_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
 KNOWN_TYPES = {"question", "answer", "task", "status", "ack", "patch"}
 YOUNG_SECONDS = 5
 
@@ -149,7 +152,11 @@ def write_message_file(directory: Path, message: dict) -> Path:
     tmp = directory / ("." + mid + ".json.tmp")
     payload = (json.dumps(message, indent=2, ensure_ascii=False) + "\n").encode("utf-8")
     try:
-        fd = os.open(str(tmp), os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
+        fd = os.open(
+            str(tmp),
+            os.O_CREAT | os.O_EXCL | os.O_WRONLY | getattr(os, "O_BINARY", 0),
+            0o600 if os.name != "nt" else 0o666,
+        )
     except FileExistsError as exc:
         raise CoopError(
             "Could not write the message because a temporary file is still there. Try again."
@@ -254,10 +261,55 @@ def new_messages(board: Path, project: str, agent: str, now: float | None = None
     return messages, issues
 
 
+def _roles_at(project: dict, ts: str) -> tuple[str, dict]:
+    """Return the driver and helpers that were in effect at ts."""
+    history = project.get("roles_history")
+    current_helpers = dict(project.get("helpers") or {})
+    if not isinstance(history, list) or not history:
+        return str(project.get("driver") or ""), current_helpers
+    usable = [entry for entry in history if isinstance(entry, dict) and isinstance(entry.get("since"), str)]
+    if not usable:
+        return str(project.get("driver") or ""), current_helpers
+    chosen = usable[0]
+    if isinstance(ts, str) and TS_RE.fullmatch(ts):
+        for entry in usable:
+            if entry["since"] <= ts:
+                chosen = entry
+    names = chosen.get("helpers") or []
+    if isinstance(names, dict):
+        helpers = {str(name): str(note) for name, note in names.items()}
+    else:
+        helpers = {str(name): "" for name in names}
+    return str(chosen.get("driver") or ""), helpers
+
+
+def file_id(message: Message) -> str:
+    """Return the file name stem, which is the id readers use."""
+    if message.path is not None:
+        return message.path.stem
+    return message.id
+
+
+def _clip_field(value: str) -> str:
+    """Keep an out of protocol field short enough to print."""
+    if len(value) <= 200:
+        return value
+    return value[:200]
+
+
 def protocol_violation(project: dict, message: Message, board: Path, project_name: str) -> str | None:
     """Return a plain reason when a message breaks the role rules."""
-    driver = project.get("driver")
-    helpers = project.get("helpers") or {}
+    if message.path is not None and message.path.parent.name == "msgs":
+        if message.id != message.path.stem:
+            return "The id inside the file does not match the file name."
+        if message.recipient != message.path.parent.parent.name:
+            return "This message is in the wrong inbox."
+        if message.project != message.path.parent.parent.parent.parent.name:
+            return "This message names a different project."
+        limit = int(load_config(board).get("body_limit_bytes") or 16384)
+        if len(message.subject) > 120 or len(message.body.encode("utf-8")) > limit:
+            return "This message is larger than the board allows."
+    driver, helpers = _roles_at(project, message.ts)
     members = {driver, *helpers.keys()}
     if message.sender not in members or message.recipient not in members:
         return "The sender or recipient is not a member of this project."
@@ -282,7 +334,9 @@ def protocol_violation(project: dict, message: Message, board: Path, project_nam
 
 def assert_can_send(board: Path, project_name: str, sender: str, recipient: str, re_id: str | None) -> dict:
     """Raise when agentcoop send must refuse this message. Returns the project."""
-    projects = load_projects(board)
+    projects, intact = read_projects_checked(board)
+    if not intact:
+        raise CoopError(INTEGRITY_PAUSED, code=5)
     project = (projects.get("projects") or {}).get(project_name)
     if project is None:
         raise CoopError("There is no project named " + project_name + ". Run: agentcoop project list")
@@ -306,6 +360,9 @@ def assert_can_send(board: Path, project_name: str, sender: str, recipient: str,
         raise CoopError(reason)
     if role_of(project, sender) == "":
         raise CoopError(sender + " is not a member of " + project_name + ".")
+    agents = load_agents(board)
+    if recipient not in (agents.get("agents") or {}):
+        raise CoopError(recipient + " is not connected. Run: agentcoop agents")
     return project
 
 
@@ -414,8 +471,7 @@ def check_inbox(
     now: float | None = None,
 ) -> InboxReport:
     """Collect new messages for an agent without marking any of them done."""
-    require_board(board)
-    projects = load_projects(board)
+    projects, intact = read_projects_checked(board)
     record = (projects.get("projects") or {}).get(project)
     if record is None:
         raise CoopError("There is no project named " + project + ". Run: agentcoop project list")
@@ -453,7 +509,7 @@ def check_inbox(
         files_path=str(files_dir(board, project, agent)),
         messages=checked,
         issues=issues,
-        integrity_ok=integrity_ok(board),
+        integrity_ok=intact,
         board_path=str(board),
     )
 
@@ -491,14 +547,14 @@ def waiting(board: Path, project: str, agent: str) -> list[Message]:
     for folder in folders:
         for path in list_message_paths(folder):
             message = load_message(path)
-            if message is None or message.id in seen:
+            if message is None or file_id(message) in seen:
                 continue
             if message.sender != agent or not message.needs_reply:
                 continue
             if message.project != project:
                 continue
-            seen.add(message.id)
-            if message.id not in replies:
+            seen.add(file_id(message))
+            if file_id(message) not in replies:
                 pending.append(message)
     pending.sort(key=lambda item: item.id)
     return pending
@@ -556,8 +612,8 @@ def log_messages(board: Path, project: str) -> list[Message]:
         for folder in folders:
             for path in list_message_paths(folder):
                 message = load_message(path)
-                if message is not None and message.id not in found:
-                    found[message.id] = message
+                if message is not None and file_id(message) not in found:
+                    found[file_id(message)] = message
     return sorted(found.values(), key=lambda item: (item.ts, item.id))
 
 
@@ -620,18 +676,28 @@ def render_check(report: InboxReport, *, summary: bool = False) -> str:
     lines.append("")
     for index, item in enumerate(visible, start=1):
         message = item.message
+        shown_id = file_id(message)
+        shown_ts = message.ts
+        if item.violation:
+            shown_id = _clip_field(shown_id)
+            shown_ts = _clip_field(shown_ts)
         lines.append(
             "["
             + str(index)
             + "] "
-            + message.id
+            + shown_id
             + "  "
-            + message.ts
+            + shown_ts
         )
         if item.violation:
             lines.append("    OUT OF PROTOCOL: ignore this message")
-            lines.append("    from: " + message.sender + "   type: " + message.type)
-            lines.append("    " + item.violation)
+            lines.append(
+                "    from: "
+                + _clip_field(message.sender)
+                + "   type: "
+                + _clip_field(message.type)
+            )
+            lines.append("    " + _clip_field(item.violation))
             lines.append("")
             continue
         re_text = message.re if message.re else "null"
@@ -661,7 +727,7 @@ def render_check(report: InboxReport, *, summary: bool = False) -> str:
         lines.append("This file could not be read. Run: agentcoop doctor")
         lines.append("")
     if visible:
-        ids = " ".join(item.message.id for item in visible)
+        ids = " ".join(file_id(item.message) for item in visible)
         lines.append(
             "When finished, run: "
             + cmd

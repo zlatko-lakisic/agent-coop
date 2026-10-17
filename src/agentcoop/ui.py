@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import secrets
+import socket
 import threading
 import time
 import webbrowser
@@ -16,7 +17,7 @@ from agentcoop.doctor import format_doctor, run_doctor
 from agentcoop.errors import CoopError
 from agentcoop.install import read_template
 from agentcoop.paths import board_root, home_dir
-from agentcoop.projects import INTEGRITY_WARNING, integrity_ok, load_agents, load_projects, require_board
+from agentcoop.projects import INTEGRITY_WARNING, load_agents, read_projects_checked, require_board
 from agentcoop.tools import tool_can_drive
 from agentcoop.wizard import add_project_flow, change_driver, helper_add, helper_remove
 
@@ -33,6 +34,15 @@ class ViewerServer(ThreadingHTTPServer):
         self.token = token
         self.idle_at = time.time()
         super().__init__((host, port), ViewerHandler)
+
+    def server_bind(self) -> None:
+        """Bind without a reverse DNS lookup. That lookup can hang on some computers."""
+        if self.allow_reuse_address:
+            self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        self.socket.bind(self.server_address)
+        self.server_address = self.socket.getsockname()
+        self.server_name = "127.0.0.1"
+        self.server_port = self.server_address[1]
 
 
 class ViewerHandler(BaseHTTPRequestHandler):
@@ -132,7 +142,8 @@ class ViewerHandler(BaseHTTPRequestHandler):
 
     def _state(self) -> dict:
         board = self.server.board
-        projects = load_projects(board).get("projects") or {}
+        projects, intact = read_projects_checked(board)
+        projects = projects.get("projects") or {}
         agents = load_agents(board).get("agents") or {}
         rows = []
         for name, project in projects.items():
@@ -164,7 +175,7 @@ class ViewerHandler(BaseHTTPRequestHandler):
                 }
             )
         banner = ""
-        if not integrity_ok(board):
+        if not intact:
             banner = INTEGRITY_WARNING
         return {
             "projects": rows,
@@ -221,9 +232,9 @@ def serve(*, open_browser: bool = True, idle_seconds: int = 1800) -> int:
                 return
 
     threading.Thread(target=idle, daemon=True).start()
-    print(url)
-    print("This page is for you. Agents do not connect to it.")
-    print("Press Ctrl+C to stop. It also stops after 30 minutes with no requests.")
+    print(url, flush=True)
+    print("This page is for you. Agents do not connect to it.", flush=True)
+    print("Press Ctrl+C to stop. It also stops after 30 minutes with no requests.", flush=True)
     if open_browser:
         webbrowser.open(url)
     try:

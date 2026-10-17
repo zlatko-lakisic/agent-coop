@@ -1,10 +1,12 @@
 # Claude on the web
 
-Agent name: `not supported`
+Agent name: not supported
 
 Can drive: no
 
 Joins with: none
+
+Project files for: driver
 
 Hooks: none
 

@@ -8,11 +8,11 @@ import time
 import urllib.request
 from pathlib import Path
 
-from agentcoop.core import check_inbox, mark_done, projects_for_check, send
+from agentcoop.core import check_inbox, file_id, mark_done, projects_for_check, send
 from agentcoop.errors import CoopError
 from agentcoop.paths import board_root, files_dir
-from agentcoop.projects import load_agents, load_config, require_board
-from agentcoop.safety import check_attachment
+from agentcoop.projects import load_agents, load_config, load_projects, require_board
+from agentcoop.safety import open_attachment
 
 IMAGE_SUFFIXES = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".gif": "image/gif", ".webp": "image/webp"}
 MAX_IMAGE_BYTES = 10 * 1024 * 1024
@@ -40,33 +40,33 @@ def read_attachment_notes(
     """Return prompt notes and image bytes. Blocked files are described, not opened."""
     notes: list[str] = []
     images: list[tuple[str, bytes]] = []
+    kwargs = {
+        "project_path": project_path,
+        "board": board,
+        "project": project,
+        "allowed_roots": allowed_roots,
+    }
     for raw in attachments:
-        reason = check_attachment(
-            raw,
-            project_path=project_path,
-            board=board,
-            project=project,
-            allowed_roots=allowed_roots,
-        )
-        if reason:
-            notes.append("Skipped attachment " + raw + " (BLOCKED: do not open). " + reason)
-            continue
         path = Path(raw)
         mime = IMAGE_SUFFIXES.get(path.suffix.lower())
+        try:
+            if mime:
+                data = open_attachment(raw, max_bytes=MAX_IMAGE_BYTES, **kwargs)
+            else:
+                data = open_attachment(raw, max_bytes=MAX_TEXT_BYTES, clip=True, **kwargs)
+        except CoopError as exc:
+            notes.append("Skipped " + path.name + ": " + str(exc))
+            continue
         if mime:
-            data = path.read_bytes()
-            if len(data) > MAX_IMAGE_BYTES:
-                notes.append("Skipped " + path.name + " because it is larger than 10 MB.")
-                continue
             images.append((mime, data))
             notes.append("Attached image: " + path.name)
             continue
-        raw_text = path.read_bytes()
         clipped = False
-        if len(raw_text) > MAX_TEXT_BYTES:
-            raw_text = raw_text[:MAX_TEXT_BYTES]
-            clipped = True
-        text = raw_text.decode("utf-8", errors="replace")
+        try:
+            clipped = path.resolve().stat().st_size > MAX_TEXT_BYTES
+        except OSError:
+            clipped = len(data) >= MAX_TEXT_BYTES
+        text = data.decode("utf-8", errors="replace")
         if clipped:
             notes.append(path.name + " was cut at 32 KB.")
         notes.append("File " + path.name + ":\n" + text)
@@ -112,6 +112,34 @@ def post_chat(api: str, host: str, body: dict, opener=None, timeout: int = 120) 
         return json.loads(response.read().decode("utf-8"))
 
 
+def _give_up(board: Path, agent: str, project: str, message, reason: str, log) -> None:
+    """Tell the driver this message will not be answered, then mark it done."""
+    record = (load_projects(board).get("projects") or {}).get(project) or {}
+    driver = record.get("driver") or ""
+    subject = "Could not answer: " + message.subject[:80]
+    body = (
+        agent
+        + " could not send its answer. Reason: "
+        + reason
+        + ". The model's answer was not sent."
+    )
+    if driver:
+        try:
+            send(
+                board,
+                project=project,
+                sender=agent,
+                recipient=driver,
+                subject=subject,
+                body=body,
+                type="status",
+                re=file_id(message),
+            )
+        except (CoopError, OSError, ValueError, KeyError) as exc:
+            log(agent + " could not tell the driver about " + file_id(message) + ". " + str(exc))
+    mark_done(board, project, agent, [file_id(message)])
+
+
 def reply_to_message(
     board: Path,
     *,
@@ -147,7 +175,7 @@ def reply_to_message(
     if len(answer.encode("utf-8")) > limit:
         folder = files_dir(board, project, agent)
         folder.mkdir(parents=True, exist_ok=True)
-        path = folder / (message.id + "-answer.md")
+        path = folder / (file_id(message) + "-answer.md")
         path.write_text(answer, encoding="utf-8")
         attachments.append(str(path))
         answer = "The answer is in the attached file."
@@ -159,10 +187,10 @@ def reply_to_message(
         subject="Re: " + message.subject,
         body=answer,
         type="answer",
-        re=message.id,
+        re=file_id(message),
         attachments=attachments,
     )
-    mark_done(board, project, agent, [message.id])
+    mark_done(board, project, agent, [file_id(message)])
 
 
 def run_runner(
@@ -195,6 +223,7 @@ def run_runner(
         raise CoopError("Name the model. Example: agentcoop runner --as ollama_llava --model llava")
     pause = sleep_fn or time.sleep
     backoff = max(interval, 1)
+    failures: dict[str, int] = {}
     while True:
         failed = False
         try:
@@ -204,9 +233,14 @@ def run_runner(
                 if report.role != "helper":
                     raise CoopError("Runners are helpers only. " + agent + " is the driver for " + project + ".")
                 for item in report.messages:
+                    message = item.message
                     if item.violation:
-                        log("Ignoring out of protocol message " + item.message.id)
-                        mark_done(board, project, agent, [item.message.id])
+                        log("Ignoring out of protocol message " + file_id(message))
+                        mark_done(board, project, agent, [file_id(message)])
+                        continue
+                    if message.type not in ("question", "task") and not message.needs_reply:
+                        mark_done(board, project, agent, [file_id(message)])
+                        log("Noted " + file_id(message) + " (" + message.type + "). No answer needed.")
                         continue
                     try:
                         reply_to_message(
@@ -216,13 +250,29 @@ def run_runner(
                             host=chosen_host,
                             model=chosen_model,
                             project=project,
-                            message=item.message,
+                            message=message,
                             system_prompt=system_prompt,
                             opener=opener,
                         )
-                    except (OSError, ValueError, KeyError, CoopError) as exc:
-                        failed = True
-                        log(agent + " could not answer " + item.message.id + ". " + str(exc))
+                        failures.pop(file_id(message), None)
+                    except CoopError as exc:
+                        _give_up(board, agent, project, message, str(exc), log)
+                    except (OSError, ValueError, KeyError, json.JSONDecodeError) as exc:
+                        count = failures.get(file_id(message), 0) + 1
+                        failures[file_id(message)] = count
+                        if count >= 10:
+                            _give_up(
+                                board,
+                                agent,
+                                project,
+                                message,
+                                "the model did not answer after 10 tries: " + str(exc),
+                                log,
+                            )
+                            failures.pop(file_id(message), None)
+                        else:
+                            failed = True
+                            log(agent + " could not answer " + file_id(message) + ". " + str(exc))
         except KeyboardInterrupt:
             return 0
         if once:

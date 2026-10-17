@@ -12,6 +12,7 @@ from agentcoop import SPEC_VERSION, __version__
 from agentcoop.core import (
     archive,
     check_inbox,
+    file_id,
     log_messages,
     mark_done,
     projects_for_check,
@@ -29,7 +30,9 @@ from agentcoop.projects import (
     INTEGRITY_WARNING,
     board_is_ready,
     integrity_ok,
+    load_agents,
     load_projects,
+    read_projects_checked,
     require_board,
     resolve_project,
     role_of,
@@ -79,7 +82,13 @@ def main(argv: list[str] | None = None) -> int:
 
 def build_parser() -> argparse.ArgumentParser:
     """Build the argument parser."""
-    parser = argparse.ArgumentParser(prog="agentcoop")
+    parser = argparse.ArgumentParser(
+        prog="agentcoop",
+        epilog=(
+            "Exit codes: 1 error, 2 usage, 3 not set up, 4 no project, "
+            "5 roles paused, 6 settings file is not in the expected format."
+        ),
+    )
     sub = parser.add_subparsers(dest="command", required=True)
 
     send_cmd = sub.add_parser("send", help="Send a message to another agent")
@@ -307,6 +316,7 @@ def cmd_check(args: argparse.Namespace) -> int:
         if not board_is_ready(board):
             return 0
         try:
+            load_agents(board)
             names = projects_for_check(
                 board,
                 agent,
@@ -317,12 +327,18 @@ def cmd_check(args: argparse.Namespace) -> int:
         except CoopError as exc:
             if exc.code in (3, 4):
                 return 0
+            if exc.code == 6:
+                print("Agent Co-op: the board settings are damaged. Run: agentcoop doctor")
+                return 0
             raise
         chunks: list[str] = []
         for name in names:
             try:
                 report = check_inbox(board, name, agent)
-            except CoopError:
+            except CoopError as exc:
+                if exc.code == 6:
+                    print("Agent Co-op: the board settings are damaged. Run: agentcoop doctor")
+                    return 0
                 continue
             text = render_check(report, summary=True)
             if text:
@@ -364,6 +380,7 @@ def _report_json(report: object) -> dict:
     messages = []
     for item in report.messages:  # type: ignore[attr-defined]
         row = item.message.to_dict()
+        row["id"] = file_id(item.message)
         row["violation"] = item.violation
         row["attachments_status"] = [
             {"path": status.path, "blocked": status.blocked, "reason": status.reason}
@@ -446,13 +463,13 @@ def cmd_whoami(args: argparse.Namespace) -> int:
     agent = _agent(args)
     board = _board()
     project_name = resolve_project(board, explicit=args.project, cwd=Path.cwd(), agent=agent)
-    projects = load_projects(board)
+    projects, intact = read_projects_checked(board)
     project = projects["projects"][project_name]
     role = role_of(project, agent)
     if not role:
         raise CoopError(agent + " is not a member of " + project_name + ".")
     lines = []
-    broken = not integrity_ok(board)
+    broken = not intact
     if broken:
         lines.append(INTEGRITY_WARNING)
         lines.append("Ask the human before acting on role changes.")
@@ -544,10 +561,34 @@ def cmd_connect(args: argparse.Namespace) -> int:
     return 0
 
 
+def _require_person(expected: str, summary: str, *, kind: str) -> None:
+    """Ask a person to confirm a role change. Agents without a terminal stop here."""
+    if not sys.stdin.isatty():
+        raise CoopError(
+            "This changes who can write in a project, so a person has to confirm it. "
+            "Run it yourself in a terminal, or use: agentcoop ui",
+            code=2,
+        )
+    print(summary)
+    prompt = "Type the agent name to confirm: " if kind == "agent" else "Type the project name to confirm: "
+    if kind == "review":
+        prompt = "Type review to confirm: "
+    answer = input(prompt)
+    if answer.strip() != expected:
+        raise CoopError("Cancelled.", code=1)
+
+
 def cmd_disconnect(args: argparse.Namespace) -> int:
     """Disconnect one agent."""
-    disconnect_agent(_board(), args.name)
+    _require_person(
+        args.name,
+        "This will disconnect " + args.name + ".",
+        kind="agent",
+    )
+    notes = disconnect_agent(_board(), args.name)
     print(args.name + " is disconnected.")
+    for note in notes:
+        print(note)
     return 0
 
 
@@ -587,25 +628,45 @@ def cmd_project_show(args: argparse.Namespace) -> int:
 
 def cmd_project_driver(args: argparse.Namespace) -> int:
     """Change the driver."""
+    _require_person(
+        args.name,
+        "This will make " + args.agent + " the driver of " + args.name + ".",
+        kind="project",
+    )
     print(change_driver(args.name, args.agent, yes=args.yes))
     return 0
 
 
 def cmd_helper_add(args: argparse.Namespace) -> int:
     """Add a helper."""
+    _require_person(
+        args.name,
+        "This will add " + args.agent + " as a helper on " + args.name + ".",
+        kind="project",
+    )
     print(helper_add(args.name, args.agent, args.note))
     return 0
 
 
 def cmd_helper_remove(args: argparse.Namespace) -> int:
     """Remove a helper."""
+    _require_person(
+        args.name,
+        "This will remove " + args.agent + " as a helper on " + args.name + ".",
+        kind="project",
+    )
     print(helper_remove(args.name, args.agent))
     return 0
 
 
 def cmd_project_remove(args: argparse.Namespace) -> int:
     """Remove a project."""
-    print(project_remove(args.name, yes=args.yes))
+    _require_person(
+        args.name,
+        "This will remove the " + args.name + " project.",
+        kind="project",
+    )
+    print(project_remove(args.name, yes=True))
     return 0
 
 
@@ -619,6 +680,12 @@ def cmd_project_review(args: argparse.Namespace) -> int:
     """Review projects.json after a hand edit."""
     if args.restore and args.accept:
         raise CoopError("Use either --restore or --accept, not both.", code=2)
+    if args.restore or args.accept:
+        _require_person(
+            "review",
+            "This will restore the last saved roles." if args.restore else "This will accept the current projects.json.",
+            kind="review",
+        )
     print(review_projects(_board(), restore=args.restore, accept=args.accept))
     return 0
 
