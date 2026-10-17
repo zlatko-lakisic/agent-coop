@@ -205,6 +205,65 @@ def stage_runtime(board: Path) -> None:
         version.chmod(0o600)
 
 
+def _plan_user_files(board: Path, tool: object, agent_name: str) -> list[dict]:
+    """Render every user-scope file into memory. Nothing is written."""
+    planned = []
+    for item in tool.install_paths:  # type: ignore[attr-defined]
+        if item["scope"] != "user":
+            continue
+        kind = item["kind"]
+        path = home_dir() / item["path"]
+        if kind == "hook":
+            if tool.hooks != "supported":  # type: ignore[attr-defined]
+                continue
+            addition = claude_code_hooks(board, agent_name)
+            existing: dict = {}
+            if path.is_file():
+                try:
+                    loaded = json.loads(path.read_text(encoding="utf-8"))
+                except json.JSONDecodeError as exc:
+                    raise CoopError(str(path) + " is not valid JSON, so hooks were not changed.") from exc
+                if isinstance(loaded, dict):
+                    existing = loaded
+            merged = merge_hook_settings(existing, addition)
+            command = ""
+            for entries in (addition.get("hooks") or {}).values():
+                for entry in entries:
+                    command = _hook_command(entry) or command
+            planned.append(
+                {
+                    "path": path,
+                    "content": json.dumps(merged, indent=2) + "\n",
+                    "kind": kind,
+                    "command": command,
+                }
+            )
+            continue
+        template_name = _KIND_TEMPLATE.get(kind)
+        if template_name is None:
+            continue
+        rendered = render_template(template_name, agent_name=agent_name, board=board)
+        if kind in ("agents_md", "gemini_md"):
+            original = path.read_text(encoding="utf-8") if path.is_file() else ""
+            rendered = upsert_marked_section(original, rendered)
+        planned.append({"path": path, "content": rendered, "kind": kind, "command": ""})
+    return planned
+
+
+def _refuse_foreign(path: Path, content: str, manifest: list, *, yes: bool) -> None:
+    """Stop before any write when a target exists and is not ours."""
+    if not path.exists() or yes:
+        return
+    current = path.read_text(encoding="utf-8")
+    if current == content or _owned(manifest, path, current):
+        return
+    raise CoopError(
+        str(path)
+        + " already exists. Agent Co-op will not replace it unless you confirm. "
+        "Run the command again with --yes."
+    )
+
+
 def connect_agent(
     board: Path,
     tool_key: str,
@@ -221,28 +280,55 @@ def connect_agent(
     name = agent_name or tool.default_agent_name
     if not name:
         raise CoopError(tool.display + " needs a name. Add --as NAME.")
-    connect_agent_record(board, name, tool_key, display=display, runner=runner)
     if tool_key in ("ollama", "lmstudio", "runner"):
+        connect_agent_record(board, name, tool_key, display=display, runner=runner)
         return name
 
-    def change(agents: dict) -> None:
-        record = agents["agents"][name]
-        manifest = record.setdefault("installed", [])
-        for item in tool.install_paths:
-            if item["scope"] != "user":
-                continue
-            _install_one(
-                board,
-                agent_name=name,
-                item=item,
-                root=home_dir(),
+    planned = _plan_user_files(board, tool, name)
+    current_agents = load_agents(board)
+    current = (current_agents.get("agents") or {}).get(name) or {}
+    manifest = list(current.get("installed") or [])
+    for item in planned:
+        _refuse_foreign(item["path"], item["content"], manifest, yes=yes)
+    written: list[dict] = []
+    try:
+        for item in planned:
+            before = len(manifest)
+            _write_content(
+                item["path"],
+                item["content"],
                 manifest=manifest,
+                agent=name,
+                kind=item["kind"],
                 yes=yes,
-                tool_key=tool.key,
+                board=board,
                 scope="user",
+                command=item.get("command") or "",
             )
+            written.extend(manifest[before:])
 
-    mutate_agents(board, change)
+        def change(agents: dict) -> None:
+            record = agents["agents"].get(name)
+            if record is None:
+                record = {
+                    "tool": tool_key,
+                    "display": display or tool.display,
+                    "connected": now_stamp(),
+                    "installed": [],
+                }
+                agents["agents"][name] = record
+            elif display:
+                record["display"] = display
+            record["installed"] = manifest
+
+        mutate_agents(board, change)
+    except Exception as exc:
+        for entry in reversed(written):
+            undo_entry(entry)
+        reason = str(exc)
+        raise CoopError(
+            "Could not connect " + tool.display + ". Nothing was changed. " + reason
+        ) from exc
     return name
 
 

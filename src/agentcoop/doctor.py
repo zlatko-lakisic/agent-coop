@@ -10,7 +10,7 @@ from agentcoop import __version__
 from agentcoop.core import file_id, load_message, log_messages, new_messages, protocol_violation
 from agentcoop.detect import probe_json
 from agentcoop.install import file_sha256
-from agentcoop.paths import inbox_done, inbox_msgs, is_same_or_inside
+from agentcoop.paths import home_dir, inbox_done, inbox_msgs, is_same_or_inside
 from agentcoop.projects import (
     INTEGRITY_WARNING,
     board_is_ready,
@@ -119,6 +119,20 @@ def _bin_check(board: Path) -> DoctorItem:
     return DoctorItem(True, "The agentcoop command on the board is current.")
 
 
+def _foreign_install_path(tool: object, installed: list) -> Path | None:
+    """Return a user file that exists and is not the copy Agent Co-op installed."""
+    known = {entry.get("path"): entry.get("sha256") for entry in installed}
+    for item in tool.install_paths:  # type: ignore[attr-defined]
+        if item["scope"] != "user":
+            continue
+        path = home_dir() / item["path"]
+        if not path.is_file():
+            continue
+        if known.get(str(path)) != file_sha256(path):
+            return path
+    return None
+
+
 def _agent_checks(name: str, record: dict) -> list[DoctorItem]:
     items = []
     display = record.get("display", name)
@@ -130,12 +144,24 @@ def _agent_checks(name: str, record: dict) -> list[DoctorItem]:
         except KeyError:
             tool = None
         if tool is not None and any(item["scope"] == "user" for item in tool.install_paths):
-            items.append(
-                DoctorItem(
-                    False,
-                    display + " is registered but its skill is missing. Run: agentcoop connect " + tool_key,
+            foreign = _foreign_install_path(tool, installed)
+            if foreign is not None:
+                items.append(
+                    DoctorItem(
+                        False,
+                        str(foreign)
+                        + " belongs to you, not Agent Co-op. Move it, or run: agentcoop connect "
+                        + tool_key
+                        + " --yes to replace it.",
+                    )
                 )
-            )
+            else:
+                items.append(
+                    DoctorItem(
+                        False,
+                        display + " is registered but its skill is missing. Run: agentcoop connect " + tool_key,
+                    )
+                )
         else:
             items.append(DoctorItem(True, display + ": connected."))
     for entry in installed:
@@ -156,7 +182,10 @@ def _agent_checks(name: str, record: dict) -> list[DoctorItem]:
             items.append(
                 DoctorItem(
                     False,
-                    str(path) + " was edited by hand. Run: agentcoop connect " + record.get("tool", name) + " --yes",
+                    str(path)
+                    + " belongs to you, not Agent Co-op. Move it, or run: agentcoop connect "
+                    + record.get("tool", name)
+                    + " --yes to replace it.",
                 )
             )
         else:
