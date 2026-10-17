@@ -59,6 +59,19 @@ def main(argv: list[str] | None = None) -> int:
         return exc.code
     except KeyboardInterrupt:
         return 0
+    except Exception as exc:
+        if os.environ.get("AGENTCOOP_DEBUG") == "1":
+            raise
+        print(
+            "Agent Co-op hit an unexpected error: "
+            + type(exc).__name__
+            + ": "
+            + str(exc)
+            + ". Run the same command with AGENTCOOP_DEBUG=1 to see details, "
+            + "and report it at https://github.com/zlatko-lakisic/agent-coop/issues",
+            file=sys.stderr,
+        )
+        return 1
 
 
 def build_parser() -> argparse.ArgumentParser:

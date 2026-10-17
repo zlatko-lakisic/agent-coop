@@ -9,6 +9,7 @@ import shutil
 import sys
 import zipapp
 from datetime import datetime, timezone
+from importlib import resources
 from pathlib import Path
 
 from agentcoop import __version__
@@ -37,12 +38,18 @@ _KIND_TEMPLATE = {
 
 
 def read_template(name: str) -> str:
-    """Load a template shipped inside the package."""
+    """Load a template shipped inside the package.
+
+    Works from source, from a zipapp, and from a PyInstaller binary.
+    """
     if getattr(sys, "frozen", False):
         base = Path(getattr(sys, "_MEIPASS")) / "templates"
         return (base / name).read_text(encoding="utf-8")
-    path = Path(__file__).resolve().parent / "templates" / name
-    return path.read_text(encoding="utf-8")
+    node = resources.files("agentcoop").joinpath("templates")
+    for part in name.split("/"):
+        node = node.joinpath(part)
+    return node.read_text(encoding="utf-8")
+
 
 
 def render_template(name: str, *, agent_name: str, board: Path) -> str:
