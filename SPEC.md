@@ -15,7 +15,7 @@ A conforming reader MUST accept messages as defined here. The `agentcoop` comman
 * **Board.** The shared folder, outside every project.
 * **Project.** One folder of work, with one driver and zero or more helpers.
 * **Agent.** A named participant, such as `cursor` or `ollama_llava`.
-* **Driver.** The only agent that edits that project's files and the only agent that starts a conversation.
+* **Driver.** The only agent that edits that project's files. The only agent that starts a conversation, except the context request in section 7.
 * **Helper.** An agent that replies to the driver and does not edit the project.
 * **Message.** One JSON file, written once.
 * **Done marker.** An empty file the recipient creates after handling a message.
@@ -78,7 +78,7 @@ Each message MUST be one UTF-8 JSON file named `<id>.json`.
 | `ts` | UTC time, ISO 8601, second precision, ending in `Z`. |
 | `project` | Project name. |
 | `sender`, `recipient` | Agent names. |
-| `type` | SHOULD be `question`, `answer`, `task`, `status`, `ack`, or `patch`. Unknown types MUST be tolerated. |
+| `type` | SHOULD be `question`, `answer`, `task`, `status`, `ack`, `patch`, or `context_request`. Unknown types MUST be tolerated. |
 | `re` | Id of the message being answered, or `null`. |
 | `subject` | At most 120 characters. |
 | `body` | At most 16 KB of UTF-8 unless config raises the limit. Longer text SHOULD be a file under `files/<sender>/`, attached by path. |
@@ -111,7 +111,17 @@ If the sender is the driver, the recipient MUST be a helper.
 
 If the sender is a helper, the recipient MUST be the driver, `re` MUST be set, and `re` MUST name a message from the driver that is in the helper's own `msgs/` folder. A helper's follow-up question is a reply with `type: question`.
 
-Helpers MUST NOT message each other and MUST NOT start a thread.
+One exception: a helper MAY send a `context_request` to the driver with `re` set to null, only when that helper has no open context request in that project. This is the only case in which a helper may speak first.
+
+A request is open when it sits in the driver's `msgs/` folder, its type is `context_request`, its sender is that helper, its recipient is the driver, and `re` is null, until a message from the driver in the helper's `msgs/` folder has `re` equal to that request's id.
+
+`agentcoop send` MUST refuse a second request from that helper while one is open. It MUST NOT write the file. It tells the helper to wait, or to read the latest context.
+
+In bare mode, the earliest open request from that helper is accepted. Later ones MUST be labeled out of protocol. Earliest means the lowest message id.
+
+`agentcoop send` MUST set `needs_reply` to true on a `context_request`.
+
+Helpers MUST NOT message each other. They MUST NOT start a thread, except the context request above.
 
 Only the driver writes files in the project folder. Helpers send patches or drafts as attachments. The driver decides what to apply.
 
