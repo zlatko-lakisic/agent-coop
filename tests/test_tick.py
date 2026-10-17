@@ -19,16 +19,39 @@ from agentcoop.rounds import run_agent, tick
 from agentcoop.schedule import build_argv
 
 
-def _script(path: Path, body: str) -> Path:
-    py = path if path.suffix == ".py" else path.with_suffix(".py")
-    py.write_text("#!" + sys.executable + "\n" + body, encoding="utf-8")
-    if os.name == "nt":
-        cmd = py.with_suffix(".cmd")
-        line = '@"' + sys.executable + '" "' + str(py) + '" %*\r\n'
-        cmd.write_bytes(line.encode("utf-8"))
-        return cmd
-    py.chmod(0o755)
-    return py
+class _Proc:
+    def __init__(self, output: str, code: int, hang: bool) -> None:
+        self.returncode = code
+        self.pid = 424242
+        self.stdout = None
+        self._output = output
+        self._hang = hang
+
+    def communicate(self, timeout=None):
+        if self._hang:
+            raise subprocess.TimeoutExpired("helper", timeout or 0)
+        return self._output, ""
+
+    def kill(self) -> None:
+        return None
+
+    def wait(self, timeout=None) -> int:
+        return self.returncode
+
+
+def _popen(output: str, code: int = 0, hang: bool = False, captured: list | None = None):
+    def launch(argv, **kwargs):
+        if captured is not None:
+            captured.append((list(argv), kwargs.get("env") or {}))
+        return _Proc(output, code, hang)
+
+    return launch
+
+
+def _cli(env: support.TempEnv) -> Path:
+    path = env.workspace / "claude"
+    path.write_text("x", encoding="utf-8")
+    return path
 
 
 def _board_ready(env: support.TempEnv, helper_tool: str = "claude-code") -> Path:
@@ -65,15 +88,8 @@ class TickTests(unittest.TestCase):
     def test_helper_posts_the_reply_and_marks_context_read(self) -> None:
         with support.TempEnv() as env:
             _board_ready(env)
-            log = env.workspace / "seen.txt"
-            script = _script(
-                env.workspace / "claude",
-                "import os, pathlib, sys\n"
-                "text = '\\n'.join(sys.argv) + '\\n' + os.environ.get('PATH','') + '\\n' + os.environ.get('AGENTCOOP_UNATTENDED','')\n"
-                "pathlib.Path(" + repr(str(log)) + ").write_text(text, encoding='utf-8')\n"
-                "print('The helper reply')\n",
-            )
-            _point_cli(env.board, "claude_code", script)
+            captured = []
+            _point_cli(env.board, "claude_code", _cli(env))
             main(["context", "write", "--project", "demo", "--as", "cursor", "--body", "The goal is a demo."])
             main(
                 [
@@ -90,12 +106,21 @@ class TickTests(unittest.TestCase):
                     "Please look.",
                 ]
             )
-            self.assertEqual(run_agent(env.board, "claude_code", "demo"), 0)
-            seen = log.read_text(encoding="utf-8")
+            self.assertEqual(
+                run_agent(
+                    env.board,
+                    "claude_code",
+                    "demo",
+                    popen=_popen("The helper reply\n", captured=captured),
+                ),
+                0,
+            )
+            argv, env_seen = captured[0]
+            seen = "\n".join(argv)
             self.assertIn("The goal is a demo.", seen)
             self.assertIn("Please look.", seen)
-            self.assertIn(str(env.board / "bin" / "shims"), seen)
-            self.assertTrue(seen.rstrip().endswith("1"))
+            self.assertIn(str(env.board / "bin" / "shims"), env_seen.get("PATH", ""))
+            self.assertEqual(env_seen.get("AGENTCOOP_UNATTENDED"), "1")
             messages, _issues = new_messages(env.board, "demo", "cursor")
             answers = [item for item in messages if item.type == "answer"]
             self.assertEqual(len(answers), 1)
@@ -110,12 +135,12 @@ class TickTests(unittest.TestCase):
     def test_need_context_once(self) -> None:
         with support.TempEnv() as env:
             _board_ready(env)
-            script = _script(env.workspace / "claude", "print('NEED CONTEXT: the goal')\n")
-            _point_cli(env.board, "claude_code", script)
+            _point_cli(env.board, "claude_code", _cli(env))
+            launch = _popen("NEED CONTEXT: the goal\n")
             main(["send", "--project", "demo", "--as", "cursor", "--to", "claude_code", "--subject", "A", "--body", "one"])
-            run_agent(env.board, "claude_code", "demo")
+            run_agent(env.board, "claude_code", "demo", popen=launch)
             main(["send", "--project", "demo", "--as", "cursor", "--to", "claude_code", "--subject", "B", "--body", "two"])
-            run_agent(env.board, "claude_code", "demo")
+            run_agent(env.board, "claude_code", "demo", popen=launch)
             messages, _issues = new_messages(env.board, "demo", "cursor")
             requests = [item for item in messages if item.type == "context_request"]
             self.assertEqual(len(requests), 1)
@@ -123,24 +148,23 @@ class TickTests(unittest.TestCase):
     def test_long_or_diff_answer_is_attached(self) -> None:
         with support.TempEnv() as env:
             _board_ready(env)
-            script = _script(env.workspace / "claude", "print('```diff\\n+line\\n```')\n")
-            _point_cli(env.board, "claude_code", script)
+            _point_cli(env.board, "claude_code", _cli(env))
             main(["send", "--project", "demo", "--as", "cursor", "--to", "claude_code", "--subject", "A", "--body", "one"])
-            run_agent(env.board, "claude_code", "demo")
+            run_agent(env.board, "claude_code", "demo", popen=_popen("```diff\n+line\n```\n"))
             folder = env.board / "projects" / "demo" / "files" / "claude_code"
             self.assertTrue(any(path.name.endswith("-answer.md") for path in folder.iterdir()))
 
     def test_three_failures_then_a_notice(self) -> None:
         with support.TempEnv() as env:
             _board_ready(env)
-            script = _script(env.workspace / "claude", "raise SystemExit(1)\n")
-            _point_cli(env.board, "claude_code", script)
+            _point_cli(env.board, "claude_code", _cli(env))
+            launch = _popen("", code=1)
             main(["send", "--project", "demo", "--as", "cursor", "--to", "claude_code", "--subject", "A", "--body", "one"])
-            run_agent(env.board, "claude_code", "demo")
+            run_agent(env.board, "claude_code", "demo", popen=launch)
             left, _issues = new_messages(env.board, "demo", "claude_code")
             self.assertEqual(len(left), 1)
-            run_agent(env.board, "claude_code", "demo")
-            run_agent(env.board, "claude_code", "demo")
+            run_agent(env.board, "claude_code", "demo", popen=launch)
+            run_agent(env.board, "claude_code", "demo", popen=launch)
             left, _issues = new_messages(env.board, "demo", "claude_code")
             self.assertEqual(left, [])
             notices, _issues = new_messages(env.board, "demo", "cursor")
@@ -149,8 +173,7 @@ class TickTests(unittest.TestCase):
     def test_at_most_three_messages_per_round(self) -> None:
         with support.TempEnv() as env:
             _board_ready(env)
-            script = _script(env.workspace / "claude", "print('ok')\n")
-            _point_cli(env.board, "claude_code", script)
+            _point_cli(env.board, "claude_code", _cli(env))
             for subject in ("A", "B", "C", "D"):
                 main(
                     [
@@ -167,7 +190,7 @@ class TickTests(unittest.TestCase):
                         subject,
                     ]
                 )
-            run_agent(env.board, "claude_code", "demo")
+            run_agent(env.board, "claude_code", "demo", popen=_popen("ok\n"))
             left, _issues = new_messages(env.board, "demo", "claude_code")
             self.assertEqual(len(left), 1)
 
@@ -236,10 +259,9 @@ class TickTests(unittest.TestCase):
     def test_timeout_does_not_mark_done(self) -> None:
         with support.TempEnv() as env:
             _board_ready(env)
-            script = _script(env.workspace / "claude", "import time\ntime.sleep(3)\n")
-            _point_cli(env.board, "claude_code", script)
+            _point_cli(env.board, "claude_code", _cli(env))
             main(["send", "--project", "demo", "--as", "cursor", "--to", "claude_code", "--subject", "A", "--body", "one"])
-            run_agent(env.board, "claude_code", "demo", timeout_minutes=0.01)
+            run_agent(env.board, "claude_code", "demo", popen=_popen("", hang=True), timeout_minutes=0.01)
             left, _issues = new_messages(env.board, "demo", "claude_code")
             self.assertEqual(len(left), 1)
 
