@@ -42,12 +42,13 @@ def main() -> int:
             sys.stderr.write(setup.stdout + setup.stderr)
             return setup.returncode
         board = home / ".agent_board"
+        bindir = board / "bin"
         if os.name == "nt":
-            command = board / "bin" / "agentcoop.cmd"
-            argv = ["cmd", "/c", str(command), "doctor"]
+            candidates = [bindir / "agentcoop.exe", bindir / "agentcoop.cmd"]
         else:
-            command = board / "bin" / "agentcoop"
-            argv = [str(command), "doctor"]
+            candidates = [bindir / "agentcoop"]
+        command = next((path for path in candidates if path.is_file()), candidates[0])
+        argv = [str(command), "doctor"]
         if not command.is_file():
             sys.stderr.write("The installed command is missing: " + str(command) + "\n")
             return 1
