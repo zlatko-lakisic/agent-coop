@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from agentcoop import __version__
@@ -37,7 +38,12 @@ class DoctorItem:
         return self.level != "fix"
 
 
-def run_doctor(board: Path, project: str | None = None) -> list[DoctorItem]:
+def run_doctor(
+    board: Path,
+    project: str | None = None,
+    *,
+    now: datetime | None = None,
+) -> list[DoctorItem]:
     """Run health checks. Pass a project name to focus on that project."""
     items: list[DoctorItem] = []
     if not board_is_ready(board):
@@ -87,6 +93,7 @@ def run_doctor(board: Path, project: str | None = None) -> list[DoctorItem]:
     items.extend(_project_checks(projects, agents, config, only=project_names))
     items.extend(_duplicate_instruction_checks(agents, projects, only=project_names))
     items.extend(_message_checks(board, projects, only=project_names))
+    items.extend(_context_checks(board, projects, only=project_names, now=now))
     if project:
         items.append(_hello_check(board, projects, project))
     return items
@@ -429,6 +436,57 @@ def _message_checks(
                             + "'s inbox. Ignore it.",
                         )
                     )
+    return items
+
+
+def _context_checks(
+    board: Path,
+    projects: dict,
+    *,
+    only: set[str] | None = None,
+    now: datetime | None = None,
+) -> list[DoctorItem]:
+    """Note missing context and flag context requests older than 24 hours."""
+    from agentcoop.context import latest_version, open_context_requests, version_time
+
+    items: list[DoctorItem] = []
+    moment = now or datetime.now(timezone.utc)
+    if moment.tzinfo is None:
+        moment = moment.replace(tzinfo=timezone.utc)
+    cutoff = moment - timedelta(hours=24)
+    for name, project in (projects.get("projects") or {}).items():
+        if only is not None and name not in only:
+            continue
+        helpers = project.get("helpers") or {}
+        if helpers and latest_version(board, name) is None:
+            items.append(
+                DoctorItem(
+                    "note",
+                    name + " has helpers and no project context yet. The driver can write one with: agentcoop context template",
+                )
+            )
+        driver = str(project.get("driver") or "")
+        for request in open_context_requests(board, name):
+            when = None
+            try:
+                when = datetime.strptime(request.ts, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+            except ValueError:
+                when = version_time(request.id + ".md")
+            if when is not None and when <= cutoff:
+                items.append(
+                    DoctorItem(
+                        "fix",
+                        "An open context request from "
+                        + request.sender
+                        + " to "
+                        + driver
+                        + " in "
+                        + name
+                        + " is older than 24 hours. "
+                        + driver
+                        + " should write the context and reply.",
+                    )
+                )
     return items
 
 

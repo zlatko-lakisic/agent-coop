@@ -163,6 +163,11 @@ function drawTalk() {
   html += "<p class='meta'>Driver: " + escapeHtml(project.driver) + "</p>";
   const helpers = Object.keys(project.helpers || {});
   html += "<p class='meta'>Helpers: " + (helpers.length ? helpers.map(escapeHtml).join(", ") : "none") + "</p>";
+  if (project.context) {
+    html += "<h2>Project context</h2>";
+    html += "<p class='meta'>Version " + escapeHtml(project.context.version) + ", written by " + escapeHtml(project.context.author) + " at " + escapeHtml(project.context.time) + "</p>";
+    html += "<pre>" + escapeHtml(project.context.body) + "</pre>";
+  }
   if (!project.messages.length) html += "<p>No messages yet.</p>";
   project.messages.forEach(function (message) {
     html += "<div class='msg'><div class='meta'>" + escapeHtml(message.ts) + " " + escapeHtml(message.sender) + " to " + escapeHtml(message.recipient) + " (" + escapeHtml(message.type) + ")</div>";

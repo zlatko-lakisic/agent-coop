@@ -339,6 +339,47 @@ class ContextTests(unittest.TestCase):
             self.assertEqual(len(versions), 5)
             self.assertTrue(versions[-1].name.startswith("20260101T000007Z"))
 
+    def test_doctor_note_and_stale_request(self) -> None:
+        with support.TempEnv() as env:
+            _ready(env)
+            from agentcoop.doctor import _context_checks
+
+            projects = load_projects(env.board)
+            notes = _context_checks(env.board, projects)
+            self.assertTrue(any("no project context" in item.text for item in notes))
+            self.assertTrue(all(item.level == "note" for item in notes))
+            send(
+                env.board,
+                project="frontend",
+                sender="claude_code",
+                recipient="cursor",
+                type="context_request",
+                subject="Context for frontend",
+                body="need",
+                now=datetime(2026, 1, 1, tzinfo=timezone.utc),
+            )
+            items = _context_checks(
+                env.board,
+                projects,
+                now=datetime(2026, 1, 3, tzinfo=timezone.utc),
+            )
+            fixes = [item for item in items if item.level == "fix"]
+            self.assertEqual(len(fixes), 1)
+            self.assertIn("claude_code", fixes[0].text)
+            self.assertIn("cursor", fixes[0].text)
+
+    def test_templates_contain_context_text(self) -> None:
+        from agentcoop.install import render_template
+
+        with support.TempEnv() as env:
+            init_board_files(env.board)
+            for name in ("SKILL.md.tmpl", "cursor-rule.mdc.tmpl", "AGENTS.md.tmpl", "GEMINI.md.tmpl"):
+                text = render_template(name, agent_name="cursor", board=env.board)
+                self.assertIn("context show --as cursor", text)
+                self.assertIn("--type context_request", text)
+                self.assertIn("context write --as cursor --body -", text)
+                self.assertIn("Never put passwords or keys in the context.", text)
+
     def test_cli_commands_without_terminal(self) -> None:
         with support.TempEnv() as env:
             _ready(env)

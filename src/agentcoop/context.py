@@ -282,7 +282,13 @@ def list_context(board: Path, project: str) -> str:
 
 def context_template_text() -> str:
     """Return the blank context template."""
-    return CONTEXT_TEMPLATE if CONTEXT_TEMPLATE.endswith("\n") else CONTEXT_TEMPLATE + "\n"
+    try:
+        from agentcoop.install import read_template
+
+        text = read_template("context.md.tmpl")
+    except Exception:
+        text = CONTEXT_TEMPLATE
+    return text if text.endswith("\n") else text + "\n"
 
 
 def archive_context(board: Path, project: str, older_than_days: int, now: datetime | None = None) -> int:

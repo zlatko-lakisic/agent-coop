@@ -552,6 +552,14 @@ def check_inbox(
                     AttachmentStatus(path=attachment, blocked=reason is not None, reason=reason or "")
                 )
         checked.append(CheckedMessage(message=message, violation=violation, attachments=statuses))
+    if role == "driver":
+        # Open context requests first, then everything else in the same order.
+        checked.sort(
+            key=lambda item: (
+                0 if item.message.type == "context_request" and item.violation is None else 1,
+                item.message.id,
+            )
+        )
     return InboxReport(
         project=project,
         agent=agent,
@@ -729,6 +737,18 @@ def render_check(report: InboxReport, *, summary: bool = False) -> str:
             + "."
         )
         lines.append("Your files folder: " + report.files_path)
+    if report.board_path:
+        from agentcoop.context import format_context_header
+
+        for header in format_context_header(
+            Path(report.board_path),
+            report.project,
+            report.agent,
+            report.role,
+            report.driver,
+            report.helpers,
+        ):
+            lines.append(header)
     lines.append("")
     count = len(visible)
     lines.append(str(count) + " new message" + ("" if count == 1 else "s"))

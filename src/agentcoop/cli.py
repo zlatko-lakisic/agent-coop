@@ -417,6 +417,10 @@ def _report_json(report: object) -> dict:
             for status in item.attachments
         ]
         messages.append(row)
+    from agentcoop.context import context_status
+    from agentcoop.paths import board_root
+
+    board = Path(getattr(report, "board_path", "") or board_root())
     return {
         "project": report.project,  # type: ignore[attr-defined]
         "agent": report.agent,  # type: ignore[attr-defined]
@@ -424,6 +428,12 @@ def _report_json(report: object) -> dict:
         "integrity_ok": report.integrity_ok,  # type: ignore[attr-defined]
         "messages": messages,
         "issues": [str(issue.path) for issue in report.issues],  # type: ignore[attr-defined]
+        "context": context_status(
+            board,
+            report.project,  # type: ignore[attr-defined]
+            report.agent,  # type: ignore[attr-defined]
+            report.role,  # type: ignore[attr-defined]
+        ),
     }
 
 
