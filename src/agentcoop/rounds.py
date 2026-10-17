@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import signal
 import subprocess
 import sys
@@ -71,10 +72,13 @@ def stop_schedule(board: Path, runner=None) -> None:
     run = runner or subprocess.run
     if record:
         for call in _stop_calls(record):
-            run(call, capture_output=True, text=True)
+            _invoke(run, call)
         files = [str(item) for item in (record.get("files") or [])]
         if any(item.endswith("crontab.txt") for item in files):
-            _remove_cron_lines(run)
+            try:
+                _remove_cron_lines(run)
+            except FileNotFoundError:
+                pass
         for raw in record.get("files") or []:
             path = Path(raw)
             if path.is_file():
@@ -668,19 +672,40 @@ def _run_install_calls(calls, run, alternative: bool):
         last = calls[-1] if calls else []
         for call in calls:
             last = call
-            completed = run(call, capture_output=True, text=True)
-            if getattr(completed, "returncode", 1) == 0:
+            completed = _invoke(run, call)
+            if completed is not None and getattr(completed, "returncode", 1) == 0:
                 return None
         return last
     for call in calls:
-        completed = run(call, capture_output=True, text=True)
-        if getattr(completed, "returncode", 1) != 0:
+        completed = _invoke(run, call)
+        if completed is None or getattr(completed, "returncode", 1) != 0:
             return call
     return None
 
 
+def _invoke(run, call):
+    """Run one scheduler command. A missing program returns None."""
+    if not call or shutil.which(str(call[0])) is None:
+        return None
+    try:
+        return run(call, capture_output=True, text=True)
+    except FileNotFoundError:
+        return None
+
+
+def _scheduler_error(command: list[str]) -> CoopError:
+    return CoopError(
+        "Agent Co-op could not find a scheduler on this computer. Install cron, "
+        "or run this every 5 minutes some other way: "
+        + " ".join(command),
+        code=1,
+    )
+
+
 def _plan(board: Path, minutes: int, command: list[str], path_value: str):
     if sys.platform == "darwin":
+        if shutil.which("launchctl") is None:
+            raise _scheduler_error(command)
         path = _launchd_plist()
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(_plist(minutes, command, path_value, board))
@@ -691,12 +716,24 @@ def _plan(board: Path, minutes: int, command: list[str], path_value: str):
         ]
         return [path], calls, True
     if sys.platform.startswith("linux"):
-        probe = subprocess.run(["systemctl", "--user", "show-environment"], capture_output=True, text=True)
-        if probe.returncode == 0:
-            files, calls = _systemd_plan(board, minutes, command, path_value)
-            return files, calls, False
+        if shutil.which("systemctl"):
+            try:
+                probe = subprocess.run(
+                    ["systemctl", "--user", "show-environment"],
+                    capture_output=True,
+                    text=True,
+                )
+            except FileNotFoundError:
+                probe = None
+            if probe is not None and probe.returncode == 0:
+                files, calls = _systemd_plan(board, minutes, command, path_value)
+                return files, calls, False
+        if shutil.which("crontab") is None:
+            raise _scheduler_error(command)
         files, calls = _cron_plan(board, minutes, command, path_value)
         return files, calls, False
+    if shutil.which("schtasks") is None:
+        raise _scheduler_error(command)
     task = ["schtasks", "/Create", "/F", "/SC", "MINUTE", "/MO", str(minutes), "/TN", "AgentCoop\\Tick", "/TR", " ".join(command)]
     return [], [task], False
 
@@ -741,7 +778,12 @@ def _cron_plan(board, minutes, command, path_value):
 
 
 def _remove_cron_lines(run) -> None:
-    listed = subprocess.run(["crontab", "-l"], capture_output=True, text=True)
+    if shutil.which("crontab") is None:
+        return
+    try:
+        listed = subprocess.run(["crontab", "-l"], capture_output=True, text=True)
+    except FileNotFoundError:
+        return
     if listed.returncode != 0:
         return
     rows = [row for row in listed.stdout.splitlines() if row and not row.endswith("# agentcoop")]
