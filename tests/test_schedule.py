@@ -64,6 +64,7 @@ class ScheduleTests(unittest.TestCase):
             )
             self.assertEqual(plain.returncode, 0)
 
+    @unittest.skipIf(os.name == "nt", "launchd is macOS")
     def test_start_stop_and_failed_scheduler(self) -> None:
         with support.TempEnv() as env:
             init_board_files(env.board)
@@ -108,8 +109,7 @@ class ScheduleTests(unittest.TestCase):
                 return Completed(0)
 
             with patch("agentcoop.rounds.subprocess.run", side_effect=runner):
-                with patch("agentcoop.rounds.sys.platform", "darwin"):
-                    code = main(["setup", "--schedule", "yes", "--every", "4", "--yes"])
+                code = main(["setup", "--schedule", "yes", "--every", "4", "--yes"])
             self.assertEqual(code, 0)
             self.assertEqual(load_schedule(env.board)["interval"], 4)
 

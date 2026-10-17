@@ -19,9 +19,16 @@ from agentcoop.rounds import run_agent, tick
 from agentcoop.schedule import build_argv
 
 
-def _script(path: Path, body: str) -> None:
-    path.write_text("#!" + sys.executable + "\n" + body, encoding="utf-8")
-    path.chmod(0o755)
+def _script(path: Path, body: str) -> Path:
+    py = path if path.suffix == ".py" else path.with_suffix(".py")
+    py.write_text("#!" + sys.executable + "\n" + body, encoding="utf-8")
+    if os.name == "nt":
+        cmd = py.with_suffix(".cmd")
+        line = '@"' + sys.executable + '" "' + str(py) + '" %*\r\n'
+        cmd.write_bytes(line.encode("utf-8"))
+        return cmd
+    py.chmod(0o755)
+    return py
 
 
 def _board_ready(env: support.TempEnv, helper_tool: str = "claude-code") -> Path:
@@ -59,9 +66,8 @@ class TickTests(unittest.TestCase):
         with support.TempEnv() as env:
             _board_ready(env)
             log = env.workspace / "seen.txt"
-            script = env.workspace / "claude"
-            _script(
-                script,
+            script = _script(
+                env.workspace / "claude",
                 "import os, pathlib, sys\n"
                 "text = '\\n'.join(sys.argv) + '\\n' + os.environ.get('PATH','') + '\\n' + os.environ.get('AGENTCOOP_UNATTENDED','')\n"
                 "pathlib.Path(" + repr(str(log)) + ").write_text(text, encoding='utf-8')\n"
@@ -104,8 +110,7 @@ class TickTests(unittest.TestCase):
     def test_need_context_once(self) -> None:
         with support.TempEnv() as env:
             _board_ready(env)
-            script = env.workspace / "claude"
-            _script(script, "print('NEED CONTEXT: the goal')\n")
+            script = _script(env.workspace / "claude", "print('NEED CONTEXT: the goal')\n")
             _point_cli(env.board, "claude_code", script)
             main(["send", "--project", "demo", "--as", "cursor", "--to", "claude_code", "--subject", "A", "--body", "one"])
             run_agent(env.board, "claude_code", "demo")
@@ -118,8 +123,7 @@ class TickTests(unittest.TestCase):
     def test_long_or_diff_answer_is_attached(self) -> None:
         with support.TempEnv() as env:
             _board_ready(env)
-            script = env.workspace / "claude"
-            _script(script, "print('```diff\\n+line\\n```')\n")
+            script = _script(env.workspace / "claude", "print('```diff\\n+line\\n```')\n")
             _point_cli(env.board, "claude_code", script)
             main(["send", "--project", "demo", "--as", "cursor", "--to", "claude_code", "--subject", "A", "--body", "one"])
             run_agent(env.board, "claude_code", "demo")
@@ -129,8 +133,7 @@ class TickTests(unittest.TestCase):
     def test_three_failures_then_a_notice(self) -> None:
         with support.TempEnv() as env:
             _board_ready(env)
-            script = env.workspace / "claude"
-            _script(script, "raise SystemExit(1)\n")
+            script = _script(env.workspace / "claude", "raise SystemExit(1)\n")
             _point_cli(env.board, "claude_code", script)
             main(["send", "--project", "demo", "--as", "cursor", "--to", "claude_code", "--subject", "A", "--body", "one"])
             run_agent(env.board, "claude_code", "demo")
@@ -146,8 +149,7 @@ class TickTests(unittest.TestCase):
     def test_at_most_three_messages_per_round(self) -> None:
         with support.TempEnv() as env:
             _board_ready(env)
-            script = env.workspace / "claude"
-            _script(script, "print('ok')\n")
+            script = _script(env.workspace / "claude", "print('ok')\n")
             _point_cli(env.board, "claude_code", script)
             for subject in ("A", "B", "C", "D"):
                 main(
@@ -234,8 +236,7 @@ class TickTests(unittest.TestCase):
     def test_timeout_does_not_mark_done(self) -> None:
         with support.TempEnv() as env:
             _board_ready(env)
-            script = env.workspace / "claude"
-            _script(script, "import time\ntime.sleep(3)\n")
+            script = _script(env.workspace / "claude", "import time\ntime.sleep(3)\n")
             _point_cli(env.board, "claude_code", script)
             main(["send", "--project", "demo", "--as", "cursor", "--to", "claude_code", "--subject", "A", "--body", "one"])
             run_agent(env.board, "claude_code", "demo", timeout_minutes=0.01)
