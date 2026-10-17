@@ -15,6 +15,7 @@ from agentcoop.install import (
     disconnect_agent,
     install_project_files,
     merge_hook_settings,
+    remove_hook_command,
     remove_project_files,
 )
 from agentcoop.projects import add_project, init_board_files, load_agents, load_projects
@@ -130,6 +131,10 @@ class InstallTests(unittest.TestCase):
             self.assertIn("claude_code", command)
             self.assertIn("check --as", command)
             self.assertIn("agent_board", command.replace("\\\\", "\\"))
+            # Removal must match the real command string, not a JSON-escaped copy.
+            cleaned = remove_hook_command(loaded, command)
+            self.assertEqual(cleaned["hooks"]["SessionStart"], [])
+            self.assertEqual(cleaned["hooks"]["UserPromptSubmit"], [])
 
     def test_disconnect_refuses_driver(self) -> None:
         with support.TempEnv() as env:

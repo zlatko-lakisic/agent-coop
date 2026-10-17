@@ -109,11 +109,14 @@ def merge_hook_settings(existing: dict, addition: dict) -> dict:
         current = hooks.setdefault(event, [])
         if not isinstance(current, list):
             continue
+        known = {_hook_command(item) for item in current}
         for entry in entries:
             command = _hook_command(entry)
-            if command and command in json.dumps(current):
+            if command and command in known:
                 continue
             current.append(entry)
+            if command:
+                known.add(command)
     return result
 
 
@@ -124,7 +127,7 @@ def remove_hook_command(settings: dict, command: str) -> dict:
     for event, entries in list(hooks.items()):
         if not isinstance(entries, list):
             continue
-        hooks[event] = [entry for entry in entries if command not in json.dumps(entry)]
+        hooks[event] = [entry for entry in entries if _hook_command(entry) != command]
     result["hooks"] = hooks
     return result
 
