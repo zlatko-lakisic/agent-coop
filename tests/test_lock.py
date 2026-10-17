@@ -65,7 +65,7 @@ class LockTests(unittest.TestCase):
             path = env.board / "projects.json"
             path.write_text('{"version": 1}\n', encoding="utf-8")
             err = io.StringIO()
-            with redirect_stderr(err), redirect_stdout(io.StringIO()):
+            with support.person("review"), redirect_stderr(err), redirect_stdout(io.StringIO()):
                 code = main(["project", "review", "--accept"])
             self.assertEqual(code, 1)
             self.assertIn("expected format", err.getvalue())

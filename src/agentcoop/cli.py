@@ -559,8 +559,30 @@ def cmd_connect(args: argparse.Namespace) -> int:
     return 0
 
 
+def _require_person(expected: str, summary: str, *, kind: str) -> None:
+    """Ask a person to confirm a role change. Agents without a terminal stop here."""
+    if not sys.stdin.isatty():
+        raise CoopError(
+            "This changes who can write in a project, so a person has to confirm it. "
+            "Run it yourself in a terminal, or use: agentcoop ui",
+            code=2,
+        )
+    print(summary)
+    prompt = "Type the agent name to confirm: " if kind == "agent" else "Type the project name to confirm: "
+    if kind == "review":
+        prompt = "Type review to confirm: "
+    answer = input(prompt)
+    if answer.strip() != expected:
+        raise CoopError("Cancelled.", code=1)
+
+
 def cmd_disconnect(args: argparse.Namespace) -> int:
     """Disconnect one agent."""
+    _require_person(
+        args.name,
+        "This will disconnect " + args.name + ".",
+        kind="agent",
+    )
     notes = disconnect_agent(_board(), args.name)
     print(args.name + " is disconnected.")
     for note in notes:
@@ -604,25 +626,45 @@ def cmd_project_show(args: argparse.Namespace) -> int:
 
 def cmd_project_driver(args: argparse.Namespace) -> int:
     """Change the driver."""
+    _require_person(
+        args.name,
+        "This will make " + args.agent + " the driver of " + args.name + ".",
+        kind="project",
+    )
     print(change_driver(args.name, args.agent, yes=args.yes))
     return 0
 
 
 def cmd_helper_add(args: argparse.Namespace) -> int:
     """Add a helper."""
+    _require_person(
+        args.name,
+        "This will add " + args.agent + " as a helper on " + args.name + ".",
+        kind="project",
+    )
     print(helper_add(args.name, args.agent, args.note))
     return 0
 
 
 def cmd_helper_remove(args: argparse.Namespace) -> int:
     """Remove a helper."""
+    _require_person(
+        args.name,
+        "This will remove " + args.agent + " as a helper on " + args.name + ".",
+        kind="project",
+    )
     print(helper_remove(args.name, args.agent))
     return 0
 
 
 def cmd_project_remove(args: argparse.Namespace) -> int:
     """Remove a project."""
-    print(project_remove(args.name, yes=args.yes))
+    _require_person(
+        args.name,
+        "This will remove the " + args.name + " project.",
+        kind="project",
+    )
+    print(project_remove(args.name, yes=True))
     return 0
 
 
@@ -636,6 +678,12 @@ def cmd_project_review(args: argparse.Namespace) -> int:
     """Review projects.json after a hand edit."""
     if args.restore and args.accept:
         raise CoopError("Use either --restore or --accept, not both.", code=2)
+    if args.restore or args.accept:
+        _require_person(
+            "review",
+            "This will restore the last saved roles." if args.restore else "This will accept the current projects.json.",
+            kind="review",
+        )
     print(review_projects(_board(), restore=args.restore, accept=args.accept))
     return 0
 

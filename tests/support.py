@@ -5,7 +5,9 @@ from __future__ import annotations
 import os
 import sys
 import tempfile
+from contextlib import contextmanager
 from pathlib import Path
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 SRC = ROOT / "src"
@@ -44,3 +46,14 @@ class TempEnv:
                 os.environ[key] = value
         self._tmp.cleanup()
         return False
+
+
+@contextmanager
+def person(answer: str):
+    """Pretend the command is running in a terminal and type one confirmation."""
+
+    def _input(_prompt: str = "") -> str:
+        return answer
+
+    with patch("sys.stdin.isatty", return_value=True), patch("builtins.input", side_effect=_input):
+        yield

@@ -28,6 +28,8 @@ Do not put passwords, API keys, or tokens in a message. `agentcoop send` refuses
 
 `projects.json` is hashed. If something edits it outside `agentcoop`, check and doctor say so and tell the agent to ask the human before trusting a role change. That is detection. It is not a lock.
 
+Commands that change existing roles ask for a confirmation in a terminal. That stops an agent from changing roles by accident or by following a message. An agent that can run a pseudo terminal could get around it. Tool permission settings are still the real lock.
+
 ## What the board cannot stop
 
 Any agent with file access can write a message file that claims another sender, including the driver. `agentcoop` checks roles for messages it sends, and `check` flags messages that break the role rules, but a fake message that follows the rules looks real.

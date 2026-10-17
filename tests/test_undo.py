@@ -40,7 +40,7 @@ class UndoTests(unittest.TestCase):
             rule = folder / ".cursor" / "rules" / "agent-coop.mdc"
             rule.write_text(rule.read_text(encoding="utf-8") + "\nextra line\n", encoding="utf-8")
             out = io.StringIO()
-            with redirect_stdout(out):
+            with support.person("demo"), redirect_stdout(out):
                 code = main(["project", "remove", "demo", "--yes"])
             self.assertEqual(code, 0)
             self.assertTrue(rule.is_file())
@@ -53,7 +53,8 @@ class UndoTests(unittest.TestCase):
             _add(folder, gitignore="no")
             rule = folder / ".cursor" / "rules" / "agent-coop.mdc"
             self.assertTrue(rule.is_file())
-            self.assertEqual(main(["project", "remove", "demo", "--yes"]), 0)
+            with support.person("demo"):
+                self.assertEqual(main(["project", "remove", "demo", "--yes"]), 0)
             self.assertFalse(rule.exists())
 
     def test_existing_gitignore_line_survives_remove(self) -> None:
@@ -64,7 +65,8 @@ class UndoTests(unittest.TestCase):
             ignore = folder / ".gitignore"
             ignore.write_text(".cursor/rules/agent-coop.mdc\n", encoding="utf-8")
             _add(folder, gitignore="yes")
-            self.assertEqual(main(["project", "remove", "demo", "--yes"]), 0)
+            with support.person("demo"):
+                self.assertEqual(main(["project", "remove", "demo", "--yes"]), 0)
             self.assertIn(".cursor/rules/agent-coop.mdc", ignore.read_text(encoding="utf-8"))
 
     def test_backup_is_not_left_in_the_project(self) -> None:
