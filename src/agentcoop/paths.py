@@ -23,14 +23,17 @@ def board_root() -> Path:
     return home_dir() / ".agent_board"
 
 
-def casefold_key(path: Path) -> tuple[str, ...]:
+def casefold_key(path: Path, *, fold: bool | None = None) -> tuple[str, ...]:
     """Return path parts for comparison.
 
     macOS and Windows treat paths as case-insensitive. Linux does not.
+    Pass fold=True to compare case-insensitively on every OS.
     """
     resolved = path.expanduser().resolve()
     parts = resolved.parts
-    if sys.platform == "darwin" or os.name == "nt":
+    if fold is None:
+        fold = sys.platform == "darwin" or os.name == "nt"
+    if fold:
         return tuple(part.casefold() for part in parts)
     return tuple(parts)
 

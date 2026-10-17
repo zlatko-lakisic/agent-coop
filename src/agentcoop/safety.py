@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import os
 import re
+import stat
 from pathlib import Path
 
 from agentcoop.errors import CoopError
-from agentcoop.paths import home_dir, is_same_or_inside
+from agentcoop.paths import casefold_key, home_dir, is_same_or_inside
 
 BODY_LIMIT_BYTES = 16 * 1024
 SUBJECT_LIMIT = 120
@@ -43,24 +45,39 @@ _SECRET_PATTERNS = (
 
 
 def _name_is_secret(name: str) -> bool:
-    if name == ".env" or name.startswith(".env."):
+    folded = name.casefold()
+    if folded == ".env" or folded.startswith(".env."):
         return True
-    if name.endswith((".pem", ".key", ".p12")):
+    if folded.endswith((".pem", ".key", ".p12", ".pfx", ".kdbx")):
         return True
-    if name.startswith(("id_rsa", "id_ed25519", "credentials")):
+    if folded.startswith(("id_rsa", "id_ed25519", "id_ecdsa", "credentials")):
+        return True
+    if folded in (".netrc", ".npmrc", ".pypirc"):
         return True
     return False
+
+
+def _folded_inside(child: Path, parent: Path) -> bool:
+    """Return True when child is parent or inside it, ignoring case on every OS."""
+    try:
+        child_key = casefold_key(child, fold=True)
+        parent_key = casefold_key(parent, fold=True)
+    except OSError:
+        return False
+    if len(child_key) < len(parent_key):
+        return False
+    return child_key[: len(parent_key)] == parent_key
 
 
 def deny_reason(path: Path, board: Path) -> str | None:
     """Return why a path is blocked, or None when the deny list does not hit."""
     home = home_dir()
     for relative in _DENY_HOME_DIRS:
-        if is_same_or_inside(path, home / relative):
+        if _folded_inside(path, home / relative):
             return "That location is on the private-file list (" + str(relative) + ")."
     for relative in _DENY_HOME_FILES:
         candidate = home / relative
-        if is_same_or_inside(path, candidate):
+        if _folded_inside(path, candidate):
             return "That file is on the private-file list (" + str(relative) + ")."
     if _name_is_secret(path.name):
         return "That file name is on the private-file list (" + path.name + ")."
@@ -105,13 +122,79 @@ def check_attachment(
         return "Attachments must be absolute paths."
     if not path.exists():
         return "That file does not exist."
-    denied = deny_reason(path, board)
+    try:
+        real = Path(raw).resolve(strict=True)
+    except OSError:
+        return "That file does not exist."
+    denied = deny_reason(path, board) or deny_reason(real, board)
     if denied:
         return denied
+    try:
+        mode = os.stat(real).st_mode
+    except OSError:
+        return "That file does not exist."
+    if not stat.S_ISREG(mode):
+        return "Only regular files can be attachments. Folders, pipes, and devices are not allowed."
     roots = allowed_roots_for(project_path, board, project, allowed_roots)
-    if any(is_same_or_inside(path, root) for root in roots):
+    if any(is_same_or_inside(real, root) for root in roots):
         return None
     return "That file is outside the folders this project is allowed to share."
+
+
+def open_attachment(
+    raw: str,
+    *,
+    max_bytes: int,
+    clip: bool = False,
+    project_path: Path,
+    board: Path,
+    project: str,
+    allowed_roots: list[str],
+) -> bytes:
+    """Read an attachment after the same checks as check_attachment."""
+    reason = check_attachment(
+        raw,
+        project_path=project_path,
+        board=board,
+        project=project,
+        allowed_roots=allowed_roots,
+    )
+    if reason:
+        raise CoopError("This attachment is not allowed: " + raw + ". " + reason)
+    real = Path(raw).resolve(strict=True)
+    flags = os.O_RDONLY
+    flags |= getattr(os, "O_NOFOLLOW", 0)
+    flags |= getattr(os, "O_NONBLOCK", 0)
+    flags |= getattr(os, "O_BINARY", 0)
+    fd = os.open(str(real), flags)
+    try:
+        info = os.fstat(fd)
+        if not stat.S_ISREG(info.st_mode):
+            raise CoopError(
+                "Only regular files can be attachments. Folders, pipes, and devices are not allowed."
+            )
+        if info.st_size > max_bytes and not clip:
+            raise CoopError(real.name + " is larger than " + str(max_bytes) + ".")
+        chunks: list[bytes] = []
+        total = 0
+        limit = max_bytes + 1
+        while total < limit:
+            try:
+                piece = os.read(fd, min(65536, limit - total))
+            except (BlockingIOError, InterruptedError):
+                break
+            if not piece:
+                break
+            chunks.append(piece)
+            total += len(piece)
+        data = b"".join(chunks)
+        if clip:
+            return data[:max_bytes]
+        if len(data) > max_bytes:
+            raise CoopError(real.name + " is larger than " + str(max_bytes) + ".")
+        return data
+    finally:
+        os.close(fd)
 
 
 def require_attachment(
