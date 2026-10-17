@@ -15,6 +15,7 @@ from agentcoop.core import (
     file_id,
     log_messages,
     mark_done,
+    new_messages,
     projects_for_check,
     render_check,
     send,
@@ -98,6 +99,8 @@ def build_parser() -> argparse.ArgumentParser:
     _add_as(send_cmd)
     _add_project(send_cmd)
     send_cmd.add_argument("--to", required=True)
+    send_cmd.add_argument("--with-progress", action="store_true")
+    send_cmd.add_argument("--urgent", action="store_true")
     send_cmd.add_argument("--subject", required=True)
     send_cmd.add_argument("--body")
     send_cmd.add_argument("--body-file")
@@ -252,6 +255,35 @@ def build_parser() -> argparse.ArgumentParser:
     _add_project(context_list)
     context_list.set_defaults(func=cmd_context_list)
 
+    progress_cmd = sub.add_parser("progress", help="Read and write driver progress")
+    progress_sub = progress_cmd.add_subparsers(dest="progress_cmd", required=True)
+    progress_write = progress_sub.add_parser("write", help="Write a progress update")
+    _add_as(progress_write)
+    _add_project(progress_write)
+    progress_write.add_argument("--body")
+    progress_write.add_argument("--body-file")
+    progress_write.add_argument("--allow-secret", action="store_true")
+    progress_write.set_defaults(func=cmd_progress_write)
+    progress_show = progress_sub.add_parser("show", help="Show a progress update")
+    _add_as(progress_show)
+    _add_project(progress_show)
+    progress_show.add_argument("--version", dest="version_name")
+    progress_show.set_defaults(func=cmd_progress_show)
+    progress_template = progress_sub.add_parser("template", help="Print the progress template")
+    progress_template.set_defaults(func=cmd_progress_template)
+    progress_list = progress_sub.add_parser("list", help="List progress versions")
+    _add_as(progress_list)
+    _add_project(progress_list)
+    progress_list.add_argument("--limit", type=int)
+    progress_list.set_defaults(func=cmd_progress_list)
+
+    wait_cmd = sub.add_parser("wait", help="Wait for a reply")
+    _add_as(wait_cmd)
+    _add_project(wait_cmd)
+    wait_cmd.add_argument("--for", dest="for_id", required=True)
+    wait_cmd.add_argument("--timeout", type=int, default=10)
+    wait_cmd.set_defaults(func=cmd_wait)
+
     start_cmd = sub.add_parser("start", help="Turn on background checks")
     start_cmd.add_argument("--every", type=int, default=5)
     start_cmd.set_defaults(func=cmd_start)
@@ -344,24 +376,51 @@ def _read_body(args: argparse.Namespace) -> str:
 
 
 def cmd_send(args: argparse.Namespace) -> int:
-    """Send one message."""
+    """Send one message, or one message to each helper in a list."""
     agent = _agent(args)
     board = _board()
     project = resolve_project(board, explicit=args.project, cwd=Path.cwd(), agent=agent)
-    mid = send(
-        board,
-        project=project,
-        sender=agent,
-        recipient=args.to,
-        subject=args.subject,
-        body=_read_body(args),
-        type=args.type,
-        re=args.re_id,
-        attachments=list(args.attach or []),
-        needs_reply=bool(args.needs_reply),
-        allow_secret=bool(args.allow_secret),
-    )
-    print(mid)
+    record = (load_projects(board).get("projects") or {}).get(project) or {}
+    if args.urgent and role_of(record, agent) != "driver":
+        raise CoopError("Only the driver of " + project + " can send an urgent request.")
+    attachments = list(args.attach or [])
+    if args.with_progress:
+        from agentcoop.progress import progress_attachment
+
+        attachments.append(str(progress_attachment(board, project)))
+    recipients = [part.strip() for part in str(args.to).split(",") if part.strip()]
+    if not recipients:
+        raise CoopError("Name who should receive the message with --to.", code=2)
+    body = _read_body(args)
+    ids = []
+    for recipient in recipients:
+        mid = send(
+            board,
+            project=project,
+            sender=agent,
+            recipient=recipient,
+            subject=args.subject,
+            body=body,
+            type=args.type,
+            re=args.re_id,
+            attachments=list(attachments),
+            needs_reply=bool(args.needs_reply),
+            allow_secret=bool(args.allow_secret),
+        )
+        ids.append(mid)
+        if args.urgent:
+            from agentcoop.progress import record_urgent
+
+            record_urgent(board, project, mid)
+    for mid in ids:
+        print(mid)
+    if args.urgent:
+        from agentcoop.rounds import load_schedule, spawn_round
+
+        if load_schedule(board):
+            spawn_round(board)
+        else:
+            print("The schedule is off, so the helper starts when someone opens it.")
     return 0
 
 
@@ -523,6 +582,72 @@ def cmd_archive(args: argparse.Namespace) -> int:
     moved = archive(board, project, agent, older_than_days=args.older_than)
     print("Archived " + str(moved) + " handled message(s) for " + agent + ".")
     return 0
+
+
+def cmd_progress_write(args: argparse.Namespace) -> int:
+    from agentcoop.progress import write_progress
+
+    agent = _agent(args)
+    board = _board()
+    project = resolve_project(board, explicit=args.project, cwd=Path.cwd(), agent=agent)
+    print(write_progress(board, project, agent, _read_body(args), allow_secret=bool(args.allow_secret)))
+    return 0
+
+
+def cmd_progress_show(args: argparse.Namespace) -> int:
+    from agentcoop.progress import show_progress
+
+    board = _board()
+    agent = args.as_name
+    project = resolve_project(board, explicit=args.project, cwd=Path.cwd(), agent=agent)
+    print(show_progress(board, project, version=args.version_name), end="")
+    return 0
+
+
+def cmd_progress_template(args: argparse.Namespace) -> int:
+    from agentcoop.progress import progress_template_text
+
+    print(progress_template_text(), end="")
+    return 0
+
+
+def cmd_progress_list(args: argparse.Namespace) -> int:
+    from agentcoop.progress import list_progress_text
+
+    board = _board()
+    agent = args.as_name
+    project = resolve_project(board, explicit=args.project, cwd=Path.cwd(), agent=agent)
+    print(list_progress_text(board, project, limit=args.limit), end="")
+    return 0
+
+
+def cmd_wait(args: argparse.Namespace) -> int:
+    """Block until a reply arrives or the timeout passes."""
+    import time
+
+    agent = _agent(args)
+    board = _board()
+    project = resolve_project(board, explicit=args.project, cwd=Path.cwd(), agent=agent)
+    minutes = int(args.timeout)
+    if minutes < 1 or minutes > 30:
+        raise CoopError("The wait must be between 1 and 30 minutes.", code=2)
+    deadline = time.monotonic() + minutes * 60
+    while True:
+        messages, _issues = new_messages(board, project, agent)
+        for item in messages:
+            if item.re == args.for_id:
+                print(file_id(item) + "  " + item.subject)
+                return 0
+        if time.monotonic() >= deadline:
+            print(
+                "No reply to "
+                + args.for_id
+                + " after "
+                + str(minutes)
+                + " minutes. Keep working on something else, or post a progress update saying you are blocked."
+            )
+            return 3
+        time.sleep(5)
 
 
 def cmd_context_show(args: argparse.Namespace) -> int:

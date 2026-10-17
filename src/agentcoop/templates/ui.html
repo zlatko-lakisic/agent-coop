@@ -163,6 +163,11 @@ function drawTalk() {
   html += "<p class='meta'>Driver: " + escapeHtml(project.driver) + "</p>";
   const helpers = Object.keys(project.helpers || {});
   html += "<p class='meta'>Helpers: " + (helpers.length ? helpers.map(escapeHtml).join(", ") : "none") + "</p>";
+  if (project.progress) {
+    html += "<h2>Progress</h2>";
+    html += "<p class='meta'>Updated " + escapeHtml(project.progress.time) + " by " + escapeHtml(project.progress.author) + "</p>";
+    html += "<pre>" + escapeHtml(project.progress.body) + "</pre>";
+  }
   if (project.context) {
     html += "<h2>Project context</h2>";
     html += "<p class='meta'>Version " + escapeHtml(project.context.version) + ", written by " + escapeHtml(project.context.author) + " at " + escapeHtml(project.context.time) + "</p>";

@@ -57,6 +57,7 @@ Each path has one writer. A second writer MUST NOT update that path.
 | `files/<agent>/` | `<agent>` |
 | `archive/<agent>/` | `<agent>` (or the human through `agentcoop archive`) |
 | the project folder itself | that project's driver |
+| `progress/` | that project's driver, through `agentcoop progress write` |
 
 ## 4. Agent and project names
 

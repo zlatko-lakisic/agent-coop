@@ -187,6 +187,9 @@ def format_status(board: Path) -> str:
     for project, item in projects.items():
         folder = Path(str(item.get("path") or ""))
         dest = worktree_path(board, project)
+        from agentcoop.progress import status_lines
+
+        lines.extend(status_lines(board, project))
         if not dest.exists():
             if item.get("driver") and not inside_git(folder):
                 driver = str(item.get("driver"))
@@ -355,13 +358,27 @@ def _helper_prompt(board, agent, project, record, message) -> tuple[str, str | N
         "Project context:",
         context.rstrip(),
         "",
-        "Message " + file_id(message),
-        "From: " + message.sender,
-        "Type: " + message.type,
-        "Subject: " + message.subject,
-        "Body:",
-        message.body,
     ]
+    from agentcoop.progress import progress_dir
+
+    folder = progress_dir(board, project)
+    for raw in message.attachments:
+        try:
+            if Path(raw).resolve().is_relative_to(folder.resolve()):
+                lines.extend(["Driver progress:", Path(raw).read_text(encoding="utf-8").rstrip(), ""])
+                break
+        except (OSError, ValueError):
+            continue
+    lines.extend(
+        [
+            "Message " + file_id(message),
+            "From: " + message.sender,
+            "Type: " + message.type,
+            "Subject: " + message.subject,
+            "Body:",
+            message.body,
+        ]
+    )
     for raw in message.attachments:
         reason = check_attachment(
             raw,
