@@ -5,7 +5,6 @@ from __future__ import annotations
 import io
 import json
 import multiprocessing
-import queue
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
@@ -17,14 +16,14 @@ from agentcoop.errors import CoopError
 from agentcoop.projects import add_helper, add_project, connect_agent_record, init_board_files, load_projects
 
 
-def _worker(board: str, project: str, agent: str, start, done, errors) -> None:
+def _worker(board: str, project: str, agent: str, error_path: str) -> None:
+    codes = []
     for index in range(10):
-        start.wait(30)
         try:
             add_helper(Path(board), project, agent, "round-" + str(index))
         except CoopError as exc:
-            errors.put(exc.code)
-        done.wait(30)
+            codes.append(str(exc.code))
+    Path(error_path).write_text("\n".join(codes), encoding="utf-8")
 
 
 class LockTests(unittest.TestCase):
@@ -39,27 +38,33 @@ class LockTests(unittest.TestCase):
             folder.mkdir()
             add_project(env.board, "demo", folder, "cursor", {})
             ctx = multiprocessing.get_context("spawn")
-            errors = ctx.Queue()
-            start = ctx.Barrier(5)
-            done = ctx.Barrier(5)
-            procs = [
-                ctx.Process(
-                    target=_worker,
-                    args=(str(env.board), "demo", name, start, done, errors),
-                )
-                for name in names
-            ]
-            for proc in procs:
-                proc.start()
-            for proc in procs:
-                proc.join(60)
-                self.assertEqual(proc.exitcode, 0)
+            procs = []
+            try:
+                for name in names:
+                    proc = ctx.Process(
+                        target=_worker,
+                        args=(
+                            str(env.board),
+                            "demo",
+                            name,
+                            str(env.root / (name + ".errors")),
+                        ),
+                    )
+                    procs.append(proc)
+                    proc.start()
+                for proc in procs:
+                    proc.join(60)
+                    self.assertEqual(proc.exitcode, 0)
+            finally:
+                for proc in procs:
+                    if proc.is_alive():
+                        proc.terminate()
+                        proc.join(5)
             codes = []
-            while True:
-                try:
-                    codes.append(errors.get_nowait())
-                except queue.Empty:
-                    break
+            for name in names:
+                text = (env.root / (name + ".errors")).read_text(encoding="utf-8")
+                if text.strip():
+                    codes.extend(text.splitlines())
             self.assertEqual(codes, [])
             helpers = load_projects(env.board)["projects"]["demo"]["helpers"]
             for name in names:

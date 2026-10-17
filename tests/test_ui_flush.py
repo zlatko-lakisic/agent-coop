@@ -37,23 +37,31 @@ class UiFlushTests(unittest.TestCase):
                 assert proc.stdout is not None
                 box.append(proc.stdout.readline())
 
-            thread = threading.Thread(target=_read)
+            thread = threading.Thread(target=_read, daemon=True)
             thread.start()
-            thread.join(5)
-            self.assertTrue(box, "the link was not printed within 5 seconds")
-            line = box[0].decode("utf-8").strip()
-            self.assertTrue(line.startswith("http://127.0.0.1:"))
-            self.assertIn("?t=", line)
-            token = line.split("?t=", 1)[1]
-            request = urllib.request.Request(
-                line.split("/?t=")[0] + "/api/shutdown?t=" + token,
-                data=b"{}",
-                method="POST",
-            )
-            with urllib.request.urlopen(request, timeout=5) as response:
-                self.assertEqual(response.status, 200)
-            self.assertEqual(proc.wait(timeout=5), 0)
-            proc.kill()
+            try:
+                thread.join(5)
+                self.assertTrue(box, "the link was not printed within 5 seconds")
+                line = box[0].decode("utf-8").strip()
+                self.assertTrue(line.startswith("http://127.0.0.1:"))
+                self.assertIn("?t=", line)
+                token = line.split("?t=", 1)[1]
+                request = urllib.request.Request(
+                    line.split("/?t=")[0] + "/api/shutdown?t=" + token,
+                    data=b"{}",
+                    method="POST",
+                )
+                with urllib.request.urlopen(request, timeout=5) as response:
+                    self.assertEqual(response.status, 200)
+                self.assertEqual(proc.wait(timeout=5), 0)
+            finally:
+                if proc.poll() is None:
+                    proc.kill()
+                    proc.wait(timeout=5)
+                if proc.stdout is not None:
+                    proc.stdout.close()
+                if proc.stderr is not None:
+                    proc.stderr.close()
 
 
 if __name__ == "__main__":

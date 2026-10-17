@@ -12,6 +12,9 @@ jobs:
         os: [ubuntu-latest, macos-latest, windows-latest]
         python: ["3.9", "3.12"]
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    env:
+      PYTHONUNBUFFERED: "1"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
