@@ -63,11 +63,13 @@ jobs:
           if [ "$RUNNER_OS" = "Windows" ]; then
             python -m PyInstaller --onefile --name agentcoop --paths src \
               --add-data "src/agentcoop/templates;templates" \
+              --add-data "src/agentcoop/gitshim.py;agentcoop" \
               src/agentcoop/__main__.py
             mv dist/agentcoop.exe "dist/out/${{ matrix.artifact }}.exe"
           else
             python -m PyInstaller --onefile --name agentcoop --paths src \
               --add-data "src/agentcoop/templates:templates" \
+              --add-data "src/agentcoop/gitshim.py:agentcoop" \
               src/agentcoop/__main__.py
             mv dist/agentcoop "dist/out/${{ matrix.artifact }}"
             chmod +x "dist/out/${{ matrix.artifact }}"

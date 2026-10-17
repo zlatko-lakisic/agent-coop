@@ -219,8 +219,12 @@ class CursorPermissionTests(unittest.TestCase):
             def launch(argv, **kwargs):
                 seen["argv"] = argv
                 seen["env"] = kwargs["env"]
+                import shutil
+
+                git_bin = shutil.which("git", path=kwargs["env"]["PATH"])
+                seen["git"] = git_bin or ""
                 pushed = subprocess.run(
-                    ["git", "push"],
+                    [git_bin or "git", "push"],
                     cwd=kwargs["cwd"],
                     env=kwargs["env"],
                     capture_output=True,
@@ -247,6 +251,7 @@ class CursorPermissionTests(unittest.TestCase):
             self.assertEqual(run_agent(env.board, "cursor", "demo", popen=launch), 0)
             dest = worktree_path(env.board, "demo")
             self.assertEqual(current_branch(dest), "agentcoop/auto")
+            self.assertIn("shims", seen["git"].replace("\\", "/"))
             self.assertNotEqual(seen["push"][0], 0)
             self.assertIn("blocked", seen["push"][1])
             parts = seen["env"]["PATH"].split(os.pathsep)
