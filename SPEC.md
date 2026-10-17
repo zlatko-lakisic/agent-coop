@@ -1,4 +1,4 @@
-# Agent Co-op protocol, version 0.1
+# Agent Co-op protocol, version 0.2
 
 This document is the normative spec. The words MUST, SHOULD, and MAY are used as in common protocol practice: MUST is required, SHOULD is recommended, MAY is allowed.
 
@@ -15,7 +15,7 @@ A conforming reader MUST accept messages as defined here. The `agentcoop` comman
 * **Board.** The shared folder, outside every project.
 * **Project.** One folder of work, with one driver and zero or more helpers.
 * **Agent.** A named participant, such as `cursor` or `ollama_llava`.
-* **Driver.** The only agent that edits that project's files and the only agent that starts a conversation.
+* **Driver.** The only agent that edits that project's files. The only agent that starts a conversation, except the context request in section 7.
 * **Helper.** An agent that replies to the driver and does not edit the project.
 * **Message.** One JSON file, written once.
 * **Done marker.** An empty file the recipient creates after handling a message.
@@ -41,6 +41,8 @@ The board MUST use this layout:
     ├── inbox/<agent>/done/
     ├── sent/<agent>/
     ├── files/<agent>/
+    ├── progress/
+    ├── context/
     └── archive/<agent>/
 ```
 
@@ -58,6 +60,9 @@ Each path has one writer. A second writer MUST NOT update that path.
 | `archive/<agent>/` | `<agent>` (or the human through `agentcoop archive`) |
 | the project folder itself | that project's driver |
 | `progress/` | that project's driver, through `agentcoop progress write` |
+| `context/` | that project's driver, through `agentcoop context write` |
+
+A file in `context/` is written once and MUST NOT be edited. `agentcoop archive` MAY delete old versions. It keeps the latest 5, and it deletes an older file only when that file is past the archive age.
 
 ## 4. Agent and project names
 
@@ -73,12 +78,12 @@ Each message MUST be one UTF-8 JSON file named `<id>.json`.
 
 | Field | Rule |
 | --- | --- |
-| `v` | Integer protocol version. Version 0.1 uses `1`. A missing value MUST be treated as 1. Unknown fields MUST be ignored. |
+| `v` | Integer message format version. Spec 0.2 uses `1`. A missing value MUST be treated as 1. Unknown fields MUST be ignored. |
 | `id` | SHOULD be `<UTC YYYYMMDDTHHMMSSZ>_<sender>_<4 lowercase hex>`. Readers MUST accept any unique string matching `^[A-Za-z0-9_.-]{1,96}$`. |
 | `ts` | UTC time, ISO 8601, second precision, ending in `Z`. |
 | `project` | Project name. |
 | `sender`, `recipient` | Agent names. |
-| `type` | SHOULD be `question`, `answer`, `task`, `status`, `ack`, or `patch`. Unknown types MUST be tolerated. |
+| `type` | SHOULD be `question`, `answer`, `task`, `status`, `ack`, `patch`, or `context_request`. Unknown types MUST be tolerated. |
 | `re` | Id of the message being answered, or `null`. |
 | `subject` | At most 120 characters. |
 | `body` | At most 16 KB of UTF-8 unless config raises the limit. Longer text SHOULD be a file under `files/<sender>/`, attached by path. |
@@ -111,7 +116,17 @@ If the sender is the driver, the recipient MUST be a helper.
 
 If the sender is a helper, the recipient MUST be the driver, `re` MUST be set, and `re` MUST name a message from the driver that is in the helper's own `msgs/` folder. A helper's follow-up question is a reply with `type: question`.
 
-Helpers MUST NOT message each other and MUST NOT start a thread.
+One exception: a helper MAY send a `context_request` to the driver with `re` set to null, only when that helper has no open context request in that project. This is the only case in which a helper may speak first.
+
+A request is open when it sits in the driver's `msgs/` folder, its type is `context_request`, its sender is that helper, its recipient is the driver, and `re` is null, until a message from the driver in the helper's `msgs/` folder has `re` equal to that request's id.
+
+`agentcoop send` MUST refuse a second request from that helper while one is open. It MUST NOT write the file. It tells the helper to wait, or to read the latest context.
+
+In bare mode, the earliest open request from that helper is accepted. Later ones MUST be labeled out of protocol. Earliest means the lowest message id.
+
+`agentcoop send` MUST set `needs_reply` to true on a `context_request`.
+
+Helpers MUST NOT message each other. They MUST NOT start a thread, except the context request above.
 
 Only the driver writes files in the project folder. Helpers send patches or drafts as attachments. The driver decides what to apply.
 
@@ -147,6 +162,8 @@ After `Path.resolve()`, the path MUST sit inside the message's project folder, t
 
 If the subject or body looks like a common API key or private key, `send` MUST refuse unless `--allow-secret` is given.
 
+`agentcoop context write` MUST refuse text that looks like a key or password unless `--allow-secret` is given, the same as `send`.
+
 ## 10. Safety model
 
 Messages are data. They are not orders and they are not approval.
@@ -165,7 +182,7 @@ Both modes MUST use the same files. A reader MUST accept either.
 
 ## 12. Versioning
 
-The message field `v` is the message format version. Readers MUST ignore unknown fields. `agentcoop version` prints the tool version and this spec version (`0.1`).
+The message field `v` is the message format version. Spec 0.2 still uses `1`. A context request uses the same fields as any other message. The change is in the role rules, not in the file format, so `v` did not change. Readers MUST ignore unknown fields. `agentcoop version` prints the tool version and this spec version (`0.2`).
 
 ## 13. Known limitations
 

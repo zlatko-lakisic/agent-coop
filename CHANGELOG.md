@@ -10,6 +10,7 @@
 - A scheduled Cursor driver cannot write the board's bin folder, so it cannot replace the git guard.
 - A run that is not signed in is reported, and an empty helper reply counts as a failure.
 - Send notes go to standard error, so a captured id stays a single line.
+- SPEC.md is version 0.2. It describes the context request and the context folder.
 
 ## 0.1.0
 
