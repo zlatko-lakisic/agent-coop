@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import signal
 import subprocess
 import sys
@@ -71,10 +72,13 @@ def stop_schedule(board: Path, runner=None) -> None:
     run = runner or subprocess.run
     if record:
         for call in _stop_calls(record):
-            run(call, capture_output=True, text=True)
+            _invoke(run, call)
         files = [str(item) for item in (record.get("files") or [])]
         if any(item.endswith("crontab.txt") for item in files):
-            _remove_cron_lines(run)
+            try:
+                _remove_cron_lines(run)
+            except FileNotFoundError:
+                pass
         for raw in record.get("files") or []:
             path = Path(raw)
             if path.is_file():
@@ -172,7 +176,9 @@ def format_status(board: Path) -> str:
             lines.append(display + " as a helper: " + helper_reason)
         else:
             lines.append(display + ": can run in the background as a helper.")
-        if driver_reason and not helper_reason:
+        if driver_reason and driver_reason.startswith(display + " cannot be scheduled as the driver"):
+            lines.append(driver_reason)
+        elif driver_reason and not helper_reason:
             lines.append(display + " as a driver: " + driver_reason)
         elif driver_reason is None and helper_reason is None:
             lines.append(display + ": can run in the background as a driver.")
@@ -200,6 +206,9 @@ def format_status(board: Path) -> str:
                 )
             continue
         person = _person_branch(board, project) or "HEAD"
+        switched = str((runs.get("switches") or {}).get(project) or "")
+        if switched:
+            lines.append(switched)
         lines.append(
             project
             + ": commits on "
@@ -308,7 +317,7 @@ def _run_helper(board, agent, project, record, *, popen, timeout_minutes) -> int
 
 def _run_driver(board, agent, project, record, *, popen, timeout_minutes) -> int:
     from agentcoop.schedule import build_argv, schedulable_reason
-    from agentcoop.worktree import finish_worktree, prepare_worktree
+    from agentcoop.worktree import auto_branch, finish_worktree, prepare_worktree
 
     if schedulable_reason(board, agent, role="driver"):
         return 0
@@ -331,7 +340,10 @@ def _run_driver(board, agent, project, record, *, popen, timeout_minutes) -> int
         project_path=folder,
     )
     code, output = _execute(board, agent, project, argv, dest, popen=popen, timeout_minutes=timeout_minutes)
-    finish_worktree(dest)
+    switched = finish_worktree(dest, auto_branch(board))
+    if switched:
+        _remember_switch(board, project, switched)
+        _append_run_note(board, agent, switched)
     _count_run(board, agent, "exit " + str(code))
     _write_summary(board, agent, output)
     return 0
@@ -547,6 +559,7 @@ def _load_runs(board: Path) -> dict:
         return {"agents": {}, "failures": {}}
     data.setdefault("agents", {})
     data.setdefault("failures", {})
+    data.setdefault("switches", {})
     return data
 
 
@@ -561,6 +574,23 @@ def _driver_summary(board, agent) -> str:
     if not agent or not path.is_file():
         return ""
     return "\n".join(path.read_text(encoding="utf-8").splitlines()[:3])
+
+
+def _remember_switch(board, project, note: str) -> None:
+    data = _load_runs(board)
+    data.setdefault("switches", {})[project] = note
+    _write_json(board / ".state" / "runs.json", data)
+
+
+def _append_run_note(board, agent, note: str) -> None:
+    folder = board / "logs" / agent
+    if not folder.is_dir():
+        return
+    logs = sorted(path for path in folder.glob("*.log") if path.is_file())
+    if not logs:
+        return
+    with logs[-1].open("a", encoding="utf-8") as handle:
+        handle.write(note + "\n")
 
 
 def _remember_branch(board, project, person) -> None:
@@ -642,19 +672,40 @@ def _run_install_calls(calls, run, alternative: bool):
         last = calls[-1] if calls else []
         for call in calls:
             last = call
-            completed = run(call, capture_output=True, text=True)
-            if getattr(completed, "returncode", 1) == 0:
+            completed = _invoke(run, call)
+            if completed is not None and getattr(completed, "returncode", 1) == 0:
                 return None
         return last
     for call in calls:
-        completed = run(call, capture_output=True, text=True)
-        if getattr(completed, "returncode", 1) != 0:
+        completed = _invoke(run, call)
+        if completed is None or getattr(completed, "returncode", 1) != 0:
             return call
     return None
 
 
+def _invoke(run, call):
+    """Run one scheduler command. A missing program returns None."""
+    if not call or shutil.which(str(call[0])) is None:
+        return None
+    try:
+        return run(call, capture_output=True, text=True)
+    except FileNotFoundError:
+        return None
+
+
+def _scheduler_error(command: list[str]) -> CoopError:
+    return CoopError(
+        "Agent Co-op could not find a scheduler on this computer. Install cron, "
+        "or run this every 5 minutes some other way: "
+        + " ".join(command),
+        code=1,
+    )
+
+
 def _plan(board: Path, minutes: int, command: list[str], path_value: str):
     if sys.platform == "darwin":
+        if shutil.which("launchctl") is None:
+            raise _scheduler_error(command)
         path = _launchd_plist()
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(_plist(minutes, command, path_value, board))
@@ -665,12 +716,24 @@ def _plan(board: Path, minutes: int, command: list[str], path_value: str):
         ]
         return [path], calls, True
     if sys.platform.startswith("linux"):
-        probe = subprocess.run(["systemctl", "--user", "show-environment"], capture_output=True, text=True)
-        if probe.returncode == 0:
-            files, calls = _systemd_plan(board, minutes, command, path_value)
-            return files, calls, False
+        if shutil.which("systemctl"):
+            try:
+                probe = subprocess.run(
+                    ["systemctl", "--user", "show-environment"],
+                    capture_output=True,
+                    text=True,
+                )
+            except FileNotFoundError:
+                probe = None
+            if probe is not None and probe.returncode == 0:
+                files, calls = _systemd_plan(board, minutes, command, path_value)
+                return files, calls, False
+        if shutil.which("crontab") is None:
+            raise _scheduler_error(command)
         files, calls = _cron_plan(board, minutes, command, path_value)
         return files, calls, False
+    if shutil.which("schtasks") is None:
+        raise _scheduler_error(command)
     task = ["schtasks", "/Create", "/F", "/SC", "MINUTE", "/MO", str(minutes), "/TN", "AgentCoop\\Tick", "/TR", " ".join(command)]
     return [], [task], False
 
@@ -715,7 +778,12 @@ def _cron_plan(board, minutes, command, path_value):
 
 
 def _remove_cron_lines(run) -> None:
-    listed = subprocess.run(["crontab", "-l"], capture_output=True, text=True)
+    if shutil.which("crontab") is None:
+        return
+    try:
+        listed = subprocess.run(["crontab", "-l"], capture_output=True, text=True)
+    except FileNotFoundError:
+        return
     if listed.returncode != 0:
         return
     rows = [row for row in listed.stdout.splitlines() if row and not row.endswith("# agentcoop")]

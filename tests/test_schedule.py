@@ -12,6 +12,7 @@ from unittest.mock import patch
 import support
 
 from agentcoop.cli import main
+from agentcoop.errors import CoopError
 from agentcoop.gitshim import blocked_action
 from agentcoop.projects import init_board_files
 from agentcoop.rounds import load_schedule, start_schedule, stop_schedule, write_shims
@@ -37,6 +38,19 @@ class ScheduleTests(unittest.TestCase):
         self.assertIsNone(blocked_action(["add", "-A"]))
         self.assertIsNone(blocked_action(["commit", "-m", "hi"]))
         self.assertIsNone(blocked_action(["-c", "user.name=A", "status"]))
+        self.assertEqual(blocked_action(["checkout", "-b", "x"]), "checkout")
+        self.assertEqual(blocked_action(["checkout", "-B", "x"]), "checkout")
+        self.assertEqual(blocked_action(["checkout", "--orphan", "x"]), "checkout")
+        self.assertEqual(blocked_action(["checkout", "--detach"]), "checkout")
+        self.assertIsNone(blocked_action(["checkout", "--", "file.txt"]))
+        with support.TempEnv() as env:
+            (env.workspace / "file.txt").write_text("hi\n", encoding="utf-8")
+            previous = os.getcwd()
+            os.chdir(env.workspace)
+            try:
+                self.assertIsNone(blocked_action(["checkout", "file.txt"]))
+            finally:
+                os.chdir(previous)
 
     def test_shim_script_respects_the_variable(self) -> None:
         with support.TempEnv() as env:
@@ -112,6 +126,24 @@ class ScheduleTests(unittest.TestCase):
                 code = main(["setup", "--schedule", "yes", "--every", "4", "--yes"])
             self.assertEqual(code, 0)
             self.assertEqual(load_schedule(env.board)["interval"], 4)
+
+    def test_missing_scheduler_exits_and_uninstall_still_finishes(self) -> None:
+        with support.TempEnv() as env:
+            init_board_files(env.board)
+            main(["setup", "--connect", "cursor", "--schedule", "no", "--yes"])
+            import io
+            from contextlib import redirect_stderr
+
+            err = io.StringIO()
+            with patch("agentcoop.rounds.shutil.which", return_value=None), redirect_stderr(err):
+                code = main(["start"])
+                self.assertEqual(code, 1)
+                self.assertIn("could not find a scheduler", err.getvalue())
+                self.assertIn("tick", err.getvalue())
+                self.assertIsNone(load_schedule(env.board))
+                with support.person("uninstall"):
+                    self.assertEqual(main(["uninstall"]), 0)
+            self.assertFalse((env.board / "bin").exists())
 
     def test_commands_work_without_a_terminal(self) -> None:
         with support.TempEnv() as env:

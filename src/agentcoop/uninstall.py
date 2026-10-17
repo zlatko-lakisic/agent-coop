@@ -53,11 +53,15 @@ def run_uninstall(
     except CoopError:
         pass
     undo_path_changes(board)
-    notes = _remove_installs(board)
+    notes = [note for note in _remove_installs(board) if note.strip()]
     _remove_runner_autostart()
-    if notes:
+    left = [note for note in notes if "in place" in note]
+    if left:
         print("Files you changed, left in place:")
-        for note in notes:
+        for note in left:
+            print(note)
+    for note in notes:
+        if note not in left:
             print(note)
     if agent_mode:
         _move_board(board, dest)

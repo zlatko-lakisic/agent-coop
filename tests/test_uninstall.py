@@ -193,6 +193,7 @@ class UninstallTests(unittest.TestCase):
             self.assertNotIn("UserPromptSubmit", settings["hooks"])
             self.assertTrue(all(settings["hooks"].values()))
             self.assertIn("Agent Co-op is uninstalled.", out)
+            self.assertNotIn("Files you changed, left in place:", out)
             self.assertIn("Remove " + str(bindir) + " from your PATH.", out)
 
     def test_person_wrong_answer_changes_nothing(self) -> None:

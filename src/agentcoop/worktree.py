@@ -59,6 +59,7 @@ def prepare_worktree(board: Path, project: str, project_folder: Path) -> tuple[P
         else:
             argv = ["git", "-C", str(project_folder), "worktree", "add", "-b", branch, str(dest), "HEAD"]
         _git(argv, "Could not create the worktree for " + project + ".")
+    _return_to_auto(dest, branch)
     _commit_dirty(dest)
     note = ""
     merged = subprocess.run(
@@ -72,9 +73,40 @@ def prepare_worktree(board: Path, project: str, project_folder: Path) -> tuple[P
     return dest, person, note
 
 
-def finish_worktree(dest: Path) -> None:
-    """Commit anything the driver left uncommitted."""
+def finish_worktree(dest: Path, auto: str | None = None) -> str:
+    """Commit leftover changes, then return the worktree to the auto branch.
+
+    Returns a status note when the run ended on a different branch.
+    """
+    ended = current_branch(dest)
     _commit_dirty(dest)
+    if not auto or ended == auto:
+        return ""
+    _git(
+        ["git", "-C", str(dest), "checkout", auto],
+        "Could not return the worktree to " + auto + ".",
+    )
+    return (
+        "The driver switched to the branch "
+        + ended
+        + " during its run. Its work is on that branch. Review it with: git diff "
+        + auto
+        + "..."
+        + ended
+    )
+
+
+def _return_to_auto(dest: Path, branch: str) -> None:
+    """Switch an existing worktree back to the auto branch before a run."""
+    if not (dest / ".git").exists():
+        return
+    if current_branch(dest) == branch:
+        return
+    _commit_dirty(dest)
+    _git(
+        ["git", "-C", str(dest), "checkout", branch],
+        "Could not return the worktree to " + branch + ".",
+    )
 
 
 def remove_worktree(board: Path, project: str, project_folder: Path) -> str | None:

@@ -16,7 +16,7 @@ Web chat cannot join, because it cannot read files on this computer.
 - Background runs: yes
 - Status: untested
 - Suggested helper note: edits the project and asks helpers
-- Notes: Project rule only (loads every turn). TODO: hook format for Cursor is not verified, so hooks are not installed. TODO: detection paths per OS are not confirmed. Background helper runs use cursor-agent -p --mode ask (read only). Flags confirmed at https://cursor.com/docs/cli/reference/parameters : --print, --model, --workspace, --trust, --force, --mode ask. TODO: driver runs are not scheduled. No confirmed flag adds the board as a writable folder beside the workspace. --force allows writes everywhere, which is broader than the worktree plus the board.
+- Notes: Project rule only (loads every turn). TODO: hook format for Cursor is not verified, so hooks are not installed. TODO: detection paths per OS are not confirmed. Background helper runs use cursor-agent -p --mode ask (read only). Flags confirmed at https://cursor.com/docs/cli/reference/parameters : --print, --model, --workspace, --trust, --force, --mode ask. TODO: driver runs are not scheduled. Print mode without --force was not confirmed to run allowed actions with no prompt. cursor-agent is not installed on the machine that checked this, and the permissions page says to use allow, deny, and --force to control what runs without prompts. https://cursor.com/docs/cli/reference/permissions
 
 ## Claude Code
 
