@@ -29,8 +29,8 @@ from agentcoop.projects import (
     init_board_files,
     load_agents,
     load_projects,
+    mutate_projects,
     remove_helper,
-    save_projects,
     set_driver,
     validate_project_name,
 )
@@ -273,17 +273,23 @@ def change_driver(project_name: str, agent: str, *, yes: bool) -> str:
             type="status",
             re=item.id,
         )
-    kept = []
     notes = []
-    for entry in list(project.get("installed") or []):
-        if entry.get("agent") == previous:
-            note = undo_entry(entry)
-            if note:
-                notes.append(note)
-        else:
-            kept.append(entry)
-    project["installed"] = kept
-    save_projects(board, projects)
+
+    def change(data: dict) -> None:
+        current = data["projects"].get(project_name)
+        if current is None:
+            raise CoopError("There is no project named " + project_name + ".")
+        kept = []
+        for entry in list(current.get("installed") or []):
+            if entry.get("agent") == previous:
+                note = undo_entry(entry)
+                if note:
+                    notes.append(note)
+            else:
+                kept.append(entry)
+        current["installed"] = kept
+
+    mutate_projects(board, change)
     set_driver(board, project_name, agent)
     install_project_files(board, project_name, agent, yes=yes, gitignore=False)
     text = "Driver for " + project_name + " is now " + agent + ". It was " + previous + "."
@@ -304,21 +310,23 @@ def helper_add(project_name: str, agent: str, note: str) -> str:
 def helper_remove(project_name: str, agent: str) -> str:
     """Remove a helper."""
     board = board_root()
-    projects = load_projects(board)
-    project = projects["projects"].get(project_name)
-    if project is None:
-        raise CoopError("There is no project named " + project_name + ".")
-    kept = []
     notes = []
-    for entry in list(project.get("installed") or []):
-        if entry.get("agent") == agent:
-            note = undo_entry(entry)
-            if note:
-                notes.append(note)
-        else:
-            kept.append(entry)
-    project["installed"] = kept
-    save_projects(board, projects)
+
+    def change(data: dict) -> None:
+        current = data["projects"].get(project_name)
+        if current is None:
+            raise CoopError("There is no project named " + project_name + ".")
+        kept = []
+        for entry in list(current.get("installed") or []):
+            if entry.get("agent") == agent:
+                note = undo_entry(entry)
+                if note:
+                    notes.append(note)
+            else:
+                kept.append(entry)
+        current["installed"] = kept
+
+    mutate_projects(board, change)
     remove_helper(board, project_name, agent)
     text = agent + " is no longer a helper on " + project_name + "."
     if notes:

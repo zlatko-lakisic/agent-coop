@@ -6,11 +6,14 @@ import hashlib
 import json
 import os
 import re
+import time
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Callable
 
 from agentcoop.errors import CoopError
 from agentcoop.paths import ensure_agent_dirs, home_dir, is_same_or_inside, paths_conflict
+from agentcoop.schema import check_agents, check_config, check_projects, format_problem
 from agentcoop.tools import get_tool, tool_can_drive
 
 PROJECT_NAME_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,47}$")
@@ -113,29 +116,34 @@ def init_board_files(board: Path) -> None:
         save_projects(board, {"version": 1, "projects": {}})
 
 
+def _checked(path: Path, data: dict, problems: list[str]) -> dict:
+    if problems:
+        raise CoopError(format_problem(path, problems[0]), code=6)
+    return data
+
+
 def load_projects(board: Path) -> dict:
     """Load projects.json."""
     require_board(board)
-    return read_json(board / "projects.json")
+    path = board / "projects.json"
+    data = read_json(path)
+    return _checked(path, data, check_projects(data))
 
 
 def load_agents(board: Path) -> dict:
     """Load agents.json."""
     require_board(board)
-    data = read_json(board / "agents.json")
-    data.setdefault("version", 1)
-    data.setdefault("agents", {})
-    return data
+    path = board / "agents.json"
+    data = read_json(path)
+    return _checked(path, data, check_agents(data))
 
 
 def load_config(board: Path) -> dict:
     """Load config.json."""
     require_board(board)
-    data = read_json(board / "config.json")
-    data.setdefault("version", 1)
-    data.setdefault("allowed_roots", [])
-    data.setdefault("body_limit_bytes", 16384)
-    return data
+    path = board / "config.json"
+    data = read_json(path)
+    return _checked(path, data, check_config(data))
 
 
 def save_config(board: Path, data: dict) -> None:
@@ -190,6 +198,131 @@ def integrity_ok(board: Path) -> bool:
     current = hashlib.sha256(path.read_bytes()).hexdigest()
     stored = digest_path.read_text(encoding="ascii").strip()
     return current == stored
+
+
+class board_lock:
+    """One writer at a time for the board settings files.
+
+    The lock is not re-entrant. Take it only in the mutate and read helpers.
+    """
+
+    def __init__(self, board: Path, *, shared: bool = False, timeout: float = 10.0) -> None:
+        self.board = board
+        self.shared = shared
+        self.timeout = timeout
+        self._fd: int | None = None
+
+    def __enter__(self) -> "board_lock":
+        folder = self.board / ".state"
+        folder.mkdir(parents=True, exist_ok=True)
+        path = folder / "board.lock"
+        self._fd = os.open(str(path), os.O_CREAT | os.O_RDWR, 0o600)
+        if os.path.getsize(path) == 0:
+            os.write(self._fd, b"\0")
+        os.lseek(self._fd, 0, os.SEEK_SET)
+        deadline = time.monotonic() + self.timeout
+        while True:
+            try:
+                self._acquire()
+                return self
+            except OSError:
+                if time.monotonic() >= deadline:
+                    os.close(self._fd)
+                    self._fd = None
+                    raise CoopError(
+                        "Another agentcoop command is changing the board. Try again in a moment."
+                    )
+                time.sleep(0.05)
+
+    def _acquire(self) -> None:
+        assert self._fd is not None
+        if os.name == "nt":
+            import msvcrt
+
+            os.lseek(self._fd, 0, os.SEEK_SET)
+            msvcrt.locking(self._fd, msvcrt.LK_NBLCK, 1)
+            return
+        import fcntl
+
+        flags = fcntl.LOCK_NB | (fcntl.LOCK_SH if self.shared else fcntl.LOCK_EX)
+        fcntl.flock(self._fd, flags)
+
+    def __exit__(self, *args: object) -> None:
+        if self._fd is None:
+            return
+        try:
+            if os.name == "nt":
+                import msvcrt
+
+                os.lseek(self._fd, 0, os.SEEK_SET)
+                msvcrt.locking(self._fd, msvcrt.LK_UNLCK, 1)
+            else:
+                import fcntl
+
+                fcntl.flock(self._fd, fcntl.LOCK_UN)
+        finally:
+            os.close(self._fd)
+            self._fd = None
+
+
+def mutate_projects(
+    board: Path,
+    change: Callable[[dict], None],
+    *,
+    enforce_integrity: bool = True,
+    schema_code: int = 6,
+    skip_schema: bool = False,
+) -> None:
+    """Lock, check, edit, validate, and save projects.json."""
+    with board_lock(board):
+        path = board / "projects.json"
+        data = read_json(path)
+        if not skip_schema:
+            problems = check_projects(data)
+            if problems:
+                raise CoopError(format_problem(path, problems[0]), code=schema_code)
+        if enforce_integrity:
+            require_integrity(board)
+        change(data)
+        validate_all(board, data)
+        save_projects(board, data)
+
+
+def mutate_agents(board: Path, change: Callable[[dict], None]) -> None:
+    """Lock, check, edit, and save agents.json."""
+    with board_lock(board):
+        path = board / "agents.json"
+        data = read_json(path)
+        problems = check_agents(data)
+        if problems:
+            raise CoopError(format_problem(path, problems[0]), code=6)
+        change(data)
+        problems = check_agents(data)
+        if problems:
+            raise CoopError(format_problem(path, problems[0]), code=6)
+        save_agents(board, data)
+
+
+def mutate_config(board: Path, change: Callable[[dict], None]) -> None:
+    """Lock, check, edit, and save config.json."""
+    with board_lock(board):
+        path = board / "config.json"
+        data = read_json(path)
+        problems = check_config(data)
+        if problems:
+            raise CoopError(format_problem(path, problems[0]), code=6)
+        change(data)
+        problems = check_config(data)
+        if problems:
+            raise CoopError(format_problem(path, problems[0]), code=6)
+        save_config(board, data)
+
+
+def read_projects_checked(board: Path) -> tuple[dict, bool]:
+    """Load projects.json and its integrity result under one shared lock."""
+    with board_lock(board, shared=True):
+        data = load_projects(board)
+        return data, integrity_ok(board)
 
 
 def _members(project: dict) -> list[str]:
@@ -247,10 +380,11 @@ def validate_project_record(board: Path, name: str, project: dict, agents: dict)
             raise CoopError("This folder is already part of the " + other_name + " project.")
 
 
-def validate_all(board: Path) -> None:
+def validate_all(board: Path, projects: dict | None = None) -> None:
     """Validate every project against the current agent list."""
     agents = load_agents(board)
-    projects = load_projects(board)
+    if projects is None:
+        projects = load_projects(board)
     seen: list[tuple[str, Path]] = []
     for name, project in (projects.get("projects") or {}).items():
         validate_project_record(board, name, project, agents)
@@ -280,12 +414,14 @@ def refuse_broad_folder(path: Path, board: Path) -> None:
 def add_allowed_root(board: Path, folder: str) -> None:
     """Add a folder to allowed_roots if it is not already there."""
     refuse_broad_folder(Path(folder), board)
-    config = load_config(board)
-    roots = list(config.get("allowed_roots") or [])
-    if folder not in roots:
-        roots.append(folder)
-        config["allowed_roots"] = roots
-        save_config(board, config)
+
+    def change(config: dict) -> None:
+        roots = list(config.get("allowed_roots") or [])
+        if folder not in roots:
+            roots.append(folder)
+            config["allowed_roots"] = roots
+
+    mutate_config(board, change)
 
 
 def connect_agent_record(
@@ -301,29 +437,29 @@ def connect_agent_record(
     tool = get_tool(tool_key)
     if not tool.supported:
         raise CoopError(tool.display + " cannot join. " + tool.notes)
-    agents = load_agents(board)
-    current = agents["agents"].get(name)
-    if current is None:
-        record: dict = {
-            "tool": tool_key if tool_key not in ("ollama", "lmstudio") else "runner",
-            "display": display or tool.display,
-            "connected": now_stamp(),
-            "installed": [],
-        }
-        if tool_key in ("ollama", "lmstudio", "runner") or runner:
-            record["tool"] = "runner"
-            record["runner"] = runner or {
-                "api": "openai" if tool_key == "lmstudio" else "ollama",
-                "host": "http://localhost:1234" if tool_key == "lmstudio" else "http://localhost:11434",
-                "model": name,
+    def change(agents: dict) -> None:
+        current = agents["agents"].get(name)
+        if current is None:
+            record: dict = {
+                "tool": tool_key if tool_key not in ("ollama", "lmstudio") else "runner",
+                "display": display or tool.display,
+                "connected": now_stamp(),
+                "installed": [],
             }
-        agents["agents"][name] = record
-        save_agents(board, agents)
-    elif runner and current.get("tool") == "runner":
-        current["runner"] = runner
-        if display:
-            current["display"] = display
-        save_agents(board, agents)
+            if tool_key in ("ollama", "lmstudio", "runner") or runner:
+                record["tool"] = "runner"
+                record["runner"] = runner or {
+                    "api": "openai" if tool_key == "lmstudio" else "ollama",
+                    "host": "http://localhost:1234" if tool_key == "lmstudio" else "http://localhost:11434",
+                    "model": name,
+                }
+            agents["agents"][name] = record
+        elif runner and current.get("tool") == "runner":
+            current["runner"] = runner
+            if display:
+                current["display"] = display
+
+    mutate_agents(board, change)
 
 
 def add_project(
@@ -334,9 +470,7 @@ def add_project(
     helpers: dict[str, str],
 ) -> None:
     """Add a project and create its board folders."""
-    require_integrity(board)
     validate_project_name(name)
-    agents = load_agents(board)
     record = {
         "path": str(path.expanduser().resolve()),
         "driver": driver,
@@ -344,14 +478,15 @@ def add_project(
         "created": now_stamp(),
         "installed": [],
     }
-    # Validate against a copy that includes this project so nesting sees siblings.
-    projects = load_projects(board)
-    if name in projects["projects"]:
-        raise CoopError("A project named " + name + " already exists. Run: agentcoop project show " + name)
-    projects["projects"][name] = record
-    # Temporarily write is not done yet. Validate using the in-memory set.
-    _validate_new_project(board, name, record, projects, agents)
-    save_projects(board, projects)
+
+    def change(projects: dict) -> None:
+        if name in projects["projects"]:
+            raise CoopError("A project named " + name + " already exists. Run: agentcoop project show " + name)
+        projects["projects"][name] = record
+        agents = load_agents(board)
+        _validate_new_project(board, name, record, projects, agents)
+
+    mutate_projects(board, change)
     add_allowed_root(board, str(Path(record["path"]).expanduser()))
     for agent in [driver, *helpers.keys()]:
         ensure_agent_dirs(board, name, agent)
@@ -402,48 +537,53 @@ def set_driver(board: Path, name: str, agent: str) -> str:
     The previous driver is no longer a member unless you add them as a helper.
     A helper who becomes the driver is removed from the helper list.
     """
-    require_integrity(board)
-    projects = load_projects(board)
-    project = _require_project(projects, name)
-    previous = project["driver"]
-    helpers = dict(project.get("helpers") or {})
-    helpers.pop(agent, None)
-    project["helpers"] = helpers
-    project["driver"] = agent
-    agents = load_agents(board)
-    _validate_new_project(board, name, project, projects, agents)
-    save_projects(board, projects)
+    found = {"previous": ""}
+
+    def change(projects: dict) -> None:
+        project = _require_project(projects, name)
+        previous = project["driver"]
+        helpers = dict(project.get("helpers") or {})
+        helpers.pop(agent, None)
+        project["helpers"] = helpers
+        project["driver"] = agent
+        agents = load_agents(board)
+        _validate_new_project(board, name, project, projects, agents)
+        found["previous"] = previous
+
+    mutate_projects(board, change)
     ensure_agent_dirs(board, name, agent)
-    return previous
+    return found["previous"]
 
 
 def add_helper(board: Path, name: str, agent: str, note: str) -> None:
     """Add or update a helper note."""
-    require_integrity(board)
-    projects = load_projects(board)
-    project = _require_project(projects, name)
-    if agent == project["driver"]:
-        raise CoopError(agent + " is the driver, so it cannot also be a helper.")
-    helpers = dict(project.get("helpers") or {})
-    helpers[agent] = note
-    project["helpers"] = helpers
-    agents = load_agents(board)
-    _validate_new_project(board, name, project, projects, agents)
-    save_projects(board, projects)
+
+    def change(projects: dict) -> None:
+        project = _require_project(projects, name)
+        if agent == project["driver"]:
+            raise CoopError(agent + " is the driver, so it cannot also be a helper.")
+        helpers = dict(project.get("helpers") or {})
+        helpers[agent] = note
+        project["helpers"] = helpers
+        agents = load_agents(board)
+        _validate_new_project(board, name, project, projects, agents)
+
+    mutate_projects(board, change)
     ensure_agent_dirs(board, name, agent)
 
 
 def remove_helper(board: Path, name: str, agent: str) -> None:
     """Remove a helper from a project."""
-    require_integrity(board)
-    projects = load_projects(board)
-    project = _require_project(projects, name)
-    helpers = dict(project.get("helpers") or {})
-    if agent not in helpers:
-        raise CoopError(agent + " is not a helper on " + name + ".")
-    helpers.pop(agent)
-    project["helpers"] = helpers
-    save_projects(board, projects)
+
+    def change(projects: dict) -> None:
+        project = _require_project(projects, name)
+        helpers = dict(project.get("helpers") or {})
+        if agent not in helpers:
+            raise CoopError(agent + " is not a helper on " + name + ".")
+        helpers.pop(agent)
+        project["helpers"] = helpers
+
+    mutate_projects(board, change)
 
 
 def projects_for_agent(projects: dict, agent: str | None) -> list[str]:

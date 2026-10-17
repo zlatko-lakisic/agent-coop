@@ -13,10 +13,9 @@ from agentcoop.paths import inbox_msgs, is_same_or_inside
 from agentcoop.projects import (
     INTEGRITY_WARNING,
     board_is_ready,
-    integrity_ok,
     load_agents,
     load_config,
-    load_projects,
+    read_projects_checked,
     role_of,
 )
 from agentcoop.tools import get_tool, tool_can_drive
@@ -42,12 +41,12 @@ def run_doctor(board: Path, project: str | None = None) -> list[DoctorItem]:
     else:
         items.append(DoctorItem(True, "Board folder is ready."))
     items.append(_bin_check(board))
-    if integrity_ok(board):
+    projects, intact = read_projects_checked(board)
+    if intact:
         items.append(DoctorItem(True, "projects.json matches the saved check."))
     else:
         items.append(DoctorItem(False, INTEGRITY_WARNING))
     agents = load_agents(board)
-    projects = load_projects(board)
     config = load_config(board)
     for name, record in (agents.get("agents") or {}).items():
         items.extend(_agent_checks(name, record))

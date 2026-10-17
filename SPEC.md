@@ -128,6 +128,8 @@ The driver MUST NOT also be a helper. Every member MUST exist in `agents.json`. 
 
 Every write to `projects.json` by `agentcoop` MUST update `.state/projects.sha256`.
 
+A settings file that is not in the expected format MUST make the command exit 6 and tell the user to run `agentcoop doctor`.
+
 `check`, `whoami`, and `doctor` MUST compare that hash. On mismatch they MUST show: `projects.json was changed outside agentcoop. Roles may not be what you set. Run: agentcoop doctor`.
 
 This is detection, not a sandbox. An agent that can write the board folder can change the file. Tool permission settings SHOULD deny those writes when the tool supports it.

@@ -22,9 +22,9 @@ from agentcoop.paths import (
 )
 from agentcoop.projects import (
     INTEGRITY_WARNING,
-    integrity_ok,
     load_config,
     load_projects,
+    read_projects_checked,
     require_board,
     resolve_project,
     role_of,
@@ -282,7 +282,7 @@ def protocol_violation(project: dict, message: Message, board: Path, project_nam
 
 def assert_can_send(board: Path, project_name: str, sender: str, recipient: str, re_id: str | None) -> dict:
     """Raise when agentcoop send must refuse this message. Returns the project."""
-    projects = load_projects(board)
+    projects, _ok = read_projects_checked(board)
     project = (projects.get("projects") or {}).get(project_name)
     if project is None:
         raise CoopError("There is no project named " + project_name + ". Run: agentcoop project list")
@@ -414,8 +414,7 @@ def check_inbox(
     now: float | None = None,
 ) -> InboxReport:
     """Collect new messages for an agent without marking any of them done."""
-    require_board(board)
-    projects = load_projects(board)
+    projects, intact = read_projects_checked(board)
     record = (projects.get("projects") or {}).get(project)
     if record is None:
         raise CoopError("There is no project named " + project + ". Run: agentcoop project list")
@@ -453,7 +452,7 @@ def check_inbox(
         files_path=str(files_dir(board, project, agent)),
         messages=checked,
         issues=issues,
-        integrity_ok=integrity_ok(board),
+        integrity_ok=intact,
         board_path=str(board),
     )
 

@@ -16,7 +16,7 @@ from agentcoop.doctor import format_doctor, run_doctor
 from agentcoop.errors import CoopError
 from agentcoop.install import read_template
 from agentcoop.paths import board_root, home_dir
-from agentcoop.projects import INTEGRITY_WARNING, integrity_ok, load_agents, load_projects, require_board
+from agentcoop.projects import INTEGRITY_WARNING, load_agents, read_projects_checked, require_board
 from agentcoop.tools import tool_can_drive
 from agentcoop.wizard import add_project_flow, change_driver, helper_add, helper_remove
 
@@ -132,7 +132,8 @@ class ViewerHandler(BaseHTTPRequestHandler):
 
     def _state(self) -> dict:
         board = self.server.board
-        projects = load_projects(board).get("projects") or {}
+        projects, intact = read_projects_checked(board)
+        projects = projects.get("projects") or {}
         agents = load_agents(board).get("agents") or {}
         rows = []
         for name, project in projects.items():
@@ -164,7 +165,7 @@ class ViewerHandler(BaseHTTPRequestHandler):
                 }
             )
         banner = ""
-        if not integrity_ok(board):
+        if not intact:
             banner = INTEGRITY_WARNING
         return {
             "projects": rows,

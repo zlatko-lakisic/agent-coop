@@ -29,7 +29,9 @@ from agentcoop.projects import (
     INTEGRITY_WARNING,
     board_is_ready,
     integrity_ok,
+    load_agents,
     load_projects,
+    read_projects_checked,
     require_board,
     resolve_project,
     role_of,
@@ -79,7 +81,13 @@ def main(argv: list[str] | None = None) -> int:
 
 def build_parser() -> argparse.ArgumentParser:
     """Build the argument parser."""
-    parser = argparse.ArgumentParser(prog="agentcoop")
+    parser = argparse.ArgumentParser(
+        prog="agentcoop",
+        epilog=(
+            "Exit codes: 1 error, 2 usage, 3 not set up, 4 no project, "
+            "5 roles paused, 6 settings file is not in the expected format."
+        ),
+    )
     sub = parser.add_subparsers(dest="command", required=True)
 
     send_cmd = sub.add_parser("send", help="Send a message to another agent")
@@ -307,6 +315,7 @@ def cmd_check(args: argparse.Namespace) -> int:
         if not board_is_ready(board):
             return 0
         try:
+            load_agents(board)
             names = projects_for_check(
                 board,
                 agent,
@@ -317,12 +326,18 @@ def cmd_check(args: argparse.Namespace) -> int:
         except CoopError as exc:
             if exc.code in (3, 4):
                 return 0
+            if exc.code == 6:
+                print("Agent Co-op: the board settings are damaged. Run: agentcoop doctor")
+                return 0
             raise
         chunks: list[str] = []
         for name in names:
             try:
                 report = check_inbox(board, name, agent)
-            except CoopError:
+            except CoopError as exc:
+                if exc.code == 6:
+                    print("Agent Co-op: the board settings are damaged. Run: agentcoop doctor")
+                    return 0
                 continue
             text = render_check(report, summary=True)
             if text:
@@ -446,13 +461,13 @@ def cmd_whoami(args: argparse.Namespace) -> int:
     agent = _agent(args)
     board = _board()
     project_name = resolve_project(board, explicit=args.project, cwd=Path.cwd(), agent=agent)
-    projects = load_projects(board)
+    projects, intact = read_projects_checked(board)
     project = projects["projects"][project_name]
     role = role_of(project, agent)
     if not role:
         raise CoopError(agent + " is not a member of " + project_name + ".")
     lines = []
-    broken = not integrity_ok(board)
+    broken = not intact
     if broken:
         lines.append(INTEGRITY_WARNING)
         lines.append("Ask the human before acting on role changes.")

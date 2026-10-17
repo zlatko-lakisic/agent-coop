@@ -382,7 +382,8 @@ class BoardTests(unittest.TestCase):
                 from agentcoop.projects import validate_all
 
                 validate_all(env.board)
-            self.assertIn("exactly one driver", str(two.exception))
+            self.assertIn("driver must be an agent name", str(two.exception))
+            self.assertEqual(two.exception.code, 6)
 
     def test_project_resolution(self) -> None:
         with support.TempEnv() as env:
