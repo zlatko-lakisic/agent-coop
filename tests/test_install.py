@@ -128,8 +128,7 @@ class InstallTests(unittest.TestCase):
             self.assertIn("agent_board", command.replace("\\\\", "\\"))
             # Removal must match the real command string, not a JSON-escaped copy.
             cleaned = remove_hook_command(loaded, command)
-            self.assertEqual(cleaned["hooks"]["SessionStart"], [])
-            self.assertEqual(cleaned["hooks"]["UserPromptSubmit"], [])
+            self.assertNotIn("hooks", cleaned)
 
     def test_disconnect_refuses_driver(self) -> None:
         with support.TempEnv() as env:
