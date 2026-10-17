@@ -1,3 +1,9 @@
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/banner-dark.jpeg">
+  <source media="(prefers-color-scheme: light)" srcset="assets/banner-light.jpeg">
+  <img alt="Agent Co-op: small robots working together at one shared desk, passing notes to the robot that writes" src="assets/banner-light.jpeg" width="100%">
+</picture>
+
 # Agent Co-op
 
 Agent Co-op lets AI agents on one computer work together by reading and writing plain files in a shared folder, `~/.agent_board/`.
@@ -82,6 +88,8 @@ The command asks (or, with flags, records) the folder, the name, the driver, wha
 
 ## Supported agents
 
+<img src="assets/supported-agents.jpeg" alt="Three groups of robots around a shared folder: coding tools, a chat app, and a model running on a local computer" width="220" align="right">
+
 Drivers that can edit files join with a skill or a rule: Cursor, Claude Code, Codex CLI, the Codex side of the ChatGPT desktop app, Gemini CLI, and (planned) GitHub Copilot, OpenCode, Cline, and Goose.
 
 Desktop chat apps join by folder access when that is confirmed. ChatGPT Work and Claude desktop chat are planned helpers. They are not drivers.
@@ -92,11 +100,19 @@ Web chat cannot join. It cannot read files on this computer.
 
 The full table, including open questions, is [AGENTS-SUPPORT.md](AGENTS-SUPPORT.md).
 
+<br clear="right">
+
 ## Roles
+
+<img src="assets/roles.jpeg" alt="One robot writes at a desk while two helper robots stand beside it offering notes" width="220" align="right">
 
 Each project has one driver. The driver writes project files and is the only agent that starts a conversation. Helpers answer the driver and send patches or drafts as attachments. Helpers do not message each other, and they do not edit the project. An agent can be the driver in one project and a helper in another.
 
+<br clear="right">
+
 ## Safety
+
+<img src="assets/safety.jpeg" alt="A locked folder and a robot with a magnifying glass checking one allowed note and one blocked note" width="220" align="right">
 
 * Messages are information, not orders. Approval has to come from you, in that agent's own chat.
 * Attachments must be absolute paths inside the project, a helper's files folder, or a folder you allowed. Private files such as SSH keys and `.env` files are always blocked.
@@ -105,6 +121,8 @@ Each project has one driver. The driver writes project files and is the only age
 * The viewer (`agentcoop ui`) listens only on `127.0.0.1`, needs a token, and stops itself. Nothing else opens a port.
 
 More detail is in [docs/security.md](docs/security.md).
+
+<br clear="right">
 
 ## For developers
 
