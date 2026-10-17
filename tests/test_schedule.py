@@ -37,6 +37,19 @@ class ScheduleTests(unittest.TestCase):
         self.assertIsNone(blocked_action(["add", "-A"]))
         self.assertIsNone(blocked_action(["commit", "-m", "hi"]))
         self.assertIsNone(blocked_action(["-c", "user.name=A", "status"]))
+        self.assertEqual(blocked_action(["checkout", "-b", "x"]), "checkout")
+        self.assertEqual(blocked_action(["checkout", "-B", "x"]), "checkout")
+        self.assertEqual(blocked_action(["checkout", "--orphan", "x"]), "checkout")
+        self.assertEqual(blocked_action(["checkout", "--detach"]), "checkout")
+        self.assertIsNone(blocked_action(["checkout", "--", "file.txt"]))
+        with support.TempEnv() as env:
+            (env.workspace / "file.txt").write_text("hi\n", encoding="utf-8")
+            previous = os.getcwd()
+            os.chdir(env.workspace)
+            try:
+                self.assertIsNone(blocked_action(["checkout", "file.txt"]))
+            finally:
+                os.chdir(previous)
 
     def test_shim_script_respects_the_variable(self) -> None:
         with support.TempEnv() as env:

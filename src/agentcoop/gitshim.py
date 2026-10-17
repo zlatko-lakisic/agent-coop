@@ -52,13 +52,41 @@ def blocked_action(argv: list[str]) -> str | None:
         return "rebase"
     if command == "worktree":
         return "worktree"
-    if command == "checkout" and len(rest) > 1 and not rest[1].startswith("-"):
-        return "checkout"
+    if command == "checkout":
+        return _blocked_checkout(rest[1:])
     if command == "reset" and "--hard" in rest[1:]:
         return "reset --hard"
     if command == "branch" and ("-D" in rest[1:] or "-d" in rest[1:]):
         return "branch -D" if "-D" in rest[1:] else "branch -d"
     return None
+
+
+def _blocked_checkout(args: list[str]) -> str | None:
+    """Block branch checkouts. Allow restoring paths that exist in the work tree."""
+    flags = {"-b", "-B", "--orphan", "--detach"}
+    for item in args:
+        if item in flags or item.startswith("--orphan="):
+            return "checkout"
+    if "--" in args:
+        return None
+    paths = [item for item in args if not item.startswith("-")]
+    if not paths:
+        return None
+    if all(_existing_worktree_path(item) for item in paths):
+        return None
+    return "checkout"
+
+
+def _existing_worktree_path(token: str) -> bool:
+    """Return True when token is an existing path inside the current work tree."""
+    path = Path(token)
+    if not path.exists():
+        return False
+    try:
+        path.resolve().relative_to(Path.cwd().resolve())
+    except ValueError:
+        return False
+    return True
 
 
 def real_git(path_value: str, shim_dir: Path) -> str | None:

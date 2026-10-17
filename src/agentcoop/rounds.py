@@ -200,6 +200,9 @@ def format_status(board: Path) -> str:
                 )
             continue
         person = _person_branch(board, project) or "HEAD"
+        switched = str((runs.get("switches") or {}).get(project) or "")
+        if switched:
+            lines.append(switched)
         lines.append(
             project
             + ": commits on "
@@ -308,7 +311,7 @@ def _run_helper(board, agent, project, record, *, popen, timeout_minutes) -> int
 
 def _run_driver(board, agent, project, record, *, popen, timeout_minutes) -> int:
     from agentcoop.schedule import build_argv, schedulable_reason
-    from agentcoop.worktree import finish_worktree, prepare_worktree
+    from agentcoop.worktree import auto_branch, finish_worktree, prepare_worktree
 
     if schedulable_reason(board, agent, role="driver"):
         return 0
@@ -331,7 +334,10 @@ def _run_driver(board, agent, project, record, *, popen, timeout_minutes) -> int
         project_path=folder,
     )
     code, output = _execute(board, agent, project, argv, dest, popen=popen, timeout_minutes=timeout_minutes)
-    finish_worktree(dest)
+    switched = finish_worktree(dest, auto_branch(board))
+    if switched:
+        _remember_switch(board, project, switched)
+        _append_run_note(board, agent, switched)
     _count_run(board, agent, "exit " + str(code))
     _write_summary(board, agent, output)
     return 0
@@ -547,6 +553,7 @@ def _load_runs(board: Path) -> dict:
         return {"agents": {}, "failures": {}}
     data.setdefault("agents", {})
     data.setdefault("failures", {})
+    data.setdefault("switches", {})
     return data
 
 
@@ -561,6 +568,23 @@ def _driver_summary(board, agent) -> str:
     if not agent or not path.is_file():
         return ""
     return "\n".join(path.read_text(encoding="utf-8").splitlines()[:3])
+
+
+def _remember_switch(board, project, note: str) -> None:
+    data = _load_runs(board)
+    data.setdefault("switches", {})[project] = note
+    _write_json(board / ".state" / "runs.json", data)
+
+
+def _append_run_note(board, agent, note: str) -> None:
+    folder = board / "logs" / agent
+    if not folder.is_dir():
+        return
+    logs = sorted(path for path in folder.glob("*.log") if path.is_file())
+    if not logs:
+        return
+    with logs[-1].open("a", encoding="utf-8") as handle:
+        handle.write(note + "\n")
 
 
 def _remember_branch(board, project, person) -> None:

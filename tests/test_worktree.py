@@ -8,7 +8,10 @@ from pathlib import Path
 
 import support
 
-from agentcoop.worktree import finish_worktree, prepare_worktree, remove_worktree
+from agentcoop.cli import main
+from agentcoop.projects import load_agents, save_agents
+from agentcoop.rounds import format_status, run_agent
+from agentcoop.worktree import current_branch, finish_worktree, prepare_worktree, remove_worktree, worktree_path
 
 
 def _git(folder: Path, *args: str) -> None:
@@ -79,6 +82,113 @@ class WorktreeTests(unittest.TestCase):
                 text=True,
             ).stdout
             self.assertIn("agentcoop/auto", branches)
+
+    def test_a_side_branch_is_put_back_on_the_auto_branch(self) -> None:
+        with support.TempEnv() as env:
+            from agentcoop.projects import init_board_files
+
+            init_board_files(env.board)
+            repo = env.workspace / "demo"
+            _repo(repo)
+            main(["setup", "--connect", "claude-code,cursor", "--schedule", "no", "--yes"])
+            main(
+                [
+                    "project",
+                    "add",
+                    str(repo),
+                    "--name",
+                    "demo",
+                    "--driver",
+                    "claude_code",
+                    "--helper",
+                    "cursor=edits",
+                    "--gitignore",
+                    "no",
+                    "--yes",
+                ]
+            )
+            cli = env.workspace / "claude"
+            cli.write_text("x", encoding="utf-8")
+            agents = load_agents(env.board)
+            agents["agents"]["claude_code"]["cli_path"] = str(cli)
+            save_agents(env.board, agents)
+            import io
+            from contextlib import redirect_stdout
+
+            sent = io.StringIO()
+            with redirect_stdout(sent):
+                self.assertEqual(
+                    main(
+                        [
+                            "send",
+                            "--as",
+                            "claude_code",
+                            "--project",
+                            "demo",
+                            "--to",
+                            "cursor",
+                            "--subject",
+                            "Go",
+                            "--body",
+                            "start",
+                        ]
+                    ),
+                    0,
+                )
+            mid = sent.getvalue().strip().splitlines()[-1]
+            self.assertEqual(
+                main(
+                    [
+                        "send",
+                        "--as",
+                        "cursor",
+                        "--project",
+                        "demo",
+                        "--to",
+                        "claude_code",
+                        "--re",
+                        mid,
+                        "--type",
+                        "answer",
+                        "--subject",
+                        "Re: Go",
+                        "--body",
+                        "done",
+                    ]
+                ),
+                0,
+            )
+
+            def launch(argv, **kwargs):
+                cwd = kwargs["cwd"]
+                subprocess.run(["git", "-C", cwd, "checkout", "-b", "sneaky"], check=True, capture_output=True)
+                (Path(cwd) / "NEW.txt").write_text("from the run\n", encoding="utf-8")
+
+                class Proc:
+                    returncode = 0
+                    pid = 424242
+                    stdout = None
+
+                    def communicate(self, timeout=None):
+                        return "done\n", ""
+
+                    def kill(self):
+                        return None
+
+                    def wait(self, timeout=None):
+                        return 0
+
+                return Proc()
+
+            self.assertEqual(run_agent(env.board, "claude_code", "demo", popen=launch), 0)
+            dest = worktree_path(env.board, "demo")
+            self.assertEqual(current_branch(dest), "agentcoop/auto")
+            text = format_status(env.board)
+            self.assertIn("switched to the branch sneaky", text)
+            self.assertIn("git diff agentcoop/auto...sneaky", text)
+            log = list((env.board / "logs" / "claude_code").glob("*.log"))
+            self.assertTrue(log)
+            self.assertIn("sneaky", log[0].read_text(encoding="utf-8"))
 
 
 if __name__ == "__main__":
