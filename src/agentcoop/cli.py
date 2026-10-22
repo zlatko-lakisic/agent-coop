@@ -301,7 +301,6 @@ def build_parser() -> argparse.ArgumentParser:
     watch_cmd.add_argument(
         "watch_action",
         nargs="?",
-        choices=("stop", "start"),
         default="",
         help="stop sets the project flag, start clears it",
     )
@@ -762,6 +761,8 @@ def cmd_watch(args: argparse.Namespace) -> int:
     project = resolve_project(board, explicit=args.project, cwd=Path.cwd(), agent=agent)
     assert_member(board, project, agent)
     action = args.watch_action or ""
+    if action not in ("", "stop", "start"):
+        raise CoopError("Use agentcoop watch, agentcoop watch stop, or agentcoop watch start.", code=2)
     if action == "stop":
         set_project_watching(board, project, False, agent)
         print(sent_line("the project", "Stop checking", "Checking is stopped for " + project + "."), flush=True)

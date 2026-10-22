@@ -258,6 +258,7 @@ class WatchTests(unittest.TestCase):
             with redirect_stderr(io.StringIO()):
                 self.assertEqual(main(["watch", "--as", "cursor", "--project", "demo", "--timeout", "0"]), 2)
                 self.assertEqual(main(["watch", "--as", "cursor", "--project", "demo", "--timeout", "31"]), 2)
+                self.assertEqual(main(["watch", "later", "--as", "cursor", "--project", "demo"]), 2)
             with redirect_stdout(io.StringIO()):
                 self.assertEqual(main(["stop"]), 0)
             for name in ("demo", "other"):
