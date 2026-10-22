@@ -2,11 +2,64 @@ name: Test
 
 on:
   push:
+    branches: [main]
   pull_request:
   workflow_call:
+  workflow_dispatch:
+
+concurrency:
+  group: test-${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      code: ${{ steps.decide.outputs.code }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+      - id: decide
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_REF: ${{ github.base_ref }}
+          BEFORE: ${{ github.event.before }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" = "workflow_call" ] || [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            echo "code=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [ "$EVENT_NAME" = "push" ]; then
+            if [ "$BEFORE" = "0000000000000000000000000000000000000000" ]; then
+              echo "code=true" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            if ! git diff --name-only "$BEFORE" "$SHA" > /tmp/changed.txt; then
+              echo "code=true" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+          elif [ "$EVENT_NAME" = "pull_request" ]; then
+            git fetch --no-tags origin "$BASE_REF" || true
+            if ! git diff --name-only "origin/${BASE_REF}...HEAD" > /tmp/changed.txt; then
+              echo "code=true" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+          else
+            echo "code=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if ! python scripts/ci_changes.py < /tmp/changed.txt > /tmp/code.txt; then
+            echo "code=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          cat /tmp/code.txt >> "$GITHUB_OUTPUT"
+
   test:
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -25,3 +78,37 @@ jobs:
         run: python -m unittest discover -s tests -v
       - name: Check the support page
         run: python scripts/gen_agents_support.py --check
+
+  docs-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.12"
+      - name: Repo checks
+        run: python -m unittest tests.test_repo -v
+      - name: Check the support page
+        run: python scripts/gen_agents_support.py --check
+      - name: Check relative links
+        run: python scripts/check_links.py
+
+  result:
+    name: Test result
+    if: always()
+    needs: [changes, test, docs-check]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Evaluate
+        env:
+          CHANGES: ${{ needs.changes.result }}
+          TEST: ${{ needs.test.result }}
+          DOCS: ${{ needs.docs-check.result }}
+        run: |
+          echo "changes=$CHANGES test=$TEST docs-check=$DOCS"
+          for status in "$CHANGES" "$TEST" "$DOCS"; do
+            if [ "$status" = failure ] || [ "$status" = cancelled ]; then
+              exit 1
+            fi
+          done
