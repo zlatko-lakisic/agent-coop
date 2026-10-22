@@ -52,7 +52,7 @@ function initCopy() {
   btn.addEventListener("click", async () => {
     try {
       await navigator.clipboard.writeText(text);
-      btn.textContent = "Copied";
+      btn.innerHTML = '<svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M6.2 11.4 2.8 8l1.2-1.2 2.2 2.2 5.6-5.6L13 4.6z"/></svg> Copied';
       if (live) live.textContent = "Copied";
       setTimeout(() => {
         btn.textContent = "Copy";
@@ -108,7 +108,7 @@ function initOrbit() {
   const hold = qs(".orbit-nodes", root);
   const notesEl = qs(".notes", root);
   let nodes, rx, ry, cx, cy, born = 0, last = 0, raf = 0, running = false, paused = false, hoverT = 0, nextN = 0;
-  let angle = 0, tilt = TILT0, want = TILT0;
+  let angle = 0, tilt = TILT0, want = TILT0, rg = [];
   const notes = [];
   const ns = "http://www.w3.org/2000/svg";
 
@@ -128,8 +128,14 @@ function initOrbit() {
     rings();
   }
 
+  function tiltRing() {
+    const t = "translate(" + cx + " " + cy + ") rotate(" + (tilt * 180) / Math.PI + ")";
+    for (let i = 0; i < rg.length; i++) rg[i].setAttribute("transform", t);
+  }
+
   function rings() {
-    const w = root.clientWidth, h = root.clientHeight, deg = (tilt * 180) / Math.PI;
+    const w = root.clientWidth, h = root.clientHeight;
+    rg = [];
     for (const svg of [back, front]) {
       svg.setAttribute("viewBox", "0 0 " + w + " " + h);
       svg.setAttribute("width", w);
@@ -138,7 +144,6 @@ function initOrbit() {
     function arc(svg, sx, sy, sw) {
       svg.replaceChildren();
       const g = document.createElementNS(ns, "g");
-      g.setAttribute("transform", "translate(" + cx + " " + cy + ") rotate(" + deg + ")");
       [1, 0.96, 0.92].forEach((k, i) => {
         const p = document.createElementNS(ns, "path");
         p.setAttribute("d", "M " + sx * rx * k + " " + sy * ry * k + " A " + rx * k + " " + ry * k + " 0 0 " + sw + " " + -sx * rx * k + " " + -sy * ry * k);
@@ -146,9 +151,11 @@ function initOrbit() {
         g.append(p);
       });
       svg.append(g);
+      rg.push(g);
     }
     arc(back, -1, 0, 1);
     arc(front, 1, 0, 1);
+    tiltRing();
   }
 
   function at(t) {
@@ -291,6 +298,7 @@ function initOrbit() {
       angle += (dt / ORBIT_MS) * Math.PI * 2;
       tilt += (want - tilt) * 0.06;
     }
+    tiltRing();
     place(now);
     tickNotes(now);
     raf = requestAnimationFrame(loop);
