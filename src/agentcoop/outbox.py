@@ -108,7 +108,7 @@ def write_new_md(
     ctx_text = native_path(latest_ctx.resolve()) if latest_ctx is not None else "None yet"
     prog_text = native_path(latest_prog.resolve()) if latest_prog is not None else "None yet"
     if visible:
-        first = str(len(visible)) + " new messages."
+        first = "1 new message." if len(visible) == 1 else str(len(visible)) + " new messages."
     else:
         first = "No new messages."
     lines = [
@@ -418,7 +418,15 @@ def _post_claimed(
             now=now,
         )
     except CoopError as exc:
-        _reject(board, project, agent, path, str(exc))
+        reason = str(exc)
+        from agentcoop.safety import secret_warning
+
+        if secret_warning(text):
+            reason = (
+                "This answer looks like it contains a password or API key, so it was not posted. "
+                "Remove it and write the answer again."
+            )
+        _reject(board, project, agent, path, reason)
         return
     mark_done(board, project, agent, [mid])
     _finish(path, outbox_sent_dir(board, project, agent))

@@ -284,11 +284,13 @@ class TickTests(unittest.TestCase):
     def test_templates_include_the_command_rule(self) -> None:
         from agentcoop.install import read_template
 
-        sentence = "You may run agentcoop start, stop, now, and status"
+        phrases = ("Start the co-op", "Stop the co-op", "Check the board now", "What's the status?")
         for name in ("SKILL.md.tmpl", "cursor-rule.mdc.tmpl", "AGENTS.md.tmpl", "GEMINI.md.tmpl"):
-            self.assertIn(sentence, read_template(name))
-            self.assertIn("{{AGENTCOOP}} draft", read_template(name))
-            self.assertIn("agentcoop/auto", read_template(name))
+            text = read_template(name)
+            for phrase in phrases:
+                self.assertIn(phrase, text, name)
+            self.assertIn("{{AGENTCOOP}} draft", text)
+            self.assertIn("agentcoop/auto", text)
 
 
 if __name__ == "__main__":

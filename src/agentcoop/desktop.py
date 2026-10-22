@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sys
 import zipfile
 from pathlib import Path
 
@@ -23,6 +24,7 @@ from agentcoop.wizard import connect_one, helper_add, helper_remove
 
 DEFAULT_AGENT = "claude_desktop"
 DEFAULT_NOTE = "helps the driver reason"
+GENERAL_SKILL = "claude-desktop"
 
 
 def scheduled_prompt(project: str, agent: str) -> str:
@@ -100,6 +102,36 @@ def skill_placeholders(board: Path, project: str, agent: str) -> dict[str, str]:
     }
 
 
+def general_skill_text() -> str:
+    """Return the Claude desktop skill that works on any computer."""
+    candidates = [
+        Path(__file__).resolve().parent / "data" / "claude-desktop" / "SKILL.md",
+        Path(__file__).resolve().parents[2] / "skills" / "claude-desktop" / "SKILL.md",
+    ]
+    meipass = getattr(sys, "_MEIPASS", "")
+    if meipass:
+        candidates.append(Path(meipass) / "skills" / "claude-desktop" / "SKILL.md")
+    for path in candidates:
+        if path.is_file():
+            return path.read_text(encoding="utf-8")
+    raise CoopError("The Claude desktop skill file is missing.")
+
+
+def prepare_skill(board: Path, dest_dir: Path | None = None) -> Path:
+    """Write claude-desktop.zip with claude-desktop/SKILL.md inside."""
+    text = general_skill_text()
+    payload = text if text.endswith("\n") else text + "\n"
+    folder = Path(dest_dir) if dest_dir is not None else board / "exports"
+    private_dir(folder)
+    zip_path = folder / (GENERAL_SKILL + ".zip")
+    with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        archive.comment = __version__.encode("utf-8")
+        archive.writestr(GENERAL_SKILL + "/SKILL.md", payload)
+    sidecar = zip_path.with_name(zip_path.name + ".version")
+    sidecar.write_text(__version__ + "\n", encoding="utf-8")
+    return zip_path
+
+
 def export_skill(
     board: Path,
     project: str,
@@ -136,7 +168,7 @@ def desktop_add(
     from agentcoop.outbox import write_new_md
 
     write_new_md(board, project, agent)
-    zip_path = export_skill(board, project, agent)
+    zip_path = prepare_skill(board)
     record = (load_projects(board).get("projects") or {}).get(project) or {}
     board_folder = native_path(project_dir(board, project).resolve())
     project_folder = native_path(Path(str(record.get("path") or "")).resolve())

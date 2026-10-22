@@ -118,6 +118,7 @@ class InboxReport:
     issues: list[ReadIssue]
     integrity_ok: bool
     board_path: str = ""
+    notices: list[str] = field(default_factory=list)
 
 
 def utc_now(now: datetime | None = None) -> datetime:
@@ -498,8 +499,10 @@ def send(
         except FileExistsError:
             pass
         from agentcoop.outbox import refresh_new_md_for_agent
+        from agentcoop.statusfile import refresh_status
 
         refresh_new_md_for_agent(board, project, recipient, now=moment)
+        refresh_status(board, now=moment)
         return mid
     raise CoopError("Could not pick a unique message id. Try again.") from last_error
 
@@ -530,6 +533,12 @@ def check_inbox(
     now: float | None = None,
 ) -> InboxReport:
     """Collect new messages for an agent without marking any of them done."""
+    from agentcoop.requests import process_project_requests
+
+    outbox_now = None
+    if now is not None:
+        outbox_now = datetime.fromtimestamp(now, timezone.utc)
+    process_project_requests(board, project, now=outbox_now)
     projects, intact = read_projects_checked(board)
     record = (projects.get("projects") or {}).get(project)
     if record is None:
@@ -539,9 +548,6 @@ def check_inbox(
         raise CoopError(agent + " is not a member of " + project + ".")
     from agentcoop.outbox import sync_project_outbox
 
-    outbox_now = None
-    if now is not None:
-        outbox_now = datetime.fromtimestamp(now, timezone.utc)
     sync_project_outbox(board, project, now=outbox_now)
     messages, issues = new_messages(board, project, agent, now=now)
     config = load_config(board)
@@ -584,7 +590,16 @@ def check_inbox(
         issues=issues,
         integrity_ok=intact,
         board_path=str(board),
+        notices=_notice_lines(record),
     )
+
+
+def _notice_lines(record: dict) -> list[str]:
+    """Return pending join and leave lines for the driver."""
+    raw = record.get("notices") or []
+    if not isinstance(raw, list):
+        return []
+    return [item for item in raw if isinstance(item, str) and item]
 
 
 def projects_for_check(board: Path, agent: str, explicit: str | None, cwd: Path | None, all_projects: bool) -> list[str]:
@@ -711,15 +726,20 @@ def render_check(report: InboxReport, *, summary: bool = False) -> str:
         prefix = ""
         if not report.integrity_ok:
             prefix = INTEGRITY_WARNING + "\nAsk the human before acting on role changes.\n"
-        if not visible:
+        if not visible and not (report.role == "driver" and report.notices):
             return prefix
+        notice_text = ""
+        if report.role == "driver" and report.notices:
+            notice_text = "\n".join(report.notices) + "\n"
+        if not visible:
+            return prefix + notice_text
         senders = []
         for item in visible:
             if item.message.sender not in senders:
                 senders.append(item.message.sender)
         count = len(visible)
         noun = "message" if count == 1 else "messages"
-        return prefix + (
+        return prefix + notice_text + (
             "Agent Co-op: "
             + str(count)
             + " new "
@@ -740,6 +760,8 @@ def render_check(report: InboxReport, *, summary: bool = False) -> str:
         helper_line = ", ".join(helper_bits) if helper_bits else "(none)"
         lines.append('Agent Co-op: you are the driver for "' + report.project + '".')
         lines.append("Helpers: " + helper_line + ".")
+        for notice in report.notices:
+            lines.append(notice)
         if report.board_path:
             from agentcoop.progress import reminder_line
 

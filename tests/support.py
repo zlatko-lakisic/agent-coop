@@ -39,6 +39,9 @@ class TempEnv:
         }.items():
             self._old[key] = os.environ.get(key)
             os.environ[key] = value
+        for key in ("AGENTCOOP_AGENT", "CLAUDECODE", "GEMINI_CLI", "CODEX_SANDBOX", "CODEX_THREAD_ID"):
+            self._old[key] = os.environ.get(key)
+            os.environ.pop(key, None)
         for name in ("launchctl", "systemctl", "crontab", "schtasks", "taskkill"):
             path = self.fakes / name
             path.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")

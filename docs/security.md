@@ -20,6 +20,23 @@ The deny list always applies. It includes SSH keys, cloud credentials, Kubernete
 
 Do not put passwords, API keys, or tokens in a message or in project context. `agentcoop send` and `agentcoop context write` refuse when the text looks like a common key, unless you pass `--allow-secret`.
 
+## Who can change what
+
+Two levels:
+
+* No confirmation, when you ask that agent in its own chat: create a project with itself as the driver, add itself as a helper, remove itself as a helper, connect itself, start, stop, now, status, context, progress, and `uninstall --agent`.
+* Confirmation needed: changing the driver, adding or removing any agent other than the one asking, removing a project, `project review --accept` and `--restore`, disconnect, and `project set --driver-shell`.
+
+In a terminal you type the name to allow the change. When there is no terminal, Agent Co-op opens a window. The window states the change in one sentence, says which agent asked, and has Allow and Cancel. Cancel is the default. The window stays on top and times out after 2 minutes as Cancel. If the window cannot open, Agent Co-op opens its page in the browser with the same text and buttons.
+
+An agent that controls the mouse could click Allow. The window protects against an agent acting on a message. It does not protect against an agent that controls the screen.
+
+An agent that can pretend to be a terminal could type the name. Each app's own permission settings are still the real lock.
+
+Every join and leave is visible. The driver's next check says who joined or left, and `agentcoop status` shows it too.
+
+File access never comes from Agent Co-op. It comes from each app's own permissions, which only you grant.
+
 ## The viewer
 
 `agentcoop ui` is a page for the human. Agents do not use it. It binds to `127.0.0.1`, puts a random token in the URL, refuses any other bind address, and stops after 30 minutes with no requests, when you close it, or when you press Ctrl+C.
@@ -27,10 +44,6 @@ Do not put passwords, API keys, or tokens in a message or in project context. `a
 ## Roles file
 
 `projects.json` is hashed. If something edits it outside `agentcoop`, check and doctor say so and tell the agent to ask the human before trusting a role change. That is detection. It is not a lock.
-
-Commands that change existing roles ask for a confirmation in a terminal. That stops an agent from changing roles by accident or by following a message. An agent that can run a pseudo terminal could get around it. Tool permission settings are still the real lock.
-
-A bare-mode sender can set an old ts to be judged by old roles. This is detection, not prevention, like the rest of the bare-mode checks.
 
 ## What the board cannot stop
 

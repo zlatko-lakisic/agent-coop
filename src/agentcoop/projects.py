@@ -580,6 +580,9 @@ def add_project(
     add_allowed_root(board, str(Path(record["path"]).expanduser()))
     for agent in [driver, *helpers.keys()]:
         ensure_agent_dirs(board, name, agent)
+    from agentcoop.statusfile import refresh_status
+
+    refresh_status(board)
 
 
 def _validate_new_project(board: Path, name: str, record: dict, projects: dict, agents: dict) -> None:
@@ -644,6 +647,9 @@ def set_driver(board: Path, name: str, agent: str) -> str:
 
     mutate_projects(board, change)
     ensure_agent_dirs(board, name, agent)
+    from agentcoop.statusfile import refresh_status
+
+    refresh_status(board)
     return found["previous"]
 
 
@@ -661,11 +667,17 @@ def add_helper(board: Path, name: str, agent: str, note: str) -> None:
         project["helpers"] = helpers
         if agent not in before_helpers:
             _record_membership(project, before_driver, before_helpers)
+            notices = [item for item in list(project.get("notices") or []) if isinstance(item, str)]
+            notices.append(agent + " joined as a helper.")
+            project["notices"] = notices
         agents = load_agents(board)
         _validate_new_project(board, name, project, projects, agents)
 
     mutate_projects(board, change)
     ensure_agent_dirs(board, name, agent)
+    from agentcoop.statusfile import refresh_status
+
+    refresh_status(board)
 
 
 def remove_helper(board: Path, name: str, agent: str) -> None:
@@ -681,7 +693,26 @@ def remove_helper(board: Path, name: str, agent: str) -> None:
         helpers.pop(agent)
         project["helpers"] = helpers
         _record_membership(project, before_driver, before_helpers)
+        notices = [item for item in list(project.get("notices") or []) if isinstance(item, str)]
+        notices.append(agent + " left as a helper.")
+        project["notices"] = notices
 
+    mutate_projects(board, change)
+    from agentcoop.statusfile import refresh_status
+
+    refresh_status(board)
+
+
+def clear_notices(board: Path, name: str) -> None:
+    """Drop join and leave lines after the driver has seen them."""
+
+    def change(projects: dict) -> None:
+        project = (projects.get("projects") or {}).get(name)
+        if project is not None and project.get("notices"):
+            project["notices"] = []
+
+    if not ((load_projects(board).get("projects") or {}).get(name) or {}).get("notices"):
+        return
     mutate_projects(board, change)
 
 

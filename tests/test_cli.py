@@ -87,7 +87,7 @@ class CliTests(unittest.TestCase):
                 out = io.StringIO()
                 with redirect_stdout(out):
                     self.assertEqual(main(["version"]), 0)
-                self.assertIn("spec 0.2", out.getvalue())
+                self.assertIn("spec 0.3", out.getvalue())
                 out = io.StringIO()
                 with redirect_stdout(out):
                     self.assertEqual(main(["done", "--as", "claude_code", mid]), 0)

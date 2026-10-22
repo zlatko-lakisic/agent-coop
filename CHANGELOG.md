@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.2.2 - 2026-10-22
+
+- You can install, drive, join, leave, and work from chat. An agent may do those for itself. Changes that affect someone else ask you in a window or on a page.
+- The Claude desktop app uses one skill, request files, and `projects/STATUS.md`. A join takes effect at the next check or background round.
+- Windows releases include `agentcoop-windows-x64.zip` with `agentcoop.exe` and `agentcoopw.exe`.
+- `NEW.md` says `1 new message.` when there is one.
+- An outbox answer that looks like a password or a key is refused in plain words, without a flag name.
+- SPEC.md is version 0.3. It describes the two permission levels, request files, and `projects/STATUS.md`.
+
 ## 0.2.1
 
 - Claude desktop joins as an outbox helper: grant two folders, upload a skill, and a scheduled task posts answers.

@@ -231,6 +231,11 @@ def build_zipapp(dest: Path) -> None:
             staging / "agentcoop",
             ignore=shutil.ignore_patterns("__pycache__", "*.pyc"),
         )
+        skill = package.parents[1] / "skills" / "claude-desktop" / "SKILL.md"
+        if skill.is_file():
+            bundled = staging / "agentcoop" / "data" / "claude-desktop" / "SKILL.md"
+            bundled.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(skill, bundled)
         (staging / "__main__.py").write_text(
             "import sys\nfrom agentcoop.__main__ import main\nraise SystemExit(main())\n",
             encoding="utf-8",
@@ -257,6 +262,34 @@ def _agentcoopw_name(name: str) -> str:
     return name.replace("agentcoop", "agentcoopw", 1)
 
 
+def quiet_sibling_paths(src: Path) -> list[Path]:
+    """Return possible no-console builds beside a Windows program.
+
+    The release zip uses the plain name agentcoopw.exe. A single-file
+    download uses agentcoopw-windows-x64.exe. Setup accepts either.
+    """
+    names = [_agentcoopw_name(src.name)]
+    if names[0].lower() != "agentcoopw.exe":
+        names.append("agentcoopw.exe")
+    found = []
+    seen = set()
+    for name in names:
+        key = name.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        found.append(src.with_name(name))
+    return found
+
+
+def find_quiet_sibling(src: Path) -> Path | None:
+    """Return the first no-console sibling that exists."""
+    for path in quiet_sibling_paths(src):
+        if path.is_file() and path.resolve() != src.resolve():
+            return path
+    return None
+
+
 def stage_runtime(board: Path) -> None:
     """Copy the running command into the board bin folder."""
     from agentcoop.pathenv import pick_launcher, store_launcher, write_command_wrapper
@@ -271,9 +304,9 @@ def stage_runtime(board: Path) -> None:
             dest = bindir / name
             if src.resolve() != dest.resolve():
                 shutil.copy2(src, dest)
-            sibling = src.with_name(_agentcoopw_name(src.name))
+            sibling = find_quiet_sibling(src)
             quiet_dest = bindir / "agentcoopw.exe"
-            if sibling.is_file() and sibling.resolve() != quiet_dest.resolve():
+            if sibling is not None and sibling.resolve() != quiet_dest.resolve():
                 shutil.copy2(sibling, quiet_dest)
         else:
             dest = bindir / "agentcoop"
@@ -820,6 +853,9 @@ def remove_project_files(board: Path, project_name: str) -> list[str]:
         dest = removed / (project_name + "-" + now_stamp().replace(":", ""))
     if src.exists():
         shutil.move(str(src), str(dest))
+    from agentcoop.statusfile import refresh_status
+
+    refresh_status(board)
     return notes
 
 

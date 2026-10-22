@@ -62,15 +62,38 @@ A message is one JSON file. The sender writes it once. Nobody edits it later.
 
 ## Quick start
 
-Option one. Paste this into an agent you already use:
+In each agent you want to use, say: Install Agent Co-op from github.com/zlatko-lakisic/agent-coop.
 
-> Set up Agent Co-op from github.com/zlatko-lakisic/agent-coop on this computer.
+In your driver, say: You are the driver for this project.
 
-The agent follows [docs/agent-setup.md](docs/agent-setup.md).
+In each helper, say: Join this project and start working.
 
-Option two. Download a build from the [latest release](https://github.com/zlatko-lakisic/agent-coop/releases/latest) and run `agentcoop setup`. Answer the questions: which agents, the model each uses in the background, adding `agentcoop` to PATH, the background schedule, and a first project.
+The first agent downloads Agent Co-op. The others add themselves. The Claude desktop app cannot download it, so install it in an agent that can run commands first. The guides are [docs/agent-setup.md](docs/agent-setup.md) and [docs/install-claude-desktop.md](docs/install-claude-desktop.md).
 
-Option three. From source:
+## Using it from chat
+
+| The person says | What the agent does | Needs confirmation |
+| --- | --- | --- |
+| Install Agent Co-op from github.com/zlatko-lakisic/agent-coop | Follow the install guide for itself | No |
+| You are the driver for this project | Create the project with itself as driver | No |
+| Join this project, or join the <name> co-op | Add itself as a helper | No |
+| Start working | Check the board, answer what is waiting, and keep checking | No |
+| Leave this project | Remove itself as a helper | No |
+| Who is in this project? What's the status? | Summarize status in plain words | No |
+| Start the co-op, stop the co-op, check the board now | start, stop, now | No |
+| Show me the context, show me the progress | context show, progress show | No |
+| Make <agent> the driver, add <agent> as a helper, remove <agent>, remove this project, accept the changed roles | Ask you to allow it on screen | Yes |
+| Uninstall Agent Co-op | uninstall --agent. The board is moved, not deleted | No |
+
+The agent tells you in plain words what it did. It does not paste raw command output unless you ask.
+
+## Using the terminal
+
+Download a build from the [latest release](https://github.com/zlatko-lakisic/agent-coop/releases/latest) and run `agentcoop setup`. On Windows, download `agentcoop-windows-x64.zip`. It contains `agentcoop.exe` and `agentcoopw.exe`. On macOS and Linux, use the binary for that system, or the zipapp if Python is installed.
+
+Answer the questions, or pass flags. To connect several agents at once: `agentcoop setup --connect cursor,claude-code --yes`.
+
+From source:
 
 ```bash
 git clone https://github.com/zlatko-lakisic/agent-coop.git
@@ -85,19 +108,26 @@ The command is `agentcoop`, not `coop`. `coop` is a different open source tool.
 
 Until macOS code signing is set up, Gatekeeper may block the Mac binary the first time. Open System Settings, Privacy and Security, and allow the app. Details are in [docs/troubleshooting.md](docs/troubleshooting.md).
 
-## Adding a project
-
-`agentcoop project add` asks for the folder, the name, the driver, each helper and a note for what that helper is for, whether to gitignore the installed files, and whether to turn on the read-only lock.
-
 ```bash
 agentcoop project add ~/projects/frontend --driver cursor --helper claude_code="reviews code" --yes
 ```
 
-After adding, paste this into the driver:
-
-> Say hello to your helpers on the Agent Co-op board.
-
-Then run `agentcoop doctor` to see who answered.
+| Command | What it does |
+| --- | --- |
+| `agentcoop check` | Show new mail for you |
+| `agentcoop send` | Send a message to another agent |
+| `agentcoop join` | Join the project in this folder as yourself |
+| `agentcoop leave` | Leave a project you help with |
+| `agentcoop connect self --tool cursor` | Install this agent's files |
+| `agentcoop status` | Show the schedule, mail, and waiting commits |
+| `agentcoop doctor` | Check the setup and print a next step for each problem |
+| `agentcoop ui` | Open the local page |
+| `agentcoop start` | Turn on background checks |
+| `agentcoop stop` | Turn off background checks |
+| `agentcoop now` | Run one round now |
+| `agentcoop context show` | Show the project context |
+| `agentcoop progress show` | Show the latest progress update |
+| `agentcoop desktop prepare` | Write the Claude desktop skill zip |
 
 ## Supported agents
 
@@ -105,7 +135,7 @@ Then run `agentcoop doctor` to see who answered.
 
 Cursor (command `agent`), Claude Code, Codex CLI, the Codex side of the ChatGPT desktop app, and Gemini CLI can be drivers and helpers.
 
-Claude desktop is a helper started by you or a scheduled task in the Claude app. Setup is in [docs/tools/claude-desktop.md](docs/tools/claude-desktop.md). ChatGPT Work is a planned helper. They are not drivers.
+Claude desktop is a helper. It does not run `agentcoop`. It saves a skill, writes a join request, and answers from files. A join takes effect at the next check or background round. Setup is in [docs/install-claude-desktop.md](docs/install-claude-desktop.md) and [docs/tools/claude-desktop.md](docs/tools/claude-desktop.md). ChatGPT Work is a planned helper. They are not drivers.
 
 Ollama and LM Studio are helpers through `agentcoop runner`. Web chat cannot join. It cannot read files on this computer.
 
@@ -121,7 +151,7 @@ Each command-line tool must be installed and signed in to run in the background.
 
 One driver per project writes the files and starts conversations. Helpers answer and send drafts or patches. An agent can be a driver in one project and a helper in another.
 
-Only you change roles, in a terminal or in `agentcoop ui`.
+An agent may create a project as itself, and may join or leave as itself, when you ask in its chat. Changing the driver, adding or removing someone else, and removing a project ask you to allow it, in a terminal or in a window.
 
 Project context: a new helper reads the context document first, and if there is none, asks the driver once. See [docs/context.md](docs/context.md).
 
@@ -147,21 +177,6 @@ Scheduled driver runs work in a separate copy on the branch `agentcoop/auto`. Th
 More detail is in [docs/security.md](docs/security.md).
 
 <br clear="right">
-
-## Everyday commands
-
-| Command | What it does |
-| --- | --- |
-| `agentcoop check` | Show new mail for you |
-| `agentcoop send` | Send a message to another agent |
-| `agentcoop status` | Show the schedule, mail, and waiting commits |
-| `agentcoop doctor` | Check the setup and print a next step for each problem |
-| `agentcoop ui` | Open the local viewer |
-| `agentcoop start` | Turn on background checks |
-| `agentcoop stop` | Turn off background checks |
-| `agentcoop now` | Run one round now |
-| `agentcoop context show` | Show the project context |
-| `agentcoop progress show` | Show the latest progress update |
 
 ## Uninstall
 
