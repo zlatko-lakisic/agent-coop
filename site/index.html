@@ -57,10 +57,11 @@
           <span class="node" data-id="gemini-cli" style="--tint:#EAF0FB"><span class="mark" style="--icon:url('./icons/gemini.svg')"></span></span>
           <span class="node" data-id="ollama" style="--tint:#F1F1F1"><span class="mark" style="--icon:url('./icons/ollama.svg')"></span></span>
           <span class="node" data-id="lm-studio" style="--tint:#EFEAF8"><span class="mark" style="--icon:url('./icons/lmstudio.svg')"></span></span>
+          <span class="node" data-id="claude-desktop" style="--tint:#F6EDE6"><span class="mark" style="--icon:url('./icons/claude.svg')"></span></span>
         </div>
         <div class="notes"></div>
       </div>
-      <p class="visually-hidden" data-works-with>Works with Cursor, Claude Code, Codex, the ChatGPT desktop app, Gemini CLI, Ollama and LM Studio.</p>
+      <p class="visually-hidden" data-works-with>Works with Cursor, Claude Code, Codex, the ChatGPT desktop app, Gemini CLI, Ollama, LM Studio and Claude desktop.</p>
       <h1 id="hero-title">Your AI tools, working together.</h1>
       <p class="sub">Agent Co-op lets the AI apps you already use ask each other for help, right on your computer.</p>
       <div class="hero-actions">
@@ -145,7 +146,7 @@
         <div>
           <h3>Can lead</h3>
           <p>These can work on your project and ask others for help.</p>
-          <ul class="chips">
+          <ul class="chips" data-agents="lead">
             <li class="chip" style="--tint:#EEF0F3"><span class="mark" style="--icon:url('./icons/cursor.svg')" aria-hidden="true"></span>Cursor</li>
             <li class="chip" style="--tint:#F6EDE6"><span class="mark" style="--icon:url('./icons/claude.svg')" aria-hidden="true"></span>Claude Code</li>
             <li class="chip" style="--tint:#ECEFEE"><span class="mono" aria-hidden="true">CO</span>Codex</li>
@@ -156,27 +157,27 @@
         <div>
           <h3>Can help</h3>
           <p>These answer questions and review work. Local models run on your own machine.</p>
-          <ul class="chips">
+          <ul class="chips" data-agents="help">
             <li class="chip" style="--tint:#F1F1F1"><span class="mark" style="--icon:url('./icons/ollama.svg')" aria-hidden="true"></span>Ollama</li>
             <li class="chip" style="--tint:#EFEAF8"><span class="mark" style="--icon:url('./icons/lmstudio.svg')" aria-hidden="true"></span>LM Studio</li>
+            <li class="chip" style="--tint:#F6EDE6"><span class="mark" style="--icon:url('./icons/claude.svg')" aria-hidden="true"></span>Claude desktop</li>
           </ul>
         </div>
         <div>
           <h3>Coming soon</h3>
           <p>Support is planned.</p>
-          <ul class="chips soon">
+          <ul class="chips soon" data-agents="soon">
             <li class="chip" style="--tint:#EEF0F3"><span class="mark" style="--icon:url('./icons/githubcopilot.svg')" aria-hidden="true"></span>GitHub Copilot</li>
             <li class="chip" style="--tint:#F1F1F1"><span class="mark" style="--icon:url('./icons/opencode.svg')" aria-hidden="true"></span>OpenCode</li>
             <li class="chip" style="--tint:#EEF3F8"><span class="mark" style="--icon:url('./icons/cline.svg')" aria-hidden="true"></span>Cline</li>
             <li class="chip" style="--tint:#F4F1EA"><span class="mono" aria-hidden="true">GO</span>Goose</li>
-            <li class="chip" style="--tint:#F6EDE6"><span class="mark" style="--icon:url('./icons/claude.svg')" aria-hidden="true"></span>Claude desktop chat</li>
             <li class="chip" style="--tint:#E9F3EF"><span class="mono" aria-hidden="true">CW</span>ChatGPT Work</li>
           </ul>
         </div>
         <div>
           <h3>Can't join</h3>
           <p>Web chat apps in a browser can't read files on your computer, so they can't join.</p>
-          <ul class="chips">
+          <ul class="chips" data-agents="cannot">
             <li class="chip" style="--tint:#F3EEE3"><span class="mark" style="--icon:url('./icons/browser.svg')" aria-hidden="true"></span>Web chat</li>
           </ul>
         </div>
