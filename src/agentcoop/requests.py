@@ -1,4 +1,4 @@
-"""Apply join and leave requests an agent wrote into the board."""
+"""Apply join, leave, and watching requests an agent wrote into the board."""
 
 from __future__ import annotations
 
@@ -89,6 +89,9 @@ def _process_one(board: Path, project: str, agent: str, path: Path, join_named, 
         _reject(path, UNREADABLE)
         return
     action = data.get("action")
+    if action in ("stop_watching", "start_watching"):
+        _apply_watching(board, project, agent, path, action == "start_watching")
+        return
     if action not in ("join", "leave"):
         _reject(path, OTHER_ACTION)
         return
@@ -100,6 +103,23 @@ def _process_one(board: Path, project: str, agent: str, path: Path, join_named, 
             text = leave_named(agent, project)
     except CoopError as exc:
         text = str(exc)
+    _finish(path, text)
+
+
+def _apply_watching(board: Path, project: str, agent: str, path: Path, watching: bool) -> None:
+    """Set or clear the project stop flag for a member, then file the request."""
+    from agentcoop.projects import load_projects, role_of
+    from agentcoop.watch import set_project_watching
+
+    record = (load_projects(board).get("projects") or {}).get(project) or {}
+    if not role_of(record, agent):
+        _reject(path, agent + " is not a member of " + project + ".")
+        return
+    set_project_watching(board, project, watching, agent)
+    if watching:
+        text = "Checking is on for " + project + "."
+    else:
+        text = "Checking is stopped for " + project + "."
     _finish(path, text)
 
 
