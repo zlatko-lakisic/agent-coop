@@ -265,6 +265,12 @@ h3 {
   margin: 0 0 8px;
 }
 
+.section-inner {
+  width: 100%;
+  max-width: var(--max);
+  margin: 0 auto;
+}
+
 .lead,
 .sub {
   color: var(--ink-soft);
@@ -466,14 +472,6 @@ h3 {
   top: auto;
 }
 
-.why-grid,
-.safety-grid,
-.steps,
-.tool-groups {
-  max-width: var(--max);
-  margin: 0 auto;
-}
-
 .why-grid {
   display: grid;
   gap: 16px;
@@ -646,9 +644,9 @@ h3 {
 
 .after-steps,
 .after-tools,
+.after-why,
 .mac-note {
-  max-width: var(--max);
-  margin: 24px auto 0;
+  margin: 24px 0 0;
   color: var(--ink-soft);
 }
 
@@ -708,12 +706,6 @@ h3 {
   margin-bottom: 24px;
 }
 
-.faq {
-  max-width: var(--max);
-  margin-left: auto;
-  margin-right: auto;
-}
-
 .faq details {
   border-bottom: 1px solid var(--line);
 }
@@ -728,8 +720,10 @@ h3 {
   padding: 48px 20px calc(48px + env(safe-area-inset-bottom));
 }
 
-.site-footer p {
-  max-width: var(--max);
+.site-footer .section-inner {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
 }
 
 .footer-links {
