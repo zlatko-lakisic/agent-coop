@@ -7,7 +7,6 @@ dist/
 build/
 *.spec
 .DS_Store
-*.code-workspace
 .vscode/
 .idea/
 .cursor/
