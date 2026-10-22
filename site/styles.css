@@ -286,7 +286,7 @@ h3 {
   padding-top: 24px;
   padding-bottom: 48px;
   background:
-    radial-gradient(circle at 50% 18%, color-mix(in srgb, var(--accent-soft) 40%, transparent) 0%, transparent 58%),
+    radial-gradient(circle at 50% 18%, rgba(220, 239, 228, 0.4) 0%, transparent 58%),
     var(--bg);
 }
 
@@ -588,10 +588,13 @@ h3 {
 }
 
 .step-art {
-  width: min(100%, 220px);
+  width: 120px;
+  height: 120px;
   display: block;
-  margin: 0 0 16px;
-  border-radius: 16px;
+  margin: 0 auto 16px;
+  border-radius: 0;
+  box-shadow: none;
+  filter: none;
 }
 
 .copy-box {
@@ -610,6 +613,7 @@ h3 {
 .copy-btn {
   width: 100%;
   min-height: 48px;
+  gap: 6px;
 }
 
 .mini-row,
@@ -761,6 +765,10 @@ h3 {
   .safety-grid {
     grid-template-columns: 1fr 1fr;
   }
+  .step-art {
+    width: 140px;
+    height: 140px;
+  }
   .copy-btn {
     width: auto;
   }
@@ -806,6 +814,10 @@ h3 {
   .step-card {
     padding-left: 24px;
     padding-top: 40px;
+  }
+  .step-art {
+    width: 160px;
+    height: 160px;
   }
   .step-num {
     left: 50%;
