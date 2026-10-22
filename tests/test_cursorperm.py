@@ -98,10 +98,12 @@ class CursorPermissionTests(unittest.TestCase):
             from contextlib import redirect_stderr
 
             err = io.StringIO()
-            with patch("sys.stdin.isatty", return_value=False), redirect_stderr(err):
+            with patch("sys.stdin.isatty", return_value=False), patch(
+                "agentcoop.confirm.ask_on_screen", return_value=False
+            ), redirect_stderr(err):
                 code = main(["project", "set", "demo", "--driver-shell", "npm,pytest"])
-            self.assertEqual(code, 2)
-            self.assertIn("a person has to confirm", err.getvalue())
+            self.assertEqual(code, 1)
+            self.assertIn("The person did not allow this change.", err.getvalue())
             self.assertNotIn("driver_shell_allow", load_projects(env.board)["projects"]["demo"])
 
     def test_cursor_driver_argv_has_no_force(self) -> None:

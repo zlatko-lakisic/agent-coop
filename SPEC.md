@@ -1,4 +1,4 @@
-# Agent Co-op protocol, version 0.2
+# Agent Co-op protocol, version 0.3
 
 This document is the normative spec. The words MUST, SHOULD, and MAY are used as in common protocol practice: MUST is required, SHOULD is recommended, MAY is allowed.
 
@@ -36,18 +36,23 @@ The board MUST use this layout:
 ├── README.md
 ├── bin/
 ├── .state/projects.sha256
-└── projects/<project-name>/
-    ├── inbox/<agent>/msgs/
-    ├── inbox/<agent>/done/
-    ├── inbox/<agent>/NEW.md
-    ├── outbox/<agent>/
-    ├── outbox/<agent>/sent/
-    ├── outbox/<agent>/rejected/
-    ├── sent/<agent>/
-    ├── files/<agent>/
-    ├── progress/
-    ├── context/
-    └── archive/<agent>/
+└── projects/
+    ├── STATUS.md
+    └── <project-name>/
+        ├── inbox/<agent>/msgs/
+        ├── inbox/<agent>/done/
+        ├── inbox/<agent>/NEW.md
+        ├── outbox/<agent>/
+        ├── outbox/<agent>/sent/
+        ├── outbox/<agent>/rejected/
+        ├── requests/<agent>/
+        ├── requests/<agent>/done/
+        ├── requests/<agent>/rejected/
+        ├── sent/<agent>/
+        ├── files/<agent>/
+        ├── progress/
+        ├── context/
+        └── archive/<agent>/
 ```
 
 ### Writer table
@@ -63,6 +68,10 @@ Each path has one writer. A second writer MUST NOT update that path.
 | `outbox/<agent>/` | that agent |
 | `outbox/<agent>/sent/` | agentcoop |
 | `outbox/<agent>/rejected/` | agentcoop |
+| `requests/<agent>/` | that agent |
+| `requests/<agent>/done/` | agentcoop |
+| `requests/<agent>/rejected/` | agentcoop |
+| `projects/STATUS.md` | agentcoop |
 | `sent/<agent>/` | `<agent>` |
 | `files/<agent>/` | `<agent>` |
 | `archive/<agent>/` | `<agent>` (or the human through `agentcoop archive`) |
@@ -86,7 +95,7 @@ Each message MUST be one UTF-8 JSON file named `<id>.json`.
 
 | Field | Rule |
 | --- | --- |
-| `v` | Integer message format version. Spec 0.2 uses `1`. A missing value MUST be treated as 1. Unknown fields MUST be ignored. |
+| `v` | Integer message format version. Spec 0.3 uses `1`. A missing value MUST be treated as 1. Unknown fields MUST be ignored. |
 | `id` | SHOULD be `<UTC YYYYMMDDTHHMMSSZ>_<sender>_<4 lowercase hex>`. Readers MUST accept any unique string matching `^[A-Za-z0-9_.-]{1,96}$`. |
 | `ts` | UTC time, ISO 8601, second precision, ending in `Z`. |
 | `project` | Project name. |
@@ -194,7 +203,7 @@ Both modes MUST use the same files. A reader MUST accept either.
 
 ## 12. Versioning
 
-The message field `v` is the message format version. Spec 0.2 still uses `1`. A context request uses the same fields as any other message. The change is in the role rules, not in the file format, so `v` did not change. Readers MUST ignore unknown fields. `agentcoop version` prints the tool version and this spec version (`0.2`).
+The message field `v` is the message format version. Spec 0.3 still uses `1`. A context request uses the same fields as any other message. The change is in the role rules, not in the file format, so `v` did not change. Readers MUST ignore unknown fields. `agentcoop version` prints the tool version and this spec version (`0.3`).
 
 ## 13. Known limitations
 
@@ -203,3 +212,40 @@ The message field `v` is the message format version. Spec 0.2 still uses `1`. A 
 * A bare-mode agent can write a malformed file. Readers skip young unreadable files and report older ones.
 * A helper that cannot write files cannot reply or mark done.
 * In bare mode any agent can write a message that claims another sender, or rewrite `projects.json` and its hash. Role checks and the integrity warning catch mistakes, not a determined spoof. Real limits come from each tool's own permission settings.
+
+## 14. Two permission levels
+
+An agent acting as itself MAY do these without a separate confirmation, when the person asks in that agent's own chat:
+
+* create a project with itself as the driver
+* add itself as a helper, or remove itself as a helper
+* connect itself
+* `start`, `stop`, `now`, `status`, `context`, and `progress`
+* `uninstall --agent`, which moves the board and does not delete it
+
+These MUST ask the person to confirm before anything changes:
+
+* changing the driver
+* adding or removing an agent other than the one asking
+* removing a project
+* `project review --accept` and `--restore`
+* `disconnect`
+* `project set --driver-shell`
+
+Confirmation MAY be typed in a terminal, given in a window, or given on the local page when a window is not available. Cancel is the default. If the person does not allow the change, the command MUST exit 1, MUST say `The person did not allow this change.`, and MUST NOT change the board.
+
+Every join and leave MUST be visible in the driver's next check and in `status`.
+
+This protocol does not grant file access. File access comes from each tool, and only the person grants it.
+
+## 15. Requests and STATUS.md
+
+A helper that cannot run `agentcoop` MAY write `requests/<agent>/<utc>.json` containing `{"action": "join"}` or `{"action": "leave"}`, and an optional `note`. The writer is that agent.
+
+`agentcoop` MUST process those files on every `tick`, and at the start of every `check` by a member of that project, together with the outbox. `tick` MUST also cover projects whose members are not checking. A file modified less than 5 seconds ago MUST be left in place.
+
+`join` and `leave` apply only to the agent named by the folder. Any other action MUST be moved to `requests/<agent>/rejected/` with the reason `This needs a person. Ask an agent that can run Agent Co-op, such as Cursor, or use the Agent Co-op page.`
+
+A processed `join` or `leave` file MUST move to `requests/<agent>/done/` with a one-line result file beside it.
+
+`agentcoop` MUST write `projects/STATUS.md` on every `tick`, `check`, `send`, and membership change. The file lists each project's name, folder, driver, and helpers, whether the background schedule is on, the time of the last round, and each project's latest progress headline.

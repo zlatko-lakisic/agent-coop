@@ -81,7 +81,7 @@ Web chat cannot join, because it cannot read files on this computer.
 - Background runs: no
 - Status: untested
 - Suggested helper note: helps the driver reason
-- Notes: Helper started by you or a scheduled task in the Claude app. Grant two folders (the project board folder read and write, the project folder read only), then upload the skill from agentcoop desktop add. The Code side of the Claude desktop app is Claude Code, not this entry. TODO: detection paths per OS are not confirmed. Status is untested until confirmed.
+- Notes: Helper in the Claude desktop app. It does not run agentcoop. It writes a join or leave request, then reads NEW.md and writes answers. agentcoop applies requests and answers on the next check or background round. Install from chat with docs/install-claude-desktop.md after Agent Co-op is on the computer. The skill in the repo is skills/claude-desktop/SKILL.md. agentcoop desktop prepare writes the upload zip. The Code side of the Claude desktop app is Claude Code, not this entry. TODO: detection paths per OS are not confirmed.
 
 ## Gemini CLI
 

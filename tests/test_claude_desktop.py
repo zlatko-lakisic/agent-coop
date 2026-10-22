@@ -138,7 +138,7 @@ class ClaudeDesktopTests(unittest.TestCase):
             body = "Line one of the question.\nLine two of the question."
             mid = _ask(env, body, attachments=[str(note.resolve())])
             text = inbox_new_md(env.board, "demo", "claude_desktop").read_text(encoding="utf-8")
-            self.assertTrue(text.startswith("1 new messages."))
+            self.assertTrue(text.startswith("1 new message."))
             self.assertIn("id: " + mid, text)
             self.assertIn("from: cursor", text)
             self.assertIn("type: question", text)
@@ -155,6 +155,14 @@ class ClaudeDesktopTests(unittest.TestCase):
             done_text = inbox_new_md(env.board, "demo", "claude_desktop").read_text(encoding="utf-8")
             self.assertTrue(done_text.startswith("No new messages."))
             self.assertNotIn(mid, done_text)
+
+    def test_two_new_messages_use_the_plural(self) -> None:
+        with support.TempEnv() as env:
+            _ready(env)
+            _ask(env, "One")
+            _ask(env, "Two")
+            text = inbox_new_md(env.board, "demo", "claude_desktop").read_text(encoding="utf-8")
+            self.assertTrue(text.startswith("2 new messages."))
 
     def test_new_md_never_lists_out_of_protocol(self) -> None:
         with support.TempEnv() as env:
@@ -242,6 +250,8 @@ class ClaudeDesktopTests(unittest.TestCase):
             self.assertTrue(rejected.is_file())
             reason = (rejected.with_name(rejected.name + ".reason.txt")).read_text(encoding="utf-8")
             self.assertIn("password or API key", reason)
+            self.assertNotIn("--allow-secret", reason)
+            self.assertIn("was not posted", reason)
             self.assertEqual(_driver_replies(env, mid), [])
             left, _issues = new_messages(env.board, "demo", "claude_desktop")
             self.assertEqual([item.id for item in left], [mid])
@@ -411,11 +421,11 @@ class ClaudeDesktopTests(unittest.TestCase):
             folder.mkdir()
             add_project(env.board, "demo", folder, "cursor", {})
             err = io.StringIO()
-            with patch("sys.stdin.isatty", return_value=False), redirect_stderr(err), redirect_stdout(
-                io.StringIO()
-            ):
-                self.assertEqual(main(["desktop", "add", "demo"]), 2)
-            self.assertIn("person has to confirm", err.getvalue())
+            with patch("sys.stdin.isatty", return_value=False), patch(
+                "agentcoop.confirm.ask_on_screen", return_value=False
+            ), redirect_stderr(err), redirect_stdout(io.StringIO()):
+                self.assertEqual(main(["desktop", "add", "demo"]), 1)
+            self.assertIn("The person did not allow this change.", err.getvalue())
             out = io.StringIO()
             with support.person("demo"), redirect_stdout(out):
                 self.assertEqual(main(["desktop", "add", "demo"]), 0)
@@ -432,7 +442,7 @@ class ClaudeDesktopTests(unittest.TestCase):
             helpers = load_projects(env.board)["projects"]["demo"]["helpers"]
             self.assertEqual(helpers["claude_desktop"], "helps the driver reason")
             self.assertTrue(outbox_dir(env.board, "demo", "claude_desktop").is_dir())
-            self.assertTrue((env.board / "exports" / "claude_desktop-demo.zip").is_file())
+            self.assertTrue((env.board / "exports" / "claude-desktop.zip").is_file())
 
     def test_desktop_remove_keeps_sent(self) -> None:
         with support.TempEnv() as env:
@@ -480,7 +490,7 @@ class ClaudeDesktopTests(unittest.TestCase):
             items = run_doctor(env.board)
             fixes = "\n".join(item.text for item in items if item.level == "fix")
             self.assertIn(
-                "Run: agentcoop skill export --as claude_desktop --project demo, then upload it again.",
+                "Run: agentcoop desktop prepare, then upload the skill again.",
                 fixes,
             )
 

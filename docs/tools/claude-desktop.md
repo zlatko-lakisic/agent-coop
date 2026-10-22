@@ -4,72 +4,58 @@ Agent name: `claude_desktop`
 
 Can drive: no
 
-Claude desktop is a helper. You start it, or a scheduled task in the Claude app does. It does not run `agentcoop`. It reads `NEW.md` and writes answer files into an outbox. Agent Co-op posts those files as replies.
+Claude desktop is a helper. It does not run `agentcoop`. It writes files, and `agentcoop` applies them at the next check by any agent in the project, or at the next background round.
 
 The Code side of the Claude desktop app is Claude Code, not this helper.
 
-## Add it to a project
+## Setup from chat
 
-The board must already have a project and a driver.
+In the Claude desktop app, say: Install Agent Co-op from github.com/zlatko-lakisic/agent-coop.
 
-```bash
-agentcoop desktop add frontend
+Claude follows [install-claude-desktop.md](../install-claude-desktop.md). Agent Co-op must already be on the computer. The first install is done by an agent that can run commands, such as Cursor.
+
+The skill in the repo is [skills/claude-desktop/SKILL.md](../../skills/claude-desktop/SKILL.md). `agentcoop desktop prepare` writes the same skill as `claude-desktop.zip` for people who prefer to upload a file.
+
+## Joining
+
+In that Claude project, say: Join the <project> co-op and start working.
+
+The skill writes `<board>/projects/<project>/requests/claude_desktop/<UTC timestamp>.json`:
+
+```json
+{"action": "join"}
 ```
 
-Type the project name to confirm. That command:
+Leave uses `{"action": "leave"}`. A note is optional.
 
-* connects `claude_desktop` if it is not connected
-* adds it as a helper
-* writes `NEW.md` and the outbox folders
-* writes a skill zip under the board `exports` folder
+`agentcoop` applies the request on the next `check` by any member, and on every `tick`. A file younger than 5 seconds is left for the next round. Any other action is moved to `requests/claude_desktop/rejected/` because it needs a person.
 
-## Grant two folders
+The driver's next check says `claude_desktop joined as a helper.`
 
-In Claude, grant exactly these two folders. Type the paths. `.agent_board` is a hidden folder, so a file picker can miss it.
+## STATUS.md
 
-1. The project board folder, read and write: `~/.agent_board/projects/<project>` (Windows: `%USERPROFILE%\.agent_board\projects\<project>`).
-2. The project folder, read only.
+`agentcoop` writes `<board>/projects/STATUS.md` on every tick, check, send, and membership change. It lists each project, whether the schedule is on, the last round, and the latest progress headline. The skill reads that file and summarizes it.
 
-`agentcoop desktop add` prints the native paths for this computer.
+## Working
 
-## Upload the skill
+The skill reads `NEW.md`, the context, and the progress. It writes answers in `outbox/claude_desktop/`. It uses `NEED CONTEXT:` when background is missing. It checks `rejected/`.
 
-In the Claude app: Customize, then Skills, then + Create skill, then Upload a skill. Use the zip printed by `desktop add`. After you upgrade Agent Co-op, export again and upload the new zip:
+If an answer needs the project's own files, the skill asks the person to grant that folder, read only.
 
-```bash
-agentcoop skill export --as claude_desktop --project frontend
-```
+## Limit
 
-Skills in Claude: https://support.claude.com/en/articles/12512180-use-skills-in-claude
+A request does not take effect when it is written. It takes effect at the next check by any agent, or the next background round.
 
-Custom skills: https://support.claude.com/en/articles/12512198-how-to-create-custom-skills
+Scheduled tasks in the Claude app are documented as hourly, daily, weekly, on weekdays, or manual. Hourly is the shortest confirmed choice. https://support.claude.com/en/articles/13854387-schedule-recurring-tasks-in-claude-cowork
 
-## Scheduled task
+`agentcoop desktop prompt --project frontend` prints a prompt you can paste into that task.
 
-In that Claude project, add a scheduled task (for example every 5 minutes) with this prompt:
+## Terminal
 
-```text
-Check the Agent Co-op board for the frontend project as claude_desktop, using the Agent Co-op skill. If NEW.md says no new messages, stop right away.
-```
+`agentcoop desktop add frontend` still asks you to confirm, then prepares the skill zip and joins `claude_desktop`. `agentcoop desktop remove frontend` removes the helper. Posted answers in `outbox/claude_desktop/sent/` stay.
 
-`agentcoop desktop prompt --project frontend` prints the prompt with your names filled in.
+## Remove it from chat
 
-You can also say "check the co-op" in that project's chat, including from the phone.
+Say: Leave this project.
 
-## Test
-
-Ask the driver to send a question with progress. On the next check, `NEW.md` should list it. After Claude writes an answer file, the next round should post it. On Windows there is no console window.
-
-## Limits
-
-Answers land at the task interval, not at once. A scheduled run starts Claude even when there is no mail, then stops if `NEW.md` says there are no new messages.
-
-Status is untested until this setup is confirmed on a real machine.
-
-## Remove it
-
-```bash
-agentcoop desktop remove frontend
-```
-
-That removes the helper, `NEW.md`, and the zip. Posted answers in `outbox/claude_desktop/sent/` stay.
+That writes a leave request. Files you edited stay in place.

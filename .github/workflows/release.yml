@@ -60,20 +60,27 @@ jobs:
         run: |
           mkdir -p dist/out
           if [ "$RUNNER_OS" = "Windows" ]; then
-            python -m PyInstaller --onefile --name agentcoop --paths src \
-              --add-data "src/agentcoop/templates;templates" \
-              --add-data "src/agentcoop/gitshim.py;agentcoop" \
+            DATA="--add-data src/agentcoop/templates;templates --add-data src/agentcoop/gitshim.py;agentcoop --add-data skills/claude-desktop;skills/claude-desktop"
+          else
+            DATA="--add-data src/agentcoop/templates:templates --add-data src/agentcoop/gitshim.py:agentcoop --add-data skills/claude-desktop:skills/claude-desktop"
+          fi
+          TK=""
+          if [ "$RUNNER_OS" = "Windows" ] || [ "$RUNNER_OS" = "macOS" ]; then
+            TK="--collect-all tkinter --hidden-import tkinter"
+          fi
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            python -m PyInstaller --onefile --name agentcoop --paths src $TK $DATA \
               src/agentcoop/__main__.py
             mv dist/agentcoop.exe "dist/out/${{ matrix.artifact }}.exe"
-            python -m PyInstaller --onefile --noconsole --name agentcoopw --paths src \
-              --add-data "src/agentcoop/templates;templates" \
-              --add-data "src/agentcoop/gitshim.py;agentcoop" \
+            python -m PyInstaller --onefile --noconsole --name agentcoopw --paths src $TK $DATA \
               src/agentcoop/__main__.py
             mv dist/agentcoopw.exe dist/out/agentcoopw-windows-x64.exe
+            python scripts/pack_windows_zip.py \
+              "dist/out/${{ matrix.artifact }}.exe" \
+              dist/out/agentcoopw-windows-x64.exe \
+              "dist/out/${{ matrix.artifact }}.zip"
           else
-            python -m PyInstaller --onefile --name agentcoop --paths src \
-              --add-data "src/agentcoop/templates:templates" \
-              --add-data "src/agentcoop/gitshim.py:agentcoop" \
+            python -m PyInstaller --onefile --name agentcoop --paths src $TK $DATA \
               src/agentcoop/__main__.py
             mv dist/agentcoop "dist/out/${{ matrix.artifact }}"
             chmod +x "dist/out/${{ matrix.artifact }}"
@@ -82,11 +89,10 @@ jobs:
         shell: bash
         run: |
           if [ "$RUNNER_OS" = "Windows" ]; then
-            BIN="dist/out/${{ matrix.artifact }}.exe"
+            python3 scripts/smoke_test.py "dist/out/${{ matrix.artifact }}.zip"
           else
-            BIN="dist/out/${{ matrix.artifact }}"
+            python3 scripts/smoke_test.py "dist/out/${{ matrix.artifact }}"
           fi
-          python3 scripts/smoke_test.py "$BIN"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: ${{ matrix.artifact }}

@@ -69,6 +69,10 @@ def check_projects(data: object) -> list[str]:
         if history is not None:
             if not isinstance(history, list) or any(not isinstance(item, dict) for item in history):
                 problems.append(name + " roles_history must be a list of objects")
+        notices = record.get("notices")
+        if notices is not None:
+            if not isinstance(notices, list) or any(not isinstance(item, str) for item in notices):
+                problems.append(name + " notices must be a list of text")
     return problems
 
 

@@ -21,7 +21,6 @@ from agentcoop.projects import init_board_files
 from agentcoop.uninstall import _exec_start_runs_runner
 
 RULE = (
-    "Never run agentcoop setup, connect, disconnect, project, or ui. "
     "Run agentcoop uninstall --agent only when the person asks you to uninstall "
     "in your own chat."
 )

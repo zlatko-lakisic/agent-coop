@@ -162,6 +162,7 @@ def build_parser() -> argparse.ArgumentParser:
     connect_cmd = sub.add_parser("connect", help="Connect one agent")
     connect_cmd.add_argument("tool")
     _add_as(connect_cmd)
+    connect_cmd.add_argument("--tool", dest="self_tool", default="")
     connect_cmd.add_argument("--yes", action="store_true")
     connect_cmd.add_argument("--model", default="")
     connect_cmd.add_argument("--host", default="")
@@ -181,6 +182,7 @@ def build_parser() -> argparse.ArgumentParser:
     project_add.add_argument("path", nargs="?")
     project_add.add_argument("--name")
     project_add.add_argument("--driver")
+    _add_as(project_add)
     project_add.add_argument("--helper", action="append", default=[])
     project_add.add_argument("--lock-helpers", choices=("yes", "no"), default="no")
     project_add.add_argument("--gitignore", choices=("yes", "no"), default="yes")
@@ -202,10 +204,12 @@ def build_parser() -> argparse.ArgumentParser:
     helper_add_cmd.add_argument("name")
     helper_add_cmd.add_argument("agent")
     helper_add_cmd.add_argument("--note", required=True)
+    _add_as(helper_add_cmd)
     helper_add_cmd.set_defaults(func=cmd_helper_add)
     helper_remove_cmd = helper_sub.add_parser("remove")
     helper_remove_cmd.add_argument("name")
     helper_remove_cmd.add_argument("agent")
+    _add_as(helper_remove_cmd)
     helper_remove_cmd.set_defaults(func=cmd_helper_remove)
     project_rm = project_sub.add_parser("remove", help="Remove a project")
     project_rm.add_argument("name")
@@ -313,6 +317,18 @@ def build_parser() -> argparse.ArgumentParser:
     draft_cmd.add_argument("--body-file")
     draft_cmd.set_defaults(func=cmd_draft)
 
+    join_cmd = sub.add_parser("join", help="Join the current project as yourself")
+    _add_as(join_cmd)
+    _add_project(join_cmd)
+    join_cmd.add_argument("--note", default="")
+    join_cmd.add_argument("words", nargs="*")
+    join_cmd.set_defaults(func=cmd_join)
+    leave_cmd = sub.add_parser("leave", help="Leave a project you help with")
+    _add_as(leave_cmd)
+    _add_project(leave_cmd)
+    leave_cmd.add_argument("words", nargs="*")
+    leave_cmd.set_defaults(func=cmd_leave)
+
     skill_cmd = sub.add_parser("skill", help="Export a helper skill zip")
     skill_sub = skill_cmd.add_subparsers(dest="skill_cmd", required=True)
     skill_export = skill_sub.add_parser("export", help="Write a Claude desktop skill zip")
@@ -329,6 +345,9 @@ def build_parser() -> argparse.ArgumentParser:
     desktop_add_cmd.add_argument("--as", dest="as_name")
     desktop_add_cmd.add_argument("--note")
     desktop_add_cmd.set_defaults(func=cmd_desktop_add)
+    desktop_prepare_cmd = desktop_sub.add_parser("prepare", help="Write the Claude desktop skill zip")
+    desktop_prepare_cmd.add_argument("--out", dest="out_dir")
+    desktop_prepare_cmd.set_defaults(func=cmd_desktop_prepare)
     desktop_remove_cmd = desktop_sub.add_parser("remove", help="Remove Claude desktop from a project")
     desktop_remove_cmd.add_argument("name", nargs="?")
     desktop_remove_cmd.add_argument("--project")
@@ -494,6 +513,7 @@ def cmd_check(args: argparse.Namespace) -> int:
                 chunks.append(text.rstrip("\n"))
         if chunks:
             print("\n\n".join(chunks))
+        _refresh_after_check(board_root())
         return 0
     board = _board()
     names = projects_for_check(
@@ -506,10 +526,13 @@ def cmd_check(args: argparse.Namespace) -> int:
     chunks: list[str] = []
     broken = False
     payload = []
+    clearable: list[str] = []
     for name in names:
         report = check_inbox(board, name, agent)
         if not report.integrity_ok:
             broken = True
+        elif report.role == "driver" and report.notices:
+            clearable.append(name)
         if args.json:
             payload.append(_report_json(report))
         else:
@@ -520,9 +543,22 @@ def cmd_check(args: argparse.Namespace) -> int:
         print(json.dumps(payload if args.all_projects else (payload[0] if payload else {}), indent=2))
     elif chunks:
         print("\n\n".join(chunks))
+    from agentcoop.projects import clear_notices
+
+    for name in clearable:
+        clear_notices(board, name)
+    _refresh_after_check(board)
     if args.strict and broken:
         return 5
     return 0
+
+
+def _refresh_after_check(board: Path) -> None:
+    from agentcoop.projects import board_is_ready as _ready
+    from agentcoop.statusfile import refresh_status
+
+    if _ready(board):
+        refresh_status(board)
 
 
 def _report_json(report: object) -> dict:
@@ -903,7 +939,25 @@ def cmd_setup(args: argparse.Namespace) -> int:
 
 
 def cmd_connect(args: argparse.Namespace) -> int:
-    """Connect one tool."""
+    """Connect one tool, or the tool that is running this command."""
+    if args.tool == "self":
+        if not args.self_tool:
+            raise CoopError(
+                "Say which tool you are. Example: agentcoop connect self --tool cursor",
+                code=2,
+            )
+        from agentcoop.session import connect_self
+
+        name = connect_self(
+            args.self_tool,
+            agent_name=args.as_name or None,
+            model=args.model or None,
+            yes=bool(args.yes),
+        )
+        print(name + " is connected.")
+        return 0
+    if args.self_tool:
+        raise CoopError("Use --tool only with connect self.", code=2)
     name = connect_one(
         args.tool,
         agent_name=args.as_name,
@@ -916,21 +970,29 @@ def cmd_connect(args: argparse.Namespace) -> int:
     return 0
 
 
-def _require_person(expected: str, summary: str, *, kind: str) -> None:
-    """Ask a person to confirm a role change. Agents without a terminal stop here."""
-    if not sys.stdin.isatty():
-        raise CoopError(
-            "This changes who can write in a project, so a person has to confirm it. "
-            "Run it yourself in a terminal, or use: agentcoop ui",
-            code=2,
-        )
-    print(summary)
-    prompt = "Type the agent name to confirm: " if kind == "agent" else "Type the project name to confirm: "
-    if kind == "review":
-        prompt = "Type review to confirm: "
-    answer = input(prompt)
-    if answer.strip() != expected:
-        raise CoopError("Cancelled.", code=1)
+def _actor_name(args: argparse.Namespace, *, ignore_as: bool = False) -> str:
+    """Return the agent that is asking, from --as or AGENTCOOP_AGENT."""
+    if not ignore_as:
+        name = getattr(args, "as_name", None)
+        if name:
+            return str(name).strip()
+    return str(os.environ.get("AGENTCOOP_AGENT") or "").strip()
+
+
+def _require_person(
+    expected: str,
+    summary: str,
+    *,
+    kind: str,
+    actor: str = "",
+    target: str = "",
+) -> None:
+    """Ask a person to confirm a change that affects someone else."""
+    if target and actor and actor == target:
+        return
+    from agentcoop.confirm import confirm_person
+
+    confirm_person(summary, expected=expected, kind=kind, asked_by=actor)
 
 
 def cmd_disconnect(args: argparse.Namespace) -> int:
@@ -939,6 +1001,7 @@ def cmd_disconnect(args: argparse.Namespace) -> int:
         args.name,
         "This will disconnect " + args.name + ".",
         kind="agent",
+        actor=_actor_name(args),
     )
     notes = disconnect_agent(_board(), args.name)
     print(args.name + " is disconnected.")
@@ -954,7 +1017,14 @@ def cmd_agents(_args: argparse.Namespace) -> int:
 
 
 def cmd_project_add(args: argparse.Namespace) -> int:
-    """Add a project from flags or by asking questions in a terminal."""
+    """Add a project from flags, as yourself, or by asking questions in a terminal."""
+    if args.driver == "self":
+        from agentcoop.membership import add_self_driver
+
+        agent = _agent(args)
+        start = Path(args.path) if args.path else Path.cwd()
+        print(add_self_driver(agent, start, name=args.name))
+        return 0
     prompter = None
     if not args.driver:
         if sys.stdin.isatty() and sys.stdout.isatty():
@@ -1002,28 +1072,33 @@ def cmd_project_driver(args: argparse.Namespace) -> int:
         args.name,
         "This will make " + args.agent + " the driver of " + args.name + ".",
         kind="project",
+        actor=_actor_name(args),
     )
-    print(change_driver(args.name, args.agent, yes=args.yes))
+    print(change_driver(args.name, args.agent, yes=True))
     return 0
 
 
 def cmd_helper_add(args: argparse.Namespace) -> int:
-    """Add a helper."""
+    """Add a helper. Adding yourself does not ask again."""
     _require_person(
         args.name,
         "This will add " + args.agent + " as a helper on " + args.name + ".",
         kind="project",
+        actor=_actor_name(args),
+        target=args.agent,
     )
     print(helper_add(args.name, args.agent, args.note))
     return 0
 
 
 def cmd_helper_remove(args: argparse.Namespace) -> int:
-    """Remove a helper."""
+    """Remove a helper. Removing yourself does not ask again."""
     _require_person(
         args.name,
         "This will remove " + args.agent + " as a helper on " + args.name + ".",
         kind="project",
+        actor=_actor_name(args),
+        target=args.agent,
     )
     print(helper_remove(args.name, args.agent))
     return 0
@@ -1035,6 +1110,7 @@ def cmd_project_remove(args: argparse.Namespace) -> int:
         args.name,
         "This will remove the " + args.name + " project.",
         kind="project",
+        actor=_actor_name(args),
     )
     print(project_remove(args.name, yes=True))
     return 0
@@ -1052,6 +1128,7 @@ def cmd_project_set(args: argparse.Namespace) -> int:
         args.name,
         "This changes which commands a scheduled driver may run in " + args.name + ".",
         kind="project",
+        actor=_actor_name(args),
     )
     names = []
     for part in str(args.driver_shell).split(","):
@@ -1082,6 +1159,7 @@ def cmd_project_review(args: argparse.Namespace) -> int:
             "review",
             "This will restore the last saved roles." if args.restore else "This will accept the current projects.json.",
             kind="review",
+            actor=_actor_name(args),
         )
     print(review_projects(_board(), restore=args.restore, accept=args.accept))
     return 0
@@ -1128,6 +1206,39 @@ def _desktop_project(args: argparse.Namespace) -> str:
     return name
 
 
+def cmd_join(args: argparse.Namespace) -> int:
+    """Join a project as the agent that is asking."""
+    from agentcoop.membership import join_self
+
+    agent = _agent(args)
+    print(
+        join_self(
+            agent,
+            project=args.project,
+            cwd=Path.cwd(),
+            words=" ".join(args.words or []),
+            note=args.note or None,
+        )
+    )
+    return 0
+
+
+def cmd_leave(args: argparse.Namespace) -> int:
+    """Leave a project as the agent that is asking."""
+    from agentcoop.membership import leave_self
+
+    agent = _agent(args)
+    print(
+        leave_self(
+            agent,
+            project=args.project,
+            cwd=Path.cwd(),
+            words=" ".join(args.words or []),
+        )
+    )
+    return 0
+
+
 def cmd_skill_export(args: argparse.Namespace) -> int:
     """Write a skill zip for an outbox helper."""
     from agentcoop.desktop import export_skill
@@ -1151,8 +1262,21 @@ def cmd_desktop_add(args: argparse.Namespace) -> int:
         project,
         "This will add " + agent + " as a helper on " + project + ".",
         kind="project",
+        actor=_actor_name(args, ignore_as=True),
+        target=agent,
     )
     print(desktop_add(_board(), project, note=args.note, agent=agent), end="")
+    return 0
+
+
+def cmd_desktop_prepare(args: argparse.Namespace) -> int:
+    """Write the general Claude desktop skill zip."""
+    from agentcoop.desktop import prepare_skill
+
+    dest = Path(args.out_dir) if args.out_dir else None
+    path = prepare_skill(_board(), dest_dir=dest)
+    print(str(path))
+    print("Upload it in the Claude app: Customize > Skills, then + Create skill, then Upload a skill.")
     return 0
 
 
@@ -1166,6 +1290,8 @@ def cmd_desktop_remove(args: argparse.Namespace) -> int:
         project,
         "This will remove " + agent + " as a helper on " + project + ".",
         kind="project",
+        actor=_actor_name(args, ignore_as=True),
+        target=agent,
     )
     print(desktop_remove(_board(), project, agent=agent))
     return 0
@@ -1201,7 +1327,11 @@ def cmd_doctor(args: argparse.Namespace) -> int:
 
 
 def cmd_version(_args: argparse.Namespace) -> int:
-    """Print versions."""
+    """Print versions. The smoke test can also import tkinter."""
+    if os.environ.get("AGENTCOOP_IMPORT_TK") == "1":
+        import tkinter
+
+        print("tkinter ok")
     print("agentcoop " + __version__)
     print("spec " + SPEC_VERSION)
     return 0

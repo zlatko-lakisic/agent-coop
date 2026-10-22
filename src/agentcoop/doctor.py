@@ -692,10 +692,10 @@ def _outbox_checks(
     now: datetime | None = None,
 ) -> list[DoctorItem]:
     """Note slow outbox helpers, rejected answers, and a stale skill zip."""
-    from agentcoop.desktop import export_version_text
     from agentcoop.outbox import first_rejected_reason, is_outbox_agent, waiting_minutes
 
     items: list[DoctorItem] = []
+    skill_checked = False
     for name, record in (projects.get("projects") or {}).items():
         if only is not None and name not in only:
             continue
@@ -727,19 +727,23 @@ def _outbox_checks(
                         + reason,
                     )
                 )
-            zip_path = board / "exports" / (agent + "-" + name + ".zip")
-            version = export_version_text(board, name, agent)
-            if not zip_path.is_file() or version != __version__:
-                items.append(
-                    DoctorItem(
-                        "fix",
-                        "Run: agentcoop skill export --as "
-                        + agent
-                        + " --project "
-                        + name
-                        + ", then upload it again.",
+            if not skill_checked:
+                skill_checked = True
+                zip_path = board / "exports" / "claude-desktop.zip"
+                version = ""
+                sidecar = zip_path.with_name(zip_path.name + ".version")
+                if sidecar.is_file():
+                    try:
+                        version = sidecar.read_text(encoding="utf-8").strip()
+                    except OSError:
+                        version = ""
+                if not zip_path.is_file() or version != __version__:
+                    items.append(
+                        DoctorItem(
+                            "fix",
+                            "Run: agentcoop desktop prepare, then upload the skill again.",
+                        )
                     )
-                )
     return items
 
 

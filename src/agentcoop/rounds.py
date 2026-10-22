@@ -109,9 +109,13 @@ def tick(board: Path) -> int:
         return 0
     try:
         _write_text(board / ".state" / "last-tick", _stamp() + "\n")
+        from agentcoop.requests import process_board_requests
         from agentcoop.outbox import sync_board_outboxes
+        from agentcoop.statusfile import refresh_status
 
+        process_board_requests(board)
         sync_board_outboxes(board)
+        refresh_status(board)
         agents = load_agents(board).get("agents") or {}
         projects = load_projects(board).get("projects") or {}
         for name in agents:
@@ -165,6 +169,10 @@ def format_status(board: Path) -> str:
         lines.append("Last round: " + last.read_text(encoding="utf-8").strip())
     else:
         lines.append("Last round: none yet.")
+    for project_name, project in (load_projects(board).get("projects") or {}).items():
+        for notice in project.get("notices") or []:
+            if isinstance(notice, str) and notice:
+                lines.append(project_name + ": " + notice)
     agents = load_agents(board).get("agents") or {}
     projects = load_projects(board).get("projects") or {}
     runs = _load_runs(board)
