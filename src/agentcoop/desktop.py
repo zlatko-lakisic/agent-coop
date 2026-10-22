@@ -107,13 +107,15 @@ def skill_placeholders(board: Path, project: str, agent: str) -> dict[str, str]:
     }
 
 
-def general_skill_text() -> str:
-    """Return the Claude desktop skill that works on any computer.
+def _packaged_skill_text() -> str:
+    """Read the skill shipped inside this package.
 
-    The package copy is read with importlib.resources so a zipapp can see it.
-    A frozen build and a source checkout are fallbacks.
+    importlib.resources is tried first. Python 3.9 cannot open a folder whose
+    name contains a hyphen when the package is inside a zipapp, so the same
+    archive member is read directly in that case.
     """
     from importlib import resources
+    import zipfile
 
     try:
         text = (
@@ -123,8 +125,36 @@ def general_skill_text() -> str:
         )
         if text.strip():
             return text
-    except (FileNotFoundError, OSError, TypeError, ValueError):
+    except (FileNotFoundError, OSError, TypeError, ValueError, AttributeError, KeyError):
         pass
+    import agentcoop
+
+    location = getattr(agentcoop, "__file__", "")
+    normalized = location.replace("\\", "/")
+    marker = "/agentcoop/__init__.py"
+    index = normalized.rfind(marker)
+    if index <= 0:
+        return ""
+    archive = location[:index].rstrip("/\\")
+    try:
+        if not zipfile.is_zipfile(archive):
+            return ""
+        member = "agentcoop/data/" + GENERAL_SKILL + "/SKILL.md"
+        with zipfile.ZipFile(archive) as zipped:
+            return zipped.read(member).decode("utf-8")
+    except (OSError, KeyError, zipfile.BadZipFile, UnicodeError):
+        return ""
+
+
+def general_skill_text() -> str:
+    """Return the Claude desktop skill that works on any computer.
+
+    The package copy is read first, so a zipapp can see it. A frozen build
+    and a source checkout are fallbacks.
+    """
+    text = _packaged_skill_text()
+    if text.strip():
+        return text
     candidates = []
     meipass = getattr(sys, "_MEIPASS", "")
     if meipass:
