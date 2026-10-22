@@ -5,7 +5,9 @@ from __future__ import annotations
 import io
 import json
 import os
+import subprocess
 import sys
+import threading
 import unittest
 import urllib.parse
 import urllib.request
@@ -61,6 +63,7 @@ def _which(_name: str) -> str:
 class _Tk:
     last = None
     choice = "cancel"
+    text_before_window = ""
 
     def __init__(self) -> None:
         self.buttons: dict[str, object] = {}
@@ -88,6 +91,9 @@ class _Tk:
         self.after_fn = fn
 
     def mainloop(self) -> None:
+        buf = sys.stdout
+        if hasattr(buf, "getvalue"):
+            _Tk.text_before_window = buf.getvalue()
         if _Tk.choice == "allow":
             self.buttons["Allow"]()
         elif _Tk.choice == "timeout":
@@ -217,9 +223,20 @@ class DialogTests(unittest.TestCase):
             _connect_two(env)
             fake = _fake_tk()
             _Tk.choice = "allow"
-            with patch.dict(sys.modules, {"tkinter": fake}), patch("sys.stdin.isatty", return_value=False):
+            out = io.StringIO()
+            with patch.dict(sys.modules, {"tkinter": fake}), patch(
+                "sys.stdin.isatty", return_value=False
+            ), redirect_stdout(out):
                 self.assertEqual(main(["project", "driver", "demo", "claude_code"]), 0)
             self.assertEqual(load_projects(env.board)["projects"]["demo"]["driver"], "claude_code")
+            self.assertIn(
+                "Agent Co-op is showing a window on your screen. Click Allow to confirm.",
+                _Tk.text_before_window,
+            )
+            self.assertIn(
+                "Agent Co-op is showing a window on your screen. Click Allow to confirm.",
+                out.getvalue(),
+            )
             self.assertEqual(_Tk.last.after_ms, 120000)
             self.assertEqual(_Tk.last.attrs, ("-topmost", True))
             self.assertEqual(_Tk.last.focused, "Cancel")
@@ -235,11 +252,13 @@ class DialogTests(unittest.TestCase):
             self.assertEqual((env.board / "projects.json").read_bytes(), before)
             _Tk.choice = "timeout"
             err = io.StringIO()
+            out = io.StringIO()
             with patch.dict(sys.modules, {"tkinter": fake}), patch(
                 "sys.stdin.isatty", return_value=False
-            ), redirect_stderr(err):
+            ), redirect_stderr(err), redirect_stdout(out):
                 self.assertEqual(main(["project", "remove", "demo"]), 1)
-            self.assertIn(DENIED, err.getvalue())
+            self.assertIn("Nobody allowed the change in time, so nothing changed.", out.getvalue())
+            self.assertIn("Nobody allowed the change in time, so nothing changed.", err.getvalue())
             self.assertEqual((env.board / "projects.json").read_bytes(), before)
 
     def test_page_fallback_allows_and_timeout_cancels(self) -> None:
@@ -257,23 +276,81 @@ class DialogTests(unittest.TestCase):
                 "sys.stdin.isatty", return_value=False
             ), patch("agentcoop.confirm.webbrowser.open", side_effect=allow), redirect_stdout(out):
                 self.assertEqual(main(["project", "driver", "demo", "claude_code"]), 0)
-            self.assertIn("Agent Co-op opened a page in your browser. Click Allow to confirm.", out.getvalue())
+            self.assertIn("Agent Co-op needs you to allow this change:", out.getvalue())
+            self.assertIn("http://127.0.0.1:", out.getvalue())
+            self.assertIn("/confirm?", out.getvalue())
             self.assertEqual(load_projects(env.board)["projects"]["demo"]["driver"], "claude_code")
             before = (env.board / "projects.json").read_bytes()
             err = io.StringIO()
+            out = io.StringIO()
             with patch("agentcoop.confirm._ask_tk", side_effect=TkUnavailable("no")), patch(
                 "sys.stdin.isatty", return_value=False
             ), patch("agentcoop.confirm.webbrowser.open", return_value=True), patch(
                 "agentcoop.confirm.CONFIRM_TIMEOUT_SECONDS", 0.05
-            ), redirect_stderr(err), redirect_stdout(io.StringIO()):
+            ), redirect_stderr(err), redirect_stdout(out):
                 self.assertEqual(main(["project", "remove", "demo"]), 1)
-            self.assertIn(DENIED, err.getvalue())
+            self.assertIn("Nobody allowed the change in time, so nothing changed.", out.getvalue())
+            self.assertIn("Nobody allowed the change in time, so nothing changed.", err.getvalue())
+            self.assertEqual((env.board / "projects.json").read_bytes(), before)
+
+    def test_page_link_is_flushed_before_the_wait(self) -> None:
+        with support.TempEnv() as env:
+            _connect_two(env)
+            before = (env.board / "projects.json").read_bytes()
+            script = env.root / "ask.py"
+            script.write_text(
+                "import sys\n"
+                "sys.modules['tkinter'] = None\n"
+                "from agentcoop.cli import main\n"
+                "raise SystemExit(main(sys.argv[1:]))\n",
+                encoding="utf-8",
+            )
+            child_env = os.environ.copy()
+            child_env["PYTHONPATH"] = str(support.SRC)
+            child_env["AGENTCOOP_BOARD"] = str(env.board)
+            proc = subprocess.Popen(
+                [sys.executable, str(script), "project", "remove", "demo"],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                stdin=subprocess.PIPE,
+                env=child_env,
+            )
+            box: list[bytes] = []
+
+            def read() -> None:
+                if proc.stdout is None:
+                    return
+                chunks = []
+                while True:
+                    line = proc.stdout.readline()
+                    if not line:
+                        break
+                    chunks.append(line)
+                    if b"/confirm?" in b"".join(chunks):
+                        break
+                box.append(b"".join(chunks))
+
+            thread = threading.Thread(target=read)
+            thread.start()
+            thread.join(2)
+            try:
+                self.assertFalse(thread.is_alive())
+                text = (box[0] if box else b"").decode("utf-8", errors="replace")
+            finally:
+                proc.kill()
+                proc.wait(timeout=5)
+                for stream in (proc.stdout, proc.stderr, proc.stdin):
+                    if stream is not None:
+                        stream.close()
+            self.assertIn("Agent Co-op needs you to allow this change:", text)
+            self.assertIn("http://127.0.0.1:", text)
+            self.assertIn("/confirm?", text)
             self.assertEqual((env.board / "projects.json").read_bytes(), before)
 
     def test_window_text_names_the_change_and_the_agent(self) -> None:
         _Tk.choice = "cancel"
         with patch.dict(sys.modules, {"tkinter": _fake_tk()}):
-            self.assertFalse(ask_on_screen("This will remove the demo project.", "cursor"))
+            self.assertEqual(ask_on_screen("This will remove the demo project.", "cursor"), "cancel")
         labels = []
         # The fake records buttons, not labels. Ask again and keep the widget texts via a list.
         seen: list[str] = []
@@ -584,7 +661,7 @@ class StatusTests(unittest.TestCase):
 
 class SkillTests(unittest.TestCase):
     def test_skill_shape_rules_and_zip(self) -> None:
-        path = ROOT / "skills" / "claude-desktop" / "SKILL.md"
+        path = ROOT / "skills" / "agent-coop" / "SKILL.md"
         text = path.read_text(encoding="utf-8")
         self.assertLess(len(text.splitlines()), 150)
         self.assertTrue(text.startswith("---\n"))
@@ -595,7 +672,7 @@ class SkillTests(unittest.TestCase):
             front[key.strip()] = value.strip()
         self.assertLessEqual(len(front["name"]), 64)
         self.assertLessEqual(len(front["description"]), 200)
-        self.assertEqual(front["name"], "claude-desktop")
+        self.assertEqual(front["name"], "agent-coop")
         for phrase in (
             "outbox/claude_desktop/",
             "requests/claude_desktop/",
@@ -617,8 +694,8 @@ class SkillTests(unittest.TestCase):
             init_board_files(env.board)
             zip_path = prepare_skill(env.board)
             with zipfile.ZipFile(zip_path) as archive:
-                self.assertEqual(archive.namelist(), ["claude-desktop/SKILL.md"])
-                body = archive.read("claude-desktop/SKILL.md").decode("utf-8")
+                self.assertEqual(archive.namelist(), ["agent-coop/SKILL.md"])
+                body = archive.read("agent-coop/SKILL.md").decode("utf-8")
             self.assertEqual(body, text if text.endswith("\n") else text + "\n")
             for name in (
                 "SKILL.md.tmpl",
@@ -630,6 +707,14 @@ class SkillTests(unittest.TestCase):
                 rendered = render_template(name, agent_name="cursor", board=env.board)
                 for phrase in PHRASES:
                     self.assertIn(phrase, rendered, name)
+                self.assertIn(
+                    "When a command says it needs the person to allow a change, "
+                    "tell the person that message and the link in plain words, then wait for the result.",
+                    rendered,
+                    name,
+                )
+            packaged = ROOT / "src" / "agentcoop" / "data" / "agent-coop" / "SKILL.md"
+            self.assertEqual(path.read_bytes(), packaged.read_bytes())
 
 
 class WindowsZipTests(unittest.TestCase):
@@ -665,7 +750,7 @@ class WindowsZipTests(unittest.TestCase):
         self.assertIn("agentcoop-windows-x64", release)
         self.assertIn("${{ matrix.artifact }}.zip", release)
         self.assertIn("--collect-all tkinter", release)
-        self.assertIn("skills/claude-desktop", release)
+        self.assertIn("skills/agent-coop", release)
         smoke = (ROOT / "scripts" / "smoke_test.py").read_text(encoding="utf-8")
         self.assertIn("unpack_windows_zip", smoke)
         self.assertIn("AGENTCOOP_IMPORT_TK", smoke)

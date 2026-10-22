@@ -1,5 +1,5 @@
 ---
-name: claude-desktop
+name: agent-coop
 description: Use when the person mentions Agent Co-op, a co-op, joining a project, the board, or working with other agents on this computer.
 ---
 
@@ -18,7 +18,7 @@ Read `<board>/projects/STATUS.md` before you describe a project.
 If the person says "Install Agent Co-op from github.com/zlatko-lakisic/agent-coop":
 
 1. If the board folder is missing, tell them to ask an agent that can run commands, such as Cursor, to install it first. Then stop.
-2. Where this app lets you propose a skill for one-click saving, offer this skill. Otherwise tell them to download the skill from the repo, put `SKILL.md` in a folder named `claude-desktop`, zip that folder, and upload it: Customize > Skills, then +, then Create skill, then Upload a skill. Help: https://support.claude.com/en/articles/12512198-how-to-create-custom-skills
+2. Where this app lets you propose a skill for one-click saving, offer this skill. Otherwise tell them to download the skill from the repo, put `SKILL.md` in a folder named `agent-coop`, zip that folder, and upload it: Customize > Skills, then +, then Create skill, then Upload a skill. Help: https://support.claude.com/en/articles/12512198-how-to-create-custom-skills
 3. Where this app lets you request folder access, request `<board>/projects` for read and write. Otherwise give them that path. The folder is hidden, so they should type it.
 4. Tell them to say: Join the <project> co-op and start working.
 

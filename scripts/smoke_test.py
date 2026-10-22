@@ -123,6 +123,16 @@ def main() -> int:
                 sys.stderr.write(text)
                 return 1
         sys.stdout.write(text)
+        prepare = subprocess.run(
+            [*starter, "desktop", "prepare"],
+            cwd=str(root),
+            env=env,
+            capture_output=True,
+            text=True,
+        )
+        if prepare.returncode != 0:
+            sys.stderr.write(prepare.stdout + prepare.stderr)
+            return prepare.returncode
         quiet_installed = bindir / "agentcoopw.exe"
         if quiet_installed.is_file():
             code = _run_version([str(quiet_installed), "version"], env, tk=_wants_tk(quiet_installed))

@@ -24,7 +24,12 @@ from agentcoop.wizard import connect_one, helper_add, helper_remove
 
 DEFAULT_AGENT = "claude_desktop"
 DEFAULT_NOTE = "helps the driver reason"
-GENERAL_SKILL = "claude-desktop"
+GENERAL_SKILL = "agent-coop"
+OLD_GENERAL_SKILL = "claude-desktop"
+RENAME_EXPORT = (
+    "Re-export the Claude desktop skill with agentcoop desktop prepare and upload it again. "
+    "The skill has a new name."
+)
 
 
 def scheduled_prompt(project: str, agent: str) -> str:
@@ -103,14 +108,28 @@ def skill_placeholders(board: Path, project: str, agent: str) -> dict[str, str]:
 
 
 def general_skill_text() -> str:
-    """Return the Claude desktop skill that works on any computer."""
-    candidates = [
-        Path(__file__).resolve().parent / "data" / "claude-desktop" / "SKILL.md",
-        Path(__file__).resolve().parents[2] / "skills" / "claude-desktop" / "SKILL.md",
-    ]
+    """Return the Claude desktop skill that works on any computer.
+
+    The package copy is read with importlib.resources so a zipapp can see it.
+    A frozen build and a source checkout are fallbacks.
+    """
+    from importlib import resources
+
+    try:
+        text = (
+            resources.files("agentcoop")
+            .joinpath("data", GENERAL_SKILL, "SKILL.md")
+            .read_text(encoding="utf-8")
+        )
+        if text.strip():
+            return text
+    except (FileNotFoundError, OSError, TypeError, ValueError):
+        pass
+    candidates = []
     meipass = getattr(sys, "_MEIPASS", "")
     if meipass:
-        candidates.append(Path(meipass) / "skills" / "claude-desktop" / "SKILL.md")
+        candidates.append(Path(meipass) / "skills" / GENERAL_SKILL / "SKILL.md")
+    candidates.append(Path(__file__).resolve().parents[2] / "skills" / GENERAL_SKILL / "SKILL.md")
     for path in candidates:
         if path.is_file():
             return path.read_text(encoding="utf-8")
@@ -118,7 +137,7 @@ def general_skill_text() -> str:
 
 
 def prepare_skill(board: Path, dest_dir: Path | None = None) -> Path:
-    """Write claude-desktop.zip with claude-desktop/SKILL.md inside."""
+    """Write the skill zip. The folder name matches GENERAL_SKILL."""
     text = general_skill_text()
     payload = text if text.endswith("\n") else text + "\n"
     folder = Path(dest_dir) if dest_dir is not None else board / "exports"

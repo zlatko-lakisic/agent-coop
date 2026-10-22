@@ -367,7 +367,7 @@ TOOLS: tuple[Tool, ...] = (
             "It writes a join or leave request, then reads NEW.md and writes answers. "
             "agentcoop applies requests and answers on the next check or background round. "
             "Install from chat with docs/install-claude-desktop.md after Agent Co-op is on the computer. "
-            "The skill in the repo is skills/claude-desktop/SKILL.md. "
+            "The skill in the repo is skills/agent-coop/SKILL.md. "
             "agentcoop desktop prepare writes the upload zip. "
             "The Code side of the Claude desktop app is Claude Code, not this entry. "
             "TODO: detection paths per OS are not confirmed."

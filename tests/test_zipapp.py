@@ -120,6 +120,36 @@ class ZipappTests(unittest.TestCase):
             skill = env.home / ".claude" / "skills" / "agent-coop" / "SKILL.md"
             self.assertTrue(skill.is_file(), "Claude Code skill was not installed")
 
+    def test_zipapp_desktop_prepare_includes_the_skill(self) -> None:
+        import zipfile
+
+        with support.TempEnv() as env:
+            pyz = env.root / "agentcoop.pyz"
+            build_zipapp(pyz)
+            env_vars = _clean_env(env.home, env.board)
+            setup = subprocess.run(
+                [sys.executable, str(pyz), "setup", "--yes"],
+                capture_output=True,
+                text=True,
+                env=env_vars,
+                check=False,
+            )
+            self.assertEqual(setup.returncode, 0, setup.stderr)
+            result = subprocess.run(
+                [sys.executable, str(pyz), "desktop", "prepare"],
+                capture_output=True,
+                text=True,
+                env=env_vars,
+                check=False,
+            )
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            zips = list((env.board / "exports").glob("*.zip"))
+            self.assertEqual(len(zips), 1)
+            with zipfile.ZipFile(zips[0]) as archive:
+                self.assertIn("agent-coop/SKILL.md", archive.namelist())
+                body = archive.read("agent-coop/SKILL.md").decode("utf-8")
+            self.assertIn("name: agent-coop", body)
+
 
 if __name__ == "__main__":
     unittest.main()

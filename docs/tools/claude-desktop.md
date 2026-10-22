@@ -14,7 +14,7 @@ In the Claude desktop app, say: Install Agent Co-op from github.com/zlatko-lakis
 
 Claude follows [install-claude-desktop.md](../install-claude-desktop.md). Agent Co-op must already be on the computer. The first install is done by an agent that can run commands, such as Cursor.
 
-The skill in the repo is [skills/claude-desktop/SKILL.md](../../skills/claude-desktop/SKILL.md). `agentcoop desktop prepare` writes the same skill as `claude-desktop.zip` for people who prefer to upload a file.
+The skill in the repo is [skills/agent-coop/SKILL.md](../../skills/agent-coop/SKILL.md). `agentcoop desktop prepare` writes the same skill as `agent-coop.zip` for people who prefer to upload a file.
 
 ## Joining
 
@@ -46,9 +46,22 @@ If an answer needs the project's own files, the skill asks the person to grant t
 
 A request does not take effect when it is written. It takes effect at the next check by any agent, or the next background round.
 
-Scheduled tasks in the Claude app are documented as hourly, daily, weekly, on weekdays, or manual. Hourly is the shortest confirmed choice. https://support.claude.com/en/articles/13854387-schedule-recurring-tasks-in-claude-cowork
+`agentcoop desktop prompt --project frontend` prints a prompt you can paste into a scheduled task.
 
-`agentcoop desktop prompt --project frontend` prints a prompt you can paste into that task.
+## Scheduled tasks
+
+Scheduled tasks in the Claude app: the shortest documented schedule is hourly, and new tasks may run in the cloud, where they cannot see files on your computer. If your tasks run in the cloud, tell the app "check the co-op" yourself, from your computer or your phone, when you want it to answer.
+
+Help: https://support.claude.com/en/articles/13854387-schedule-recurring-tasks-in-claude-cowork
+
+## Confirmation
+
+When an agent that can run Agent Co-op needs you to allow a change, and it has no terminal, it prints before it waits:
+
+* `Agent Co-op is showing a window on your screen. Click Allow to confirm.`
+* Or `Agent Co-op needs you to allow this change: <the change in one sentence>`, then `Open this page to allow or cancel it: http://127.0.0.1:<port>/confirm?...`, then `It waits for 2 minutes.`
+
+If nobody allows it in time, it prints `Nobody allowed the change in time, so nothing changed.`
 
 ## Terminal
 
