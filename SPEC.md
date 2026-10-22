@@ -221,6 +221,7 @@ An agent acting as itself MAY do these without a separate confirmation, when the
 * add itself as a helper, or remove itself as a helper
 * connect itself
 * `start`, `stop`, `now`, `status`, `context`, and `progress`
+* `watch`, `watch stop`, and `watch start`
 * `uninstall --agent`, which moves the board and does not delete it
 
 These MUST ask the person to confirm before anything changes:
@@ -240,12 +241,12 @@ This protocol does not grant file access. File access comes from each tool, and 
 
 ## 15. Requests and STATUS.md
 
-A helper that cannot run `agentcoop` MAY write `requests/<agent>/<utc>.json` containing `{"action": "join"}` or `{"action": "leave"}`, and an optional `note`. The writer is that agent.
+A helper that cannot run `agentcoop` MAY write `requests/<agent>/<utc>.json` containing `{"action": "join"}` or `{"action": "leave"}`, and an optional `note`. The same helper MAY write `{"action": "stop_watching"}` or `{"action": "start_watching"}`. The writer is that agent.
 
-`agentcoop` MUST process those files on every `tick`, and at the start of every `check` by a member of that project, together with the outbox. `tick` MUST also cover projects whose members are not checking. A file modified less than 5 seconds ago MUST be left in place.
+`agentcoop` MUST process those files on every `tick`, and at the start of every `check` by a member of that project, together with the outbox. `watch` MUST process them on each poll so a stop takes effect while an agent is waiting. `tick` MUST also cover projects whose members are not checking. A file modified less than 5 seconds ago MUST be left in place.
 
-`join` and `leave` apply only to the agent named by the folder. Any other action MUST be moved to `requests/<agent>/rejected/` with the reason `This needs a person. Ask an agent that can run Agent Co-op, such as Cursor, or use the Agent Co-op page.`
+`join` and `leave` apply only to the agent named by the folder. `stop_watching` and `start_watching` apply only when that agent is a member. They set or clear `projects/<project>/watch.json`. Any other action MUST be moved to `requests/<agent>/rejected/` with the reason `This needs a person. Ask an agent that can run Agent Co-op, such as Cursor, or use the Agent Co-op page.`
 
-A processed `join` or `leave` file MUST move to `requests/<agent>/done/` with a one-line result file beside it.
+A processed join, leave, stop_watching, or start_watching file MUST move to `requests/<agent>/done/` with a one-line result file beside it. `stop_watching` and `start_watching` from an agent who is not a member MUST move to `requests/<agent>/rejected/`.
 
-`agentcoop` MUST write `projects/STATUS.md` on every `tick`, `check`, `send`, and membership change. The file lists each project's name, folder, driver, and helpers, whether the background schedule is on, the time of the last round, and each project's latest progress headline.
+`agentcoop` MUST write `projects/STATUS.md` on every `tick`, `check`, `send`, and membership change, and when a heartbeat or the stop flag changes. The file lists each project's name, folder, driver, and helpers, whether the background schedule is on, the time of the last round, each project's latest progress headline, whether checking is on or stopped, and whether each agent is watching.

@@ -9,6 +9,7 @@ import os
 import subprocess
 import sys
 import tempfile
+import time
 import zipfile
 from pathlib import Path
 
@@ -53,6 +54,91 @@ def _run_version(argv: list[str], env: dict, *, tk: bool = False) -> int:
     if completed.returncode != 0 or (tk and "tkinter ok" not in completed.stdout):
         sys.stderr.write(text)
         return completed.returncode or 1
+    return 0
+
+
+def _watch_smoke(command: Path, env: dict, root: Path) -> int:
+    """Prove watch returns when a message arrives during a 1 minute wait."""
+    connected = subprocess.run(
+        [str(command), "connect", "claude-code", "--yes"],
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+    if connected.returncode != 0:
+        sys.stderr.write(connected.stdout + connected.stderr)
+        return connected.returncode or 1
+    demo = root / "demo"
+    demo.mkdir()
+    added = subprocess.run(
+        [
+            str(command),
+            "project",
+            "add",
+            str(demo),
+            "--name",
+            "smoke",
+            "--driver",
+            "cursor",
+            "--helper",
+            "claude_code=reviews",
+            "--gitignore",
+            "no",
+            "--yes",
+        ],
+        env=env,
+        cwd=str(demo),
+        capture_output=True,
+        text=True,
+    )
+    if added.returncode != 0:
+        sys.stderr.write(added.stdout + added.stderr)
+        return added.returncode or 1
+    watch = subprocess.Popen(
+        [str(command), "watch", "--as", "claude_code", "--project", "smoke", "--timeout", "1"],
+        env=env,
+        cwd=str(demo),
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    time.sleep(2)
+    sent = subprocess.run(
+        [
+            str(command),
+            "send",
+            "--as",
+            "cursor",
+            "--project",
+            "smoke",
+            "--to",
+            "claude_code",
+            "--subject",
+            "Ping",
+            "--body",
+            "Hello from smoke.",
+        ],
+        env=env,
+        cwd=str(demo),
+        capture_output=True,
+        text=True,
+    )
+    if sent.returncode != 0:
+        watch.kill()
+        sys.stderr.write(sent.stdout + sent.stderr)
+        return sent.returncode or 1
+    try:
+        output, errors = watch.communicate(timeout=40)
+    except subprocess.TimeoutExpired:
+        watch.kill()
+        sys.stderr.write("watch did not finish\n")
+        return 1
+    if watch.returncode != 0 or "Handle these, then run agentcoop watch again." not in output:
+        sys.stderr.write(output + errors)
+        return watch.returncode or 1
+    if "Read from cursor: Ping. Hello from smoke." not in output:
+        sys.stderr.write(output + errors)
+        return 1
     return 0
 
 
@@ -123,6 +209,8 @@ def main() -> int:
                 sys.stderr.write(text)
                 return 1
         sys.stdout.write(text)
+        if _watch_smoke(command, env, Path(raw)) != 0:
+            return 1
         prepare = subprocess.run(
             [*starter, "desktop", "prepare"],
             cwd=str(root),

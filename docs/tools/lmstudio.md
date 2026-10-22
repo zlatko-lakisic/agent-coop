@@ -14,6 +14,8 @@ Read-only lock: advisory
 
 Background runs: yes
 
+Keeps checking: none
+
 Status: untested
 
 The chat window has no file tools without MCP, so it is not a member. Only the local server is used, through the OpenAI-compatible API. TODO: detection paths per OS are not confirmed.

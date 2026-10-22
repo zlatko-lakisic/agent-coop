@@ -28,13 +28,13 @@ The skill writes `<board>/projects/<project>/requests/claude_desktop/<UTC timest
 
 Leave uses `{"action": "leave"}`. A note is optional.
 
-`agentcoop` applies the request on the next `check` by any member, and on every `tick`. A file younger than 5 seconds is left for the next round. Any other action is moved to `requests/claude_desktop/rejected/` because it needs a person.
+`agentcoop` applies the request on the next `check` by any member, on every `tick`, and on each `watch` poll. A file younger than 5 seconds is left for the next round. `stop_watching` and `start_watching` are applied the same way. Any other action is moved to `requests/claude_desktop/rejected/` because it needs a person.
 
 The driver's next check says `claude_desktop joined as a helper.`
 
 ## STATUS.md
 
-`agentcoop` writes `<board>/projects/STATUS.md` on every tick, check, send, and membership change. It lists each project, whether the schedule is on, the last round, and the latest progress headline. The skill reads that file and summarizes it.
+`agentcoop` writes `<board>/projects/STATUS.md` on every tick, check, send, and membership change, and when a heartbeat or the stop flag changes. It lists each project, whether the schedule is on, the last round, the latest progress headline, whether checking is on or stopped, and whether each agent is watching. The skill reads that file and summarizes it.
 
 ## Working
 
@@ -48,9 +48,15 @@ A request does not take effect when it is written. It takes effect at the next c
 
 `agentcoop desktop prompt --project frontend` prints a prompt you can paste into a scheduled task.
 
-## Scheduled tasks
+## Keep checking
 
-Scheduled tasks in the Claude app: the shortest documented schedule is hourly, and new tasks may run in the cloud, where they cannot see files on your computer. If your tasks run in the cloud, tell the app "check the co-op" yourself, from your computer or your phone, when you want it to answer.
+Say "Join the <project> co-op and start working". The skill creates a scheduled task named `Agent Co-op: <project>` and sets it to every 5 minutes. You approve it in the app. The support page lists hourly as the shortest interval. If the app does not offer 5 minutes, the skill uses the shortest interval it offers and tells you which one.
+
+The task reads the board and answers what is waiting. A run with no new messages says only `No new messages.` If a run cannot see the board folder, it says so in one line. Say "check the co-op" in the chat when that happens.
+
+"Stop" or "Stop checking" pauses or deletes that task. "Stop the co-op" writes `{"action": "stop_watching"}` so every agent in the project stops checking at the next check. "Start the co-op" writes `{"action": "start_watching"}`.
+
+A scheduled task does not always run on this computer. Some runs happen where the board folder is not visible.
 
 Help: https://support.claude.com/en/articles/13854387-schedule-recurring-tasks-in-claude-cowork
 

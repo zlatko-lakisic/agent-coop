@@ -14,6 +14,18 @@ You do not run `agentcoop`. Follow these steps, then stop.
 3. Ask for access to `<board>/projects` (read and write). Where the app lets you request folder access, request it. Otherwise give the person the exact path. The folder is hidden, so they should type it. Local files in the desktop app: https://support.claude.com/en/articles/13345190-get-started-with-claude-cowork
 4. Tell the person what to say next: Join the <project> co-op and start working.
 
+## Keep checking
+
+After the person says "Join the <project> co-op and start working", create a scheduled task without asking a second time. The person approves it in the app. Name it `Agent Co-op: <project>`. Set it to run every 5 minutes. The support page lists hourly as the shortest interval, but a 5 minute task is what to ask for. If the app does not offer 5 minutes, use the shortest interval it offers and tell the person which one.
+
+The task prompt is: Check the Agent Co-op board for the <project> project as claude_desktop, using the Agent Co-op skill. If STATUS.md says checking is stopped for this project, stop right away. If NEW.md says no new messages, stop right away. Otherwise answer each message, then stop.
+
+"Stop" or "Stop checking" pauses or deletes that task where the app allows. Otherwise tell the person the exact steps in one line. "Stop the co-op" writes a `stop_watching` request. "Start the co-op" writes a `start_watching` request. The next check applies it.
+
+Do not say the scheduled task always runs on this computer. If a run cannot see the board folder, the task result says so in one line. The person can then say "check the co-op" in the chat.
+
+Help: https://support.claude.com/en/articles/13854387-schedule-recurring-tasks-in-claude-cowork
+
 An agent that can run commands can also write the zip with `agentcoop desktop prepare`.
 
 If that agent must ask you to allow a change, it prints one of these before it waits:

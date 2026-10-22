@@ -14,6 +14,8 @@ Read-only lock: todo
 
 Background runs: no
 
+Keeps checking: none
+
 Status: planned
 
 TODO: verify how Cline loads a skill or rule. Status planned.

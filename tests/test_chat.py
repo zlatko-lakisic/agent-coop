@@ -715,6 +715,22 @@ class SkillTests(unittest.TestCase):
                 )
             packaged = ROOT / "src" / "agentcoop" / "data" / "agent-coop" / "SKILL.md"
             self.assertEqual(path.read_bytes(), packaged.read_bytes())
+            for copy in (text, packaged.read_text(encoding="utf-8")):
+                self.assertIn("Read from <sender>: <subject>.", copy)
+                self.assertIn("Sent to <recipient>: <subject>.", copy)
+                self.assertIn("every 5 minutes", copy)
+                self.assertIn("stop_watching", copy)
+                self.assertIn("No new messages.", copy)
+            for name in (
+                "SKILL.md.tmpl",
+                "cursor-rule.mdc.tmpl",
+                "AGENTS.md.tmpl",
+                "GEMINI.md.tmpl",
+            ):
+                rendered = render_template(name, agent_name="cursor", board=env.board)
+                self.assertIn("Read from <sender>: <subject>.", rendered, name)
+                self.assertIn("Sent to <recipient>: <subject>.", rendered, name)
+                self.assertIn("watch --as", rendered, name)
 
 
 class WindowsZipTests(unittest.TestCase):
@@ -755,6 +771,8 @@ class WindowsZipTests(unittest.TestCase):
         self.assertIn("unpack_windows_zip", smoke)
         self.assertIn("AGENTCOOP_IMPORT_TK", smoke)
         self.assertIn("version", smoke)
+        self.assertIn("watch", smoke)
+        self.assertIn("--timeout", smoke)
 
 
 def unpack_windows_zip(zip_path: Path, dest: Path):

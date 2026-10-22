@@ -14,6 +14,8 @@ Read-only lock: todo
 
 Background runs: no
 
+Keeps checking: none
+
 Status: planned
 
 Agent mode in VS Code. TODO: verify the skill path. Until then, install uses an AGENTS.md section.

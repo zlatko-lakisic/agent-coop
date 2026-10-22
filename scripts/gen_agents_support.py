@@ -59,6 +59,7 @@ def render() -> str:
         lines.append("- Hooks: " + tool.hooks)
         lines.append("- Read-only lock: " + tool.read_only_lock)
         lines.append("- Background runs: " + _background_label(tool.headless))
+        lines.append("- Keeps checking: " + tool.keeps_checking)
         lines.append("- Status: " + tool.status)
         if tool.helper_note:
             lines.append("- Suggested helper note: " + tool.helper_note)
@@ -91,6 +92,8 @@ def render_tool_page(tool: object) -> str:
     lines.append("Read-only lock: " + tool.read_only_lock)  # type: ignore[attr-defined]
     lines.append("")
     lines.append("Background runs: " + _background_label(tool.headless))  # type: ignore[attr-defined]
+    lines.append("")
+    lines.append("Keeps checking: " + tool.keeps_checking)  # type: ignore[attr-defined]
     lines.append("")
     lines.append("Status: " + tool.status)  # type: ignore[attr-defined]
     lines.append("")

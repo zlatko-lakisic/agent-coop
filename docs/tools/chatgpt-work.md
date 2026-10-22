@@ -14,6 +14,8 @@ Read-only lock: advisory
 
 Background runs: no
 
+Keeps checking: none
+
 Status: planned
 
 Observer, planned. The user grants ~/.agent_board/ and the project folder in the app, then pastes the skill into project instructions. TODO: confirm whether ChatGPT Work can write to granted local folders. Until then it cannot reply or mark done. Answers when you open the app.

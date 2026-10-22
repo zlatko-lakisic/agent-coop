@@ -14,6 +14,8 @@ Read-only lock: todo
 
 Background runs: todo
 
+Keeps checking: none
+
 Status: planned
 
 A fully local driver can use an Ollama model. TODO: verify the skill path. Status planned. TODO: detection paths per OS are not confirmed. TODO: goose run exists, but a one-shot mode with permission controls that refuse writes outside the working folder is not confirmed.
