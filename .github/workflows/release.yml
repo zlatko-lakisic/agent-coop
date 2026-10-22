@@ -65,6 +65,11 @@ jobs:
               --add-data "src/agentcoop/gitshim.py;agentcoop" \
               src/agentcoop/__main__.py
             mv dist/agentcoop.exe "dist/out/${{ matrix.artifact }}.exe"
+            python -m PyInstaller --onefile --noconsole --name agentcoopw --paths src \
+              --add-data "src/agentcoop/templates;templates" \
+              --add-data "src/agentcoop/gitshim.py;agentcoop" \
+              src/agentcoop/__main__.py
+            mv dist/agentcoopw.exe dist/out/agentcoopw-windows-x64.exe
           else
             python -m PyInstaller --onefile --name agentcoop --paths src \
               --add-data "src/agentcoop/templates:templates" \

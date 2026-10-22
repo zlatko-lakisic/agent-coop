@@ -74,14 +74,14 @@ Web chat cannot join, because it cannot read files on this computer.
 
 - Agent name: `claude_desktop`
 - Can drive: no
-- Joins with: folder_grant
+- Joins with: outbox
 - Project files for: driver
 - Hooks: none
 - Read-only lock: advisory
 - Background runs: no
-- Status: planned
-- Suggested helper note: answers from connected folders
-- Notes: Connected folders plus a skill. TODO: match the existing Claude desktop setup exactly. Details are not filled in until they are provided. The Code side of the Claude desktop app is Claude Code, not this entry. TODO: detection paths per OS are not confirmed. Answers when you open the app.
+- Status: untested
+- Suggested helper note: helps the driver reason
+- Notes: Helper started by you or a scheduled task in the Claude app. Grant two folders (the project board folder read and write, the project folder read only), then upload the skill from agentcoop desktop add. The Code side of the Claude desktop app is Claude Code, not this entry. TODO: detection paths per OS are not confirmed. Status is untested until confirmed.
 
 ## Gemini CLI
 
@@ -213,10 +213,9 @@ Web chat cannot join, because it cannot read files on this computer.
 
 ## Open questions
 
-1. Exact setup of the existing Claude desktop workflow. The Claude desktop entry stays unfinished until those details are provided.
-2. Whether ChatGPT Work can write to granted local folders.
-3. Whether the ChatGPT desktop app's Codex side reads .codex/skills/.
-4. Skill paths for GitHub Copilot, OpenCode, Cline, and Goose.
-5. Current hook formats for Codex, Gemini CLI, and Cursor.
-6. Read-only permission settings per tool (exact config keys).
-7. Detection paths for each app on each OS.
+1. Whether ChatGPT Work can write to granted local folders.
+2. Whether the ChatGPT desktop app's Codex side reads .codex/skills/.
+3. Skill paths for GitHub Copilot, OpenCode, Cline, and Goose.
+4. Current hook formats for Codex, Gemini CLI, and Cursor.
+5. Read-only permission settings per tool (exact config keys).
+6. Detection paths for each app on each OS.

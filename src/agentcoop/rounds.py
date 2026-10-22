@@ -109,6 +109,9 @@ def tick(board: Path) -> int:
         return 0
     try:
         _write_text(board / ".state" / "last-tick", _stamp() + "\n")
+        from agentcoop.outbox import sync_board_outboxes
+
+        sync_board_outboxes(board)
         agents = load_agents(board).get("agents") or {}
         projects = load_projects(board).get("projects") or {}
         for name in agents:
@@ -168,6 +171,21 @@ def format_status(board: Path) -> str:
     today = _today()
     for name, agent in agents.items():
         display = str(agent.get("display") or name)
+        from agentcoop.tools import get_tool
+
+        join = ""
+        try:
+            join = get_tool(str(agent.get("tool") or "")).join_method
+        except KeyError:
+            join = ""
+        if join == "outbox":
+            from agentcoop.outbox import format_outbox_status
+
+            lines.append(
+                display + ": Started by you or by a scheduled task in the Claude app."
+            )
+            lines.extend(format_outbox_status(board, name))
+            continue
         helper_reason = schedulable_reason(board, name, role="helper")
         driver_reason = schedulable_reason(board, name, role="driver")
         if helper_reason and driver_reason:

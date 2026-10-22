@@ -497,6 +497,9 @@ def send(
             write_message_file(sent_dir(board, project, sender), payload)
         except FileExistsError:
             pass
+        from agentcoop.outbox import refresh_new_md_for_agent
+
+        refresh_new_md_for_agent(board, project, recipient, now=moment)
         return mid
     raise CoopError("Could not pick a unique message id. Try again.") from last_error
 
@@ -515,6 +518,9 @@ def mark_done(board: Path, project: str, agent: str, ids: list[str]) -> None:
         marker = done / mid
         marker.parent.mkdir(parents=True, exist_ok=True)
         marker.touch()
+    from agentcoop.outbox import refresh_new_md_for_agent
+
+    refresh_new_md_for_agent(board, project, agent)
 
 
 def check_inbox(
@@ -531,6 +537,12 @@ def check_inbox(
     role = role_of(record, agent)
     if not role:
         raise CoopError(agent + " is not a member of " + project + ".")
+    from agentcoop.outbox import sync_project_outbox
+
+    outbox_now = None
+    if now is not None:
+        outbox_now = datetime.fromtimestamp(now, timezone.utc)
+    sync_project_outbox(board, project, now=outbox_now)
     messages, issues = new_messages(board, project, agent, now=now)
     config = load_config(board)
     roots = list(config.get("allowed_roots") or [])

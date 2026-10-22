@@ -140,6 +140,35 @@ def _give_up(board: Path, agent: str, project: str, message, reason: str, log) -
     mark_done(board, project, agent, [file_id(message)])
 
 
+def answer_body_and_attachments(
+    board: Path,
+    *,
+    agent: str,
+    project: str,
+    message_id: str,
+    answer: str,
+) -> tuple[str, list[str]]:
+    """Return the send body and attachments for a helper answer.
+
+    A long answer, or one that contains a fenced diff, is written to
+    files/<agent>/<id>-answer.md and attached. The body is the first 20 lines.
+    """
+    config = load_config(board)
+    limit = int(config.get("body_limit_bytes") or 16384)
+    fenced = "```" in answer and ("diff" in answer or "```diff" in answer)
+    if len(answer.encode("utf-8")) <= limit and not fenced:
+        return answer, []
+    folder = files_dir(board, project, agent)
+    folder.mkdir(parents=True, exist_ok=True)
+    path = folder / (message_id + "-answer.md")
+    path.write_text(answer if answer.endswith("\n") else answer + "\n", encoding="utf-8")
+    lines = answer.splitlines()
+    body = "\n".join(lines[:20])
+    if len(lines) > 20:
+        body += "\n"
+    return body, [str(path.resolve())]
+
+
 def deliver_answer(
     board: Path,
     *,
@@ -150,21 +179,13 @@ def deliver_answer(
     log=print,
 ) -> None:
     """Send a helper answer, attaching it when it is long or contains a diff."""
-    config = load_config(board)
-    limit = int(config.get("body_limit_bytes") or 16384)
-    attachments: list[str] = []
-    body = answer
-    fenced = "```" in answer and ("diff" in answer or "```diff" in answer)
-    if len(answer.encode("utf-8")) > limit or fenced:
-        folder = files_dir(board, project, agent)
-        folder.mkdir(parents=True, exist_ok=True)
-        path = folder / (file_id(message) + "-answer.md")
-        path.write_text(answer if answer.endswith("\n") else answer + "\n", encoding="utf-8")
-        attachments.append(str(path.resolve()))
-        lines = answer.splitlines()
-        body = "\n".join(lines[:20])
-        if len(lines) > 20:
-            body += "\n"
+    body, attachments = answer_body_and_attachments(
+        board,
+        agent=agent,
+        project=project,
+        message_id=file_id(message),
+        answer=answer,
+    )
     try:
         send(
             board,

@@ -82,6 +82,64 @@ def archive_dir(board: Path, project: str, agent: str) -> Path:
     return project_dir(board, project) / "archive" / agent
 
 
+def inbox_new_md(board: Path, project: str, agent: str) -> Path:
+    """Return the plain-text new-message list for an outbox helper."""
+    return project_dir(board, project) / "inbox" / agent / "NEW.md"
+
+
+def outbox_dir(board: Path, project: str, agent: str) -> Path:
+    """Return the folder where an outbox helper writes answers."""
+    return project_dir(board, project) / "outbox" / agent
+
+
+def outbox_sent_dir(board: Path, project: str, agent: str) -> Path:
+    """Return the folder of posted outbox answers."""
+    return outbox_dir(board, project, agent) / "sent"
+
+
+def outbox_rejected_dir(board: Path, project: str, agent: str) -> Path:
+    """Return the folder of refused outbox answers."""
+    return outbox_dir(board, project, agent) / "rejected"
+
+
+def outbox_processing_dir(board: Path, project: str, agent: str) -> Path:
+    """Return the folder used to claim an outbox file while posting it."""
+    return outbox_dir(board, project, agent) / "processing"
+
+
+def native_path(path: Path | str, *, windows: bool | None = None) -> str:
+    """Return a path string with native separators.
+
+    A Windows path (drive letter or backslashes) keeps backslashes even when
+    this code is running on macOS or Linux, so a skill exported for a Windows
+    board stays readable there.
+    """
+    text = os.fspath(path)
+    if windows is None:
+        windows = os.name == "nt" or _looks_windows(text)
+    if windows:
+        return text.replace("/", "\\")
+    return text
+
+
+def _looks_windows(text: str) -> bool:
+    if "\\" in text:
+        return True
+    return len(text) >= 2 and text[0].isalpha() and text[1] == ":"
+
+
+def ensure_outbox_dirs(board: Path, project: str, agent: str) -> None:
+    """Create the outbox folders an outbox helper needs."""
+    for folder in (
+        outbox_dir(board, project, agent),
+        outbox_sent_dir(board, project, agent),
+        outbox_rejected_dir(board, project, agent),
+        outbox_processing_dir(board, project, agent),
+        inbox_new_md(board, project, agent).parent,
+    ):
+        private_dir(folder)
+
+
 def private_dir(folder: Path) -> None:
     """Create a folder and, on POSIX, keep it private to this account."""
     folder.mkdir(parents=True, exist_ok=True)

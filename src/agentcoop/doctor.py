@@ -100,6 +100,7 @@ def run_doctor(
     items.extend(_context_checks(board, projects, only=project_names, now=now))
     items.extend(_schedule_checks(board, agents, projects, now=now))
     items.extend(_progress_checks(board, projects, now=now))
+    items.extend(_outbox_checks(board, projects, agents, only=project_names, now=now))
     items.extend(_signin_checks(board, agents, only=member_names))
     if project:
         items.append(_hello_check(board, projects, project))
@@ -598,6 +599,12 @@ def _schedule_checks(board: Path, agents: dict, projects: dict, *, now: datetime
         items.append(DoctorItem("fix", "The git shim is missing while background checks are on. Run: agentcoop start"))
     items.extend(_worktree_checks(board, projects))
     for name, agent in (agents.get("agents") or {}).items():
+        try:
+            tool = get_tool(str(agent.get("tool") or ""))
+        except KeyError:
+            tool = None
+        if tool is not None and tool.join_method == "outbox":
+            continue
         reason = schedulable_reason(board, name, role="helper")
         if reason:
             items.append(DoctorItem("note", reason))
@@ -673,6 +680,66 @@ def _progress_checks(board: Path, projects: dict, *, now: datetime | None = None
         if any(item.re == mid for item in messages):
             continue
         items.append(DoctorItem("note", "Urgent request " + mid + " has had no reply for 30 minutes."))
+    return items
+
+
+def _outbox_checks(
+    board: Path,
+    projects: dict,
+    agents: dict,
+    *,
+    only: set[str] | None,
+    now: datetime | None = None,
+) -> list[DoctorItem]:
+    """Note slow outbox helpers, rejected answers, and a stale skill zip."""
+    from agentcoop.desktop import export_version_text
+    from agentcoop.outbox import first_rejected_reason, is_outbox_agent, waiting_minutes
+
+    items: list[DoctorItem] = []
+    for name, record in (projects.get("projects") or {}).items():
+        if only is not None and name not in only:
+            continue
+        for agent in record.get("helpers") or {}:
+            if agent not in (agents.get("agents") or {}):
+                continue
+            if not is_outbox_agent(board, agent):
+                continue
+            minutes = waiting_minutes(board, name, agent, now=now)
+            if minutes is not None and minutes > 15:
+                items.append(
+                    DoctorItem(
+                        "note",
+                        agent
+                        + " has not answered for "
+                        + str(minutes)
+                        + " minutes. Check that the Claude app is open and its scheduled task is running.",
+                    )
+                )
+            reason = first_rejected_reason(board, name, agent)
+            if reason:
+                items.append(
+                    DoctorItem(
+                        "fix",
+                        agent
+                        + " has rejected answers on "
+                        + name
+                        + ". First reason: "
+                        + reason,
+                    )
+                )
+            zip_path = board / "exports" / (agent + "-" + name + ".zip")
+            version = export_version_text(board, name, agent)
+            if not zip_path.is_file() or version != __version__:
+                items.append(
+                    DoctorItem(
+                        "fix",
+                        "Run: agentcoop skill export --as "
+                        + agent
+                        + " --project "
+                        + name
+                        + ", then upload it again.",
+                    )
+                )
     return items
 
 

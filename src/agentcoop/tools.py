@@ -351,7 +351,7 @@ TOOLS: tuple[Tool, ...] = (
         can_drive=False,
         can_run_commands=False,
         can_write_files=True,
-        join_method="folder_grant",
+        join_method="outbox",
         hooks="none",
         read_only_lock="advisory",
         detect=(
@@ -361,16 +361,16 @@ TOOLS: tuple[Tool, ...] = (
             ),
         ),
         install_paths=(),
-        status="planned",
+        status="untested",
         notes=(
-            "Connected folders plus a skill. "
-            "TODO: match the existing Claude desktop setup exactly. "
-            "Details are not filled in until they are provided. "
+            "Helper started by you or a scheduled task in the Claude app. "
+            "Grant two folders (the project board folder read and write, the project "
+            "folder read only), then upload the skill from agentcoop desktop add. "
             "The Code side of the Claude desktop app is Claude Code, not this entry. "
             "TODO: detection paths per OS are not confirmed. "
-            "Answers when you open the app."
+            "Status is untested until confirmed."
         ),
-        helper_note="answers from connected folders",
+        helper_note="helps the driver reason",
         headless="none",
         cli_names=(),
     ),

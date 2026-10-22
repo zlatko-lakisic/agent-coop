@@ -313,6 +313,32 @@ def build_parser() -> argparse.ArgumentParser:
     draft_cmd.add_argument("--body-file")
     draft_cmd.set_defaults(func=cmd_draft)
 
+    skill_cmd = sub.add_parser("skill", help="Export a helper skill zip")
+    skill_sub = skill_cmd.add_subparsers(dest="skill_cmd", required=True)
+    skill_export = skill_sub.add_parser("export", help="Write a Claude desktop skill zip")
+    skill_export.add_argument("--as", dest="as_name", required=True)
+    skill_export.add_argument("--project", required=True)
+    skill_export.add_argument("--out", dest="out_dir", help="Folder for the zip")
+    skill_export.set_defaults(func=cmd_skill_export)
+
+    desktop_cmd = sub.add_parser("desktop", help="Set up Claude desktop as a helper")
+    desktop_sub = desktop_cmd.add_subparsers(dest="desktop_cmd", required=True)
+    desktop_add_cmd = desktop_sub.add_parser("add", help="Add Claude desktop on a project")
+    desktop_add_cmd.add_argument("name", nargs="?")
+    desktop_add_cmd.add_argument("--project")
+    desktop_add_cmd.add_argument("--as", dest="as_name")
+    desktop_add_cmd.add_argument("--note")
+    desktop_add_cmd.set_defaults(func=cmd_desktop_add)
+    desktop_remove_cmd = desktop_sub.add_parser("remove", help="Remove Claude desktop from a project")
+    desktop_remove_cmd.add_argument("name", nargs="?")
+    desktop_remove_cmd.add_argument("--project")
+    desktop_remove_cmd.add_argument("--as", dest="as_name")
+    desktop_remove_cmd.set_defaults(func=cmd_desktop_remove)
+    desktop_prompt_cmd = desktop_sub.add_parser("prompt", help="Print the scheduled-task prompt")
+    desktop_prompt_cmd.add_argument("--project", required=True)
+    desktop_prompt_cmd.add_argument("--as", dest="as_name")
+    desktop_prompt_cmd.set_defaults(func=cmd_desktop_prompt)
+
     doctor_cmd = sub.add_parser("doctor", help="Check that Agent Co-op is set up")
     _add_project(doctor_cmd)
     doctor_cmd.add_argument("--json", action="store_true")
@@ -1090,6 +1116,67 @@ def cmd_runner(args: argparse.Namespace) -> int:
         once=args.once,
         system_prompt=prompt,
     )
+
+
+def _desktop_project(args: argparse.Namespace) -> str:
+    name = args.project or args.name
+    if not name:
+        raise CoopError(
+            "Name the project. Example: agentcoop desktop add demo",
+            code=2,
+        )
+    return name
+
+
+def cmd_skill_export(args: argparse.Namespace) -> int:
+    """Write a skill zip for an outbox helper."""
+    from agentcoop.desktop import export_skill
+
+    dest = Path(args.out_dir) if args.out_dir else None
+    path = export_skill(_board(), args.project, args.as_name, dest_dir=dest)
+    print(str(path))
+    print(
+        "Upload it in the Claude app: Customize > Skills, then + Create skill, then Upload a skill."
+    )
+    return 0
+
+
+def cmd_desktop_add(args: argparse.Namespace) -> int:
+    """Add Claude desktop as a helper on a project."""
+    from agentcoop.desktop import DEFAULT_AGENT, desktop_add
+
+    project = _desktop_project(args)
+    agent = args.as_name or DEFAULT_AGENT
+    _require_person(
+        project,
+        "This will add " + agent + " as a helper on " + project + ".",
+        kind="project",
+    )
+    print(desktop_add(_board(), project, note=args.note, agent=agent), end="")
+    return 0
+
+
+def cmd_desktop_remove(args: argparse.Namespace) -> int:
+    """Remove Claude desktop from a project. Keep sent answers."""
+    from agentcoop.desktop import DEFAULT_AGENT, desktop_remove
+
+    project = _desktop_project(args)
+    agent = args.as_name or DEFAULT_AGENT
+    _require_person(
+        project,
+        "This will remove " + agent + " as a helper on " + project + ".",
+        kind="project",
+    )
+    print(desktop_remove(_board(), project, agent=agent))
+    return 0
+
+
+def cmd_desktop_prompt(args: argparse.Namespace) -> int:
+    """Print the scheduled-task prompt."""
+    from agentcoop.desktop import DEFAULT_AGENT, scheduled_prompt
+
+    print(scheduled_prompt(args.project, args.as_name or DEFAULT_AGENT))
+    return 0
 
 
 def cmd_doctor(args: argparse.Namespace) -> int:
