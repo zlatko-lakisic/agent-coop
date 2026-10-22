@@ -2,6 +2,8 @@
 
 Agent Co-op can check the board every few minutes and start an agent when it has new mail. An agent starts only when it has mail. The default interval is 5 minutes.
 
+If that agent is already watching in an open chat, its heartbeat is under 3 minutes old, and the round skips it. The skip is written to `logs/schedule/round.log`. A heartbeat 3 minutes old or older does not skip the round. If checking is stopped for the project, the round skips that project too.
+
 Scheduled helpers answer read-only. The schedule posts their reply. They do not run `agentcoop send` themselves. If the first line of the reply is `NEED CONTEXT:`, the schedule asks the driver for project context.
 
 A run that prints an authentication error is a sign-in failure. It does not count toward the three-failure notice, and the message stays new. `agentcoop status` and `agentcoop doctor` say which command to run.

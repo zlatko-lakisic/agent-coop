@@ -35,6 +35,7 @@ class Tool:
     headless: object = "none"
     cli_names: tuple[str, ...] = ()
     login_hint: str = ""
+    keeps_checking: str = "none"
 
     def __post_init__(self) -> None:
         if self.key == "cursor" or self.join_method in ("agents_md", "gemini_md"):
@@ -107,7 +108,19 @@ TOOLS: tuple[Tool, ...] = (
             "Permissions: https://cursor.com/docs/cli/reference/permissions "
             "A person's ~/.cursor/cli-config.json may also hold permissions. How the two files "
             "combine is not documented, so keep broad allow rules out of the global file. "
-            "Sign in with agent login. https://cursor.com/docs/cli/reference/parameters"
+            "Sign in with agent login. https://cursor.com/docs/cli/reference/parameters "
+            "After Start working, Cursor starts agentcoop watch in the background. "
+            "A finished background command wakes the agent. "
+            "Cursor waits about 30 seconds for a foreground command, then moves it to the background. "
+            "It does not kill that command. "
+            "Shell Mode in the CLI kills a command at 30 seconds and that limit cannot be changed: "
+            "https://cursor.com/docs/cli/shell-mode "
+            "The default watch wait is 10 minutes, which fits because the command runs in the background. "
+            "There is no documented cap on how many steps one desktop turn may take. "
+            "If a turn ends and watch is not running, the person says Start working. "
+            "Headless agent -p can abort leftover background commands after the turn when you pass "
+            "--background-shell-timeout. https://cursor.com/docs/cli/changelog "
+            "Terminal tool: https://cursor.com/docs/agent/tools/terminal"
         ),
         helper_note="edits the project and asks helpers",
         headless={
@@ -134,6 +147,7 @@ TOOLS: tuple[Tool, ...] = (
         },
         cli_names=("agent", "cursor-agent"),
         login_hint="agent login",
+        keeps_checking="background task",
     ),
     Tool(
         key="claude-code",
@@ -156,6 +170,7 @@ TOOLS: tuple[Tool, ...] = (
             "check --summary, which stays quiet outside projects. "
             "TODO: exact permission keys for a read-only lock are not confirmed. "
             "TODO: detection paths per OS are not confirmed. "
+            "It keeps checking with agentcoop watch until the person says stop. "
             "The Code side of the Claude desktop app uses this entry. "
             "Sign in with claude auth login (https://code.claude.com/docs/en/cli-reference). "
             "Background flags confirmed at https://code.claude.com/docs/en/cli-reference : "
@@ -194,6 +209,7 @@ TOOLS: tuple[Tool, ...] = (
         },
         cli_names=("claude",),
         login_hint="claude auth login",
+        keeps_checking="watch loop",
     ),
     Tool(
         key="codex",
@@ -254,6 +270,7 @@ TOOLS: tuple[Tool, ...] = (
         },
         cli_names=("codex",),
         login_hint="codex login",
+        keeps_checking="watch loop",
     ),
     Tool(
         key="chatgpt-codex",
@@ -319,6 +336,7 @@ TOOLS: tuple[Tool, ...] = (
         },
         cli_names=("codex",),
         login_hint="codex login",
+        keeps_checking="watch loop",
     ),
     Tool(
         key="chatgpt-work",
@@ -370,11 +388,15 @@ TOOLS: tuple[Tool, ...] = (
             "The skill in the repo is skills/agent-coop/SKILL.md. "
             "agentcoop desktop prepare writes the upload zip. "
             "The Code side of the Claude desktop app is Claude Code, not this entry. "
+            "After Start working it creates a scheduled task named Agent Co-op: <project> every 5 minutes. "
+            "Stop or Stop checking pauses that task. Stop the co-op writes a stop_watching request. "
+            "A scheduled task does not always run on this computer. "
             "TODO: detection paths per OS are not confirmed."
         ),
         helper_note="helps the driver reason",
         headless="none",
         cli_names=(),
+        keeps_checking="scheduled task",
     ),
     Tool(
         key="gemini-cli",
@@ -422,6 +444,7 @@ TOOLS: tuple[Tool, ...] = (
         },
         cli_names=("gemini",),
         login_hint="gemini",
+        keeps_checking="watch loop",
     ),
     Tool(
         key="copilot",

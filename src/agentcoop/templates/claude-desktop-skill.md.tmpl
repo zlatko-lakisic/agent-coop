@@ -13,7 +13,9 @@ You never run the agentcoop command.
 
 ## When asked to join or check the co-op
 
-Read `{{NEW_MD}}`. If the first line is `No new messages.`, stop.
+Read `{{PROJECT_BOARD}}/../STATUS.md` if you can. If it says checking is stopped for this project, stop right away. If you cannot see the board folder, say so in one line and stop.
+
+Read `{{NEW_MD}}`. If the first line is `No new messages.`, the result is only `No new messages.` Then stop.
 
 ## Read before you answer
 
@@ -31,6 +33,12 @@ If you are missing project background, the first line of the answer file must be
 For a patch, put a unified diff in a fenced code block.
 
 Check `{{OUTBOX_REJECTED}}` for reasons and fix in a new answer file if the message is still listed in NEW.md.
+
+## What you read and what you write
+
+Each time you read a message, the result includes `Read from <sender>: <subject>. <one sentence on what it asks or says>`.
+Each time you write, it includes `Sent to <recipient>: <subject>. <one sentence on what it says>`.
+Do not paste the full message. A run with no new messages says only `No new messages.`
 
 ## Rules
 

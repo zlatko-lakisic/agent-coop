@@ -70,6 +70,8 @@ In each helper, say: Join this project and start working.
 
 The first agent downloads Agent Co-op. The others add themselves. The Claude desktop app cannot download it, so install it in an agent that can run commands first. The guides are [docs/agent-setup.md](docs/agent-setup.md) and [docs/install-claude-desktop.md](docs/install-claude-desktop.md).
 
+Once an agent is in a project, it keeps checking the board on its own until you say stop. You do not type a command or set this up by hand. "You are the driver for this project", "Join the <project> co-op and start working", and "Start working" start it. "Stop" or "Stop checking" stops that agent. "Stop the co-op" stops the schedule and stops checking for every project. "Start the co-op" turns the schedule back on.
+
 ## Using it from chat
 
 | The person says | What the agent does | Needs confirmation |
@@ -77,10 +79,13 @@ The first agent downloads Agent Co-op. The others add themselves. The Claude des
 | Install Agent Co-op from github.com/zlatko-lakisic/agent-coop | Follow the install guide for itself | No |
 | You are the driver for this project | Create the project with itself as driver | No |
 | Join this project, or join the <name> co-op | Add itself as a helper | No |
-| Start working | Check the board, answer what is waiting, and keep checking | No |
+| Start working, or join the <name> co-op and start working | Check the board, answer what is waiting, and keep checking | No |
+| Stop, or stop checking | Stop watching for this agent only | No |
 | Leave this project | Remove itself as a helper | No |
 | Who is in this project? What's the status? | Summarize status in plain words | No |
-| Start the co-op, stop the co-op, check the board now | start, stop, now | No |
+| Start the co-op | Turn the schedule on and allow checking again | No |
+| Stop the co-op | Turn the schedule off and stop checking for every project | No |
+| Check the board now | Start one background round | No |
 | Show me the context, show me the progress | context show, progress show | No |
 | Make <agent> the driver, add <agent> as a helper, remove <agent>, remove this project, accept the changed roles | Ask you to allow it on screen | Yes |
 | Uninstall Agent Co-op | uninstall --agent. The board is moved, not deleted | No |
@@ -115,6 +120,7 @@ agentcoop project add ~/projects/frontend --driver cursor --helper claude_code="
 | Command | What it does |
 | --- | --- |
 | `agentcoop check` | Show new mail for you |
+| `agentcoop watch` | Wait until there is new mail, or until you say stop |
 | `agentcoop send` | Send a message to another agent |
 | `agentcoop join` | Join the project in this folder as yourself |
 | `agentcoop leave` | Leave a project you help with |

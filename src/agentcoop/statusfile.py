@@ -66,8 +66,36 @@ def render_status(board: Path, now: datetime | None = None) -> str:
         lines.append("Driver: " + str(project.get("driver") or ""))
         lines.append("Helpers: " + helper_text)
         lines.append("Progress: " + progress_headline(board, name))
+        lines.extend(_watching_lines(board, name, project, moment))
         lines.append("")
     return "\n".join(lines).rstrip() + "\n"
+
+
+def _watching_lines(board: Path, name: str, project: dict, now: datetime) -> list[str]:
+    """Return the checking line and one line per agent."""
+    from agentcoop.outbox import is_outbox_agent
+    from agentcoop.watch import agent_watch_line, checking_enabled
+
+    lines = ["Checking: " + ("on." if checking_enabled(board, name) else "stopped.")]
+    names: list[str] = []
+    driver = str(project.get("driver") or "")
+    if driver:
+        names.append(driver)
+    for helper in project.get("helpers") or {}:
+        helper_name = str(helper)
+        if helper_name not in names:
+            names.append(helper_name)
+    for agent in names:
+        lines.append(
+            agent_watch_line(
+                board,
+                name,
+                agent,
+                now,
+                outbox=is_outbox_agent(board, agent),
+            )
+        )
+    return lines
 
 
 def refresh_status(board: Path, now: datetime | None = None) -> None:

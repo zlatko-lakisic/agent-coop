@@ -24,7 +24,7 @@ Do not put passwords, API keys, or tokens in a message or in project context. `a
 
 Two levels:
 
-* No confirmation, when you ask that agent in its own chat: create a project with itself as the driver, add itself as a helper, remove itself as a helper, connect itself, start, stop, now, status, context, progress, and `uninstall --agent`.
+* No confirmation, when you ask that agent in its own chat: create a project with itself as the driver, add itself as a helper, remove itself as a helper, connect itself, start, stop, now, status, context, progress, watch, watch stop, watch start, and `uninstall --agent`. Stopping or resuming checks does not change roles or files.
 * Confirmation needed: changing the driver, adding or removing any agent other than the one asking, removing a project, `project review --accept` and `--restore`, disconnect, and `project set --driver-shell`.
 
 In a terminal you type the name to allow the change. When there is no terminal, Agent Co-op opens a window. The window states the change in one sentence, says which agent asked, and has Allow and Cancel. Cancel is the default. The window stays on top and times out after 2 minutes as Cancel. If the window cannot open, Agent Co-op opens its page in the browser with the same text and buttons.

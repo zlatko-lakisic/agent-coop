@@ -292,6 +292,21 @@ def build_parser() -> argparse.ArgumentParser:
     wait_cmd.add_argument("--timeout", type=int, default=10)
     wait_cmd.set_defaults(func=cmd_wait)
 
+    watch_cmd = sub.add_parser(
+        "watch",
+        help="Wait for new mail, or stop and start checking for a project",
+    )
+    _add_as(watch_cmd)
+    _add_project(watch_cmd)
+    watch_cmd.add_argument(
+        "watch_action",
+        nargs="?",
+        default="",
+        help="stop sets the project flag, start clears it",
+    )
+    watch_cmd.add_argument("--timeout", type=int, default=10)
+    watch_cmd.set_defaults(func=cmd_watch)
+
     start_cmd = sub.add_parser("start", help="Turn on background checks")
     start_cmd.add_argument("--every", type=int, default=5)
     start_cmd.set_defaults(func=cmd_start)
@@ -409,6 +424,13 @@ def _project(args: argparse.Namespace, agent: str | None) -> str:
     )
 
 
+def _print_sent(recipient: str, subject: str, body: str) -> None:
+    """Print a one-line summary on standard error so a captured id stays one line."""
+    from agentcoop.chatlines import sent_line
+
+    print(sent_line(recipient, subject, body), file=sys.stderr, flush=True)
+
+
 def _read_body(args: argparse.Namespace) -> str:
     if args.body_file:
         if args.body_file == "-":
@@ -457,6 +479,7 @@ def cmd_send(args: argparse.Namespace) -> int:
             allow_secret=bool(args.allow_secret),
         )
         ids.append(mid)
+        _print_sent(recipient, args.subject, body)
         if args.urgent:
             from agentcoop.progress import record_urgent
 
@@ -654,12 +677,15 @@ def cmd_archive(args: argparse.Namespace) -> int:
 
 
 def cmd_progress_write(args: argparse.Namespace) -> int:
-    from agentcoop.progress import write_progress
+    from agentcoop.progress import section_text, write_progress
 
     agent = _agent(args)
     board = _board()
     project = resolve_project(board, explicit=args.project, cwd=Path.cwd(), agent=agent)
-    print(write_progress(board, project, agent, _read_body(args), allow_secret=bool(args.allow_secret)))
+    body = _read_body(args)
+    print(write_progress(board, project, agent, body, allow_secret=bool(args.allow_secret)))
+    working = section_text(body, "Working on now")
+    _print_sent("the project", "Progress", working or body)
     return 0
 
 
@@ -719,6 +745,41 @@ def cmd_wait(args: argparse.Namespace) -> int:
         time.sleep(5)
 
 
+def cmd_watch(args: argparse.Namespace) -> int:
+    """Wait for mail, or set and clear the project stop flag."""
+    from agentcoop.chatlines import sent_line
+    from agentcoop.watch import (
+        MAX_TIMEOUT_MINUTES,
+        MIN_TIMEOUT_MINUTES,
+        assert_member,
+        run_watch,
+        set_project_watching,
+    )
+
+    agent = _agent(args)
+    board = _board()
+    project = resolve_project(board, explicit=args.project, cwd=Path.cwd(), agent=agent)
+    assert_member(board, project, agent)
+    action = args.watch_action or ""
+    if action not in ("", "stop", "start"):
+        raise CoopError("Use agentcoop watch, agentcoop watch stop, or agentcoop watch start.", code=2)
+    if action == "stop":
+        set_project_watching(board, project, False, agent)
+        print(sent_line("the project", "Stop checking", "Checking is stopped for " + project + "."), flush=True)
+        return 0
+    if action == "start":
+        set_project_watching(board, project, True, agent)
+        print(sent_line("the project", "Start checking", "Checking is on for " + project + "."), flush=True)
+        return 0
+    minutes = int(args.timeout)
+    if minutes < MIN_TIMEOUT_MINUTES or minutes > MAX_TIMEOUT_MINUTES:
+        raise CoopError(
+            "The wait must be between " + str(MIN_TIMEOUT_MINUTES) + " and " + str(MAX_TIMEOUT_MINUTES) + " minutes.",
+            code=2,
+        )
+    return run_watch(board, project, agent, timeout_seconds=minutes * 60)
+
+
 def cmd_context_show(args: argparse.Namespace) -> int:
     """Print a project context version."""
     from agentcoop.context import show_context
@@ -739,14 +800,16 @@ def cmd_context_write(args: argparse.Namespace) -> int:
     agent = _agent(args)
     board = _board()
     project = resolve_project(board, explicit=args.project, cwd=Path.cwd(), agent=agent)
+    body = _read_body(args)
     name = write_context(
         board,
         project,
         agent,
-        _read_body(args),
+        body,
         allow_secret=bool(args.allow_secret),
     )
     print(name)
+    _print_sent("helpers", "Context", body)
     return 0
 
 
@@ -1211,15 +1274,15 @@ def cmd_join(args: argparse.Namespace) -> int:
     from agentcoop.membership import join_self
 
     agent = _agent(args)
-    print(
-        join_self(
-            agent,
-            project=args.project,
-            cwd=Path.cwd(),
-            words=" ".join(args.words or []),
-            note=args.note or None,
-        )
+    text = join_self(
+        agent,
+        project=args.project,
+        cwd=Path.cwd(),
+        words=" ".join(args.words or []),
+        note=args.note or None,
     )
+    print(text)
+    _print_sent("the project", "Join", text)
     return 0
 
 
@@ -1228,14 +1291,14 @@ def cmd_leave(args: argparse.Namespace) -> int:
     from agentcoop.membership import leave_self
 
     agent = _agent(args)
-    print(
-        leave_self(
-            agent,
-            project=args.project,
-            cwd=Path.cwd(),
-            words=" ".join(args.words or []),
-        )
+    text = leave_self(
+        agent,
+        project=args.project,
+        cwd=Path.cwd(),
+        words=" ".join(args.words or []),
     )
+    print(text)
+    _print_sent("the project", "Leave", text)
     return 0
 
 

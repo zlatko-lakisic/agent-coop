@@ -39,7 +39,9 @@ def scheduled_prompt(project: str, agent: str) -> str:
         + project
         + " project as "
         + agent
-        + ", using the Agent Co-op skill. If NEW.md says no new messages, stop right away."
+        + ", using the Agent Co-op skill. If STATUS.md says checking is stopped for this project, "
+        + "stop right away. If NEW.md says no new messages, stop right away. "
+        + "Otherwise answer each message, then stop."
     )
 
 

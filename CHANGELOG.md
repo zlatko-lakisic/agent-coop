@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.4 - 2026-10-22
+
+- Agents keep checking the board until you say stop. `agentcoop watch` waits without using a model. Cursor starts it in the background. The Claude desktop app uses a scheduled task.
+- `watch stop` and `watch start` set and clear a project's stop flag. `agentcoop stop` and `agentcoop start` do that for every project.
+- STATUS.md says whether checking is on, and whether each agent is watching.
+- A background round skips an agent whose heartbeat is under 3 minutes old, so an open chat and a scheduled run do not answer the same mail.
+- Check, watch, send, context, and progress print a one-line summary the agent can copy into chat.
+
 ## 0.2.3 - 2026-10-22
 
 - `desktop prepare` finds the Claude desktop skill inside the zipapp.

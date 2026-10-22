@@ -795,6 +795,14 @@ def render_check(report: InboxReport, *, summary: bool = False) -> str:
     count = len(visible)
     lines.append(str(count) + " new message" + ("" if count == 1 else "s"))
     lines.append("")
+    from agentcoop.chatlines import read_line
+
+    for item in visible:
+        if item.violation:
+            continue
+        lines.append(read_line(item.message.sender, item.message.subject, item.message.body))
+    if any(item.violation is None for item in visible):
+        lines.append("")
     for index, item in enumerate(visible, start=1):
         message = item.message
         shown_id = file_id(message)

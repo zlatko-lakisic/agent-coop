@@ -63,6 +63,9 @@ def start_schedule(board: Path, minutes: int, runner=None) -> None:
         "installed": _stamp(),
     }
     _write_json(schedule_path(board), record)
+    from agentcoop.watch import set_all_projects
+
+    set_all_projects(board, True, "person")
     print("Background checks are on, every " + str(minutes) + " minutes.")
 
 
@@ -86,6 +89,9 @@ def stop_schedule(board: Path, runner=None) -> None:
     path = schedule_path(board)
     if path.is_file():
         path.unlink()
+    from agentcoop.watch import set_all_projects
+
+    set_all_projects(board, False, "person")
     print("Background checks are off.")
 
 
@@ -143,11 +149,15 @@ def run_agent(board: Path, agent: str, project: str, *, popen=None, timeout_minu
         if record is None:
             raise CoopError("There is no project named " + project + ".")
         role = role_of(record, agent)
+        if role not in ("driver", "helper"):
+            return 0
+        reason = _watch_skip_reason(board, agent, project)
+        if reason:
+            _log_round(board, "skip " + agent + " in " + project + ": " + reason)
+            return 0
         if role == "driver":
             return _run_driver(board, agent, project, record, popen=popen, timeout_minutes=timeout_minutes)
-        if role == "helper":
-            return _run_helper(board, agent, project, record, popen=popen, timeout_minutes=timeout_minutes)
-        return 0
+        return _run_helper(board, agent, project, record, popen=popen, timeout_minutes=timeout_minutes)
     finally:
         _unlock(lock)
 
@@ -542,12 +552,35 @@ def _execute(board, agent, project, argv, cwd, *, popen, timeout_minutes) -> tup
     return code, output or ""
 
 
+def _watch_skip_reason(board, agent, project) -> str:
+    """Return why this agent should not run, or an empty string."""
+    from agentcoop.watch import checking_enabled, heartbeat_fresh
+
+    if not checking_enabled(board, project):
+        return "checking is stopped"
+    if heartbeat_fresh(board, project, agent):
+        return "heartbeat is fresh"
+    return ""
+
+
+def _log_round(board, line: str) -> None:
+    """Append one line to the round log."""
+    folder = board / "logs" / "schedule"
+    private_dir(folder)
+    with (folder / "round.log").open("a", encoding="utf-8") as handle:
+        handle.write(_stamp() + " " + line + "\n")
+
+
 def _should_start(board, agent, project, role) -> bool:
     from agentcoop.schedule import schedulable_reason
 
     if not _has_mail_in(board, agent, project):
         return False
     if schedulable_reason(board, agent, role=role):
+        return False
+    reason = _watch_skip_reason(board, agent, project)
+    if reason:
+        _log_round(board, "skip " + agent + " in " + project + ": " + reason)
         return False
     if _lock_held(board / ".state" / ("run-" + agent + ".lock")):
         return False
