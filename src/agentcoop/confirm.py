@@ -14,6 +14,8 @@ from urllib.parse import parse_qs, urlparse
 from agentcoop.errors import CoopError
 
 DENIED = "The person did not allow this change."
+TIMED_OUT = "Nobody allowed the change in time, so nothing changed."
+WINDOW_LINE = "Agent Co-op is showing a window on your screen. Click Allow to confirm."
 CONFIRM_TIMEOUT_MS = 120000
 CONFIRM_TIMEOUT_SECONDS = 120
 
@@ -27,12 +29,20 @@ def confirm_person(summary: str, *, expected: str, kind: str, asked_by: str = ""
     if sys.stdin.isatty():
         _confirm_terminal(summary, expected, kind)
         return
-    if not ask_on_screen(summary, asked_by):
-        raise CoopError(DENIED, code=1)
+    outcome = ask_on_screen(summary, asked_by)
+    if outcome in ("allow", True):
+        return
+    if outcome == "timeout":
+        print(TIMED_OUT, flush=True)
+        raise CoopError(TIMED_OUT, code=1)
+    raise CoopError(DENIED, code=1)
 
 
-def ask_on_screen(summary: str, asked_by: str) -> bool:
-    """Show a window, or a browser page when a window is not available."""
+def ask_on_screen(summary: str, asked_by: str) -> str:
+    """Show a window, or a browser page when a window is not available.
+
+    Returns allow, cancel, or timeout.
+    """
     try:
         return _ask_tk(summary, asked_by)
     except TkUnavailable:
@@ -49,7 +59,7 @@ def _confirm_terminal(summary: str, expected: str, kind: str) -> None:
         raise CoopError("Cancelled.", code=1)
 
 
-def _ask_tk(summary: str, asked_by: str) -> bool:
+def _ask_tk(summary: str, asked_by: str) -> str:
     try:
         import tkinter as tk
     except Exception as exc:
@@ -58,14 +68,19 @@ def _ask_tk(summary: str, asked_by: str) -> bool:
         root = tk.Tk()
     except Exception as exc:
         raise TkUnavailable("no display") from exc
-    result = {"ok": False}
+    print(WINDOW_LINE, flush=True)
+    result = {"value": "cancel"}
 
     def allow() -> None:
-        result["ok"] = True
+        result["value"] = "allow"
         root.destroy()
 
     def cancel() -> None:
-        result["ok"] = False
+        result["value"] = "cancel"
+        root.destroy()
+
+    def timed_out() -> None:
+        result["value"] = "timeout"
         root.destroy()
 
     root.title("Agent Co-op")
@@ -86,9 +101,9 @@ def _ask_tk(summary: str, asked_by: str) -> bool:
     cancel_button.focus_set()
     root.bind("<Escape>", lambda _event: cancel())
     root.protocol("WM_DELETE_WINDOW", cancel)
-    root.after(CONFIRM_TIMEOUT_MS, cancel)
+    root.after(CONFIRM_TIMEOUT_MS, timed_out)
     root.mainloop()
-    return bool(result["ok"])
+    return result["value"]
 
 
 class _ConfirmServer(ThreadingHTTPServer):
@@ -103,7 +118,7 @@ class _ConfirmServer(ThreadingHTTPServer):
         self.server_port = self.server_address[1]
 
 
-def _ask_page(summary: str, asked_by: str) -> bool:
+def _ask_page(summary: str, asked_by: str) -> str:
     token = secrets.token_urlsafe(16)
     result = {"ok": False}
     done = threading.Event()
@@ -147,19 +162,22 @@ def _ask_page(summary: str, asked_by: str) -> bool:
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     url = "http://127.0.0.1:" + str(port) + "/confirm?t=" + token
-    print("Agent Co-op opened a page in your browser. Click Allow to confirm.")
+    print("Agent Co-op needs you to allow this change: " + summary, flush=True)
+    print("Open this page to allow or cancel it: " + url, flush=True)
+    print("It waits for 2 minutes.", flush=True)
     try:
-        if not webbrowser.open(url):
-            print("The page is " + url)
+        webbrowser.open(url)
     except Exception:
-        print("The page is " + url)
+        pass
     try:
-        done.wait(CONFIRM_TIMEOUT_SECONDS)
+        finished = done.wait(CONFIRM_TIMEOUT_SECONDS)
     finally:
         server.shutdown()
         server.server_close()
         thread.join(timeout=2)
-    return bool(result["ok"])
+    if not finished:
+        return "timeout"
+    return "allow" if result["ok"] else "cancel"
 
 
 def _posted_choice(raw: bytes, content_type: str) -> str:

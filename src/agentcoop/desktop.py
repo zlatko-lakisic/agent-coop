@@ -24,7 +24,12 @@ from agentcoop.wizard import connect_one, helper_add, helper_remove
 
 DEFAULT_AGENT = "claude_desktop"
 DEFAULT_NOTE = "helps the driver reason"
-GENERAL_SKILL = "claude-desktop"
+GENERAL_SKILL = "agent-coop"
+OLD_GENERAL_SKILL = "claude-desktop"
+RENAME_EXPORT = (
+    "Re-export the Claude desktop skill with agentcoop desktop prepare and upload it again. "
+    "The skill has a new name."
+)
 
 
 def scheduled_prompt(project: str, agent: str) -> str:
@@ -102,15 +107,59 @@ def skill_placeholders(board: Path, project: str, agent: str) -> dict[str, str]:
     }
 
 
+def _packaged_skill_text() -> str:
+    """Read the skill shipped inside this package.
+
+    importlib.resources is tried first. Python 3.9 cannot open a folder whose
+    name contains a hyphen when the package is inside a zipapp, so the same
+    archive member is read directly in that case.
+    """
+    from importlib import resources
+    import zipfile
+
+    try:
+        text = (
+            resources.files("agentcoop")
+            .joinpath("data", GENERAL_SKILL, "SKILL.md")
+            .read_text(encoding="utf-8")
+        )
+        if text.strip():
+            return text
+    except (FileNotFoundError, OSError, TypeError, ValueError, AttributeError, KeyError):
+        pass
+    import agentcoop
+
+    location = getattr(agentcoop, "__file__", "")
+    normalized = location.replace("\\", "/")
+    marker = "/agentcoop/__init__.py"
+    index = normalized.rfind(marker)
+    if index <= 0:
+        return ""
+    archive = location[:index].rstrip("/\\")
+    try:
+        if not zipfile.is_zipfile(archive):
+            return ""
+        member = "agentcoop/data/" + GENERAL_SKILL + "/SKILL.md"
+        with zipfile.ZipFile(archive) as zipped:
+            return zipped.read(member).decode("utf-8")
+    except (OSError, KeyError, zipfile.BadZipFile, UnicodeError):
+        return ""
+
+
 def general_skill_text() -> str:
-    """Return the Claude desktop skill that works on any computer."""
-    candidates = [
-        Path(__file__).resolve().parent / "data" / "claude-desktop" / "SKILL.md",
-        Path(__file__).resolve().parents[2] / "skills" / "claude-desktop" / "SKILL.md",
-    ]
+    """Return the Claude desktop skill that works on any computer.
+
+    The package copy is read first, so a zipapp can see it. A frozen build
+    and a source checkout are fallbacks.
+    """
+    text = _packaged_skill_text()
+    if text.strip():
+        return text
+    candidates = []
     meipass = getattr(sys, "_MEIPASS", "")
     if meipass:
-        candidates.append(Path(meipass) / "skills" / "claude-desktop" / "SKILL.md")
+        candidates.append(Path(meipass) / "skills" / GENERAL_SKILL / "SKILL.md")
+    candidates.append(Path(__file__).resolve().parents[2] / "skills" / GENERAL_SKILL / "SKILL.md")
     for path in candidates:
         if path.is_file():
             return path.read_text(encoding="utf-8")
@@ -118,7 +167,7 @@ def general_skill_text() -> str:
 
 
 def prepare_skill(board: Path, dest_dir: Path | None = None) -> Path:
-    """Write claude-desktop.zip with claude-desktop/SKILL.md inside."""
+    """Write the skill zip. The folder name matches GENERAL_SKILL."""
     text = general_skill_text()
     payload = text if text.endswith("\n") else text + "\n"
     folder = Path(dest_dir) if dest_dir is not None else board / "exports"

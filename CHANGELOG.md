@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.3 - 2026-10-22
+
+- `desktop prepare` finds the Claude desktop skill inside the zipapp.
+- A confirmation with no terminal says what to allow, prints the page link, and says when the wait runs out.
+- The Claude desktop skill is named `agent-coop`, so the name does not contain "claude".
+
 ## 0.2.2 - 2026-10-22
 
 - You can install, drive, join, leave, and work from chat. An agent may do those for itself. Changes that affect someone else ask you in a window or on a page.

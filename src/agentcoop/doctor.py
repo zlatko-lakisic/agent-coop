@@ -729,7 +729,10 @@ def _outbox_checks(
                 )
             if not skill_checked:
                 skill_checked = True
-                zip_path = board / "exports" / "claude-desktop.zip"
+                from agentcoop.desktop import GENERAL_SKILL, OLD_GENERAL_SKILL, RENAME_EXPORT
+
+                zip_path = board / "exports" / (GENERAL_SKILL + ".zip")
+                old_zip = board / "exports" / (OLD_GENERAL_SKILL + ".zip")
                 version = ""
                 sidecar = zip_path.with_name(zip_path.name + ".version")
                 if sidecar.is_file():
@@ -737,7 +740,12 @@ def _outbox_checks(
                         version = sidecar.read_text(encoding="utf-8").strip()
                     except OSError:
                         version = ""
-                if not zip_path.is_file() or version != __version__:
+                current_ok = zip_path.is_file() and version == __version__
+                if current_ok:
+                    pass
+                elif old_zip.is_file():
+                    items.append(DoctorItem("fix", RENAME_EXPORT))
+                else:
                     items.append(
                         DoctorItem(
                             "fix",

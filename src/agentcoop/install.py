@@ -231,9 +231,11 @@ def build_zipapp(dest: Path) -> None:
             staging / "agentcoop",
             ignore=shutil.ignore_patterns("__pycache__", "*.pyc"),
         )
-        skill = package.parents[1] / "skills" / "claude-desktop" / "SKILL.md"
+        from agentcoop.desktop import GENERAL_SKILL
+
+        skill = package.parents[1] / "skills" / GENERAL_SKILL / "SKILL.md"
         if skill.is_file():
-            bundled = staging / "agentcoop" / "data" / "claude-desktop" / "SKILL.md"
+            bundled = staging / "agentcoop" / "data" / GENERAL_SKILL / "SKILL.md"
             bundled.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(skill, bundled)
         (staging / "__main__.py").write_text(

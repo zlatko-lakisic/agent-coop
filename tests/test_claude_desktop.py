@@ -442,7 +442,7 @@ class ClaudeDesktopTests(unittest.TestCase):
             helpers = load_projects(env.board)["projects"]["demo"]["helpers"]
             self.assertEqual(helpers["claude_desktop"], "helps the driver reason")
             self.assertTrue(outbox_dir(env.board, "demo", "claude_desktop").is_dir())
-            self.assertTrue((env.board / "exports" / "claude-desktop.zip").is_file())
+            self.assertTrue((env.board / "exports" / "agent-coop.zip").is_file())
 
     def test_desktop_remove_keeps_sent(self) -> None:
         with support.TempEnv() as env:
@@ -491,6 +491,20 @@ class ClaudeDesktopTests(unittest.TestCase):
             fixes = "\n".join(item.text for item in items if item.level == "fix")
             self.assertIn(
                 "Run: agentcoop desktop prepare, then upload the skill again.",
+                fixes,
+            )
+
+    def test_old_skill_export_asks_for_the_new_name(self) -> None:
+        with support.TempEnv() as env:
+            _ready(env)
+            folder = env.board / "exports"
+            folder.mkdir(parents=True, exist_ok=True)
+            (folder / "claude-desktop.zip").write_bytes(b"old")
+            items = run_doctor(env.board)
+            fixes = "\n".join(item.text for item in items if item.level == "fix")
+            self.assertIn(
+                "Re-export the Claude desktop skill with agentcoop desktop prepare and upload it again. "
+                "The skill has a new name.",
                 fixes,
             )
 
