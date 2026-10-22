@@ -202,6 +202,16 @@ python3 scripts/smoke_test.py
 
 The zipapp is `dist/agentcoop.pyz`. The protocol is [SPEC.md](SPEC.md). Changes are in [CHANGELOG.md](CHANGELOG.md).
 
+### Continuous integration
+
+A change under `src/`, `tests/`, `scripts/`, `.github/workflows/`, or the Python packaging files runs the full test matrix (three systems, Python 3.9 and 3.12). Documentation, images, and editor or workspace files do not.
+
+A fast job still runs on every change. It checks dashes, the generated support page, and that relative links and images point at files that exist.
+
+Releases always run the full matrix. To run the tests by hand, open the Actions tab, choose Test, and start the workflow.
+
+The check to require for `main` is `Test result`. Do not require a matrix job. When the matrix is skipped, a required matrix check would wait forever.
+
 ## Roadmap
 
 * [x] First release: CLI, skill and rule templates, setup and project flows, doctor, runner, UI, tests, binaries, context, progress, and the background schedule.

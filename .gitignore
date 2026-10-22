@@ -7,3 +7,9 @@ dist/
 build/
 *.spec
 .DS_Store
+*.code-workspace
+.vscode/
+.idea/
+.cursor/
+.claude/settings.local.json
+.agent_board/
