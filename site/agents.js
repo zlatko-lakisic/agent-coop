@@ -18,11 +18,11 @@ export const agents = [
   { id: "gemini-cli", name: "Gemini CLI", status: "lead", ringPriority: 5, icon: "icons/gemini.svg", tint: "#EAF0FB", brand: "#8E75B2" },
   { id: "ollama", name: "Ollama", status: "help", ringPriority: 6, icon: "icons/ollama.svg", tint: "#F1F1F1", brand: "#000000" },
   { id: "lm-studio", name: "LM Studio", status: "help", ringPriority: 7, icon: "icons/lmstudio.svg", tint: "#EFEAF8", brand: "#000000" },
+  { id: "claude-desktop", name: "Claude desktop", status: "help", ringPriority: 8, icon: "icons/claude.svg", tint: "#F6EDE6", brand: "#D97757" },
   { id: "github-copilot", name: "GitHub Copilot", status: "soon", icon: "icons/githubcopilot.svg", tint: "#EEF0F3", brand: "#000000" },
   { id: "opencode", name: "OpenCode", status: "soon", icon: "icons/opencode.svg", tint: "#F1F1F1", brand: "#000000" },
   { id: "cline", name: "Cline", status: "soon", icon: "icons/cline.svg", tint: "#EEF3F8", brand: "#7B3FF2" },
   { id: "goose", name: "Goose", status: "soon", icon: null, tint: "#F4F1EA" },
-  { id: "claude-desktop", name: "Claude desktop chat", status: "soon", icon: "icons/claude.svg", tint: "#F6EDE6", brand: "#D97757" },
   { id: "chatgpt-work", name: "ChatGPT Work", status: "soon", icon: null, tint: "#E9F3EF" },
   { id: "web-chat", name: "Web chat", status: "cannot", icon: "icons/browser.svg", tint: "#F3EEE3" },
 ];

@@ -1,4 +1,4 @@
-import { ROLE, initials, ringAgents, worksWithText } from "./agents.js";
+import { ROLE, initials, byStatus, ringAgents, worksWithText } from "./agents.js";
 
 const DEBUG = false;
 const ORBIT_MS = 80000;
@@ -69,9 +69,23 @@ function initCopy() {
   });
 }
 
+function chipEl(a) {
+  const li = document.createElement("li");
+  li.className = "chip";
+  li.style.setProperty("--tint", a.tint);
+  const mark = markEl(a);
+  mark.setAttribute("aria-hidden", "true");
+  li.append(mark, document.createTextNode(a.name));
+  return li;
+}
+
 function initToolGroups() {
   const sr = qs("[data-works-with]");
   if (sr) sr.textContent = worksWithText();
+  document.querySelectorAll("[data-agents]").forEach((ul) => {
+    const list = byStatus(ul.getAttribute("data-agents"));
+    if (list.length) ul.replaceChildren(...list.map(chipEl));
+  });
 }
 
 function initSeats() {
@@ -193,7 +207,7 @@ function initOrbit() {
 
   function build() {
     hold.replaceChildren();
-    nodes = ringAgents(innerWidth < 640 ? 6 : 7).map((a) => {
+    nodes = ringAgents(innerWidth < 640 ? 6 : innerWidth < 1024 ? 7 : undefined).map((a) => {
       const el = document.createElement("span");
       el.className = "node";
       el.style.setProperty("--tint", a.tint);
