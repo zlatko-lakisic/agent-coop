@@ -88,6 +88,8 @@ jobs:
         with:
           python-version: "3.12"
       - name: Repo checks
+        env:
+          PYTHONPATH: src:tests
         run: python -m unittest tests.test_repo -v
       - name: Check the support page
         run: python scripts/gen_agents_support.py --check
