@@ -7,7 +7,7 @@ import json
 import os
 import time
 import unittest
-from contextlib import redirect_stderr, redirect_stdout
+from contextlib import ExitStack, redirect_stderr, redirect_stdout
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import patch
@@ -265,9 +265,11 @@ class WatchTests(unittest.TestCase):
                 data = json.loads((env.board / "projects" / name / "watch.json").read_text(encoding="utf-8"))
                 self.assertIs(data["watching"], False)
                 self.assertEqual(data["by"], "person")
-            with patch("agentcoop.rounds.sys.platform", "darwin"), patch(
-                "agentcoop.rounds.subprocess.run", return_value=_Completed()
-            ), redirect_stdout(io.StringIO()):
+            with ExitStack() as stack:
+                stack.enter_context(patch("agentcoop.rounds.subprocess.run", return_value=_Completed()))
+                if os.name != "nt":
+                    stack.enter_context(patch("agentcoop.rounds.sys.platform", "darwin"))
+                stack.enter_context(redirect_stdout(io.StringIO()))
                 self.assertEqual(main(["start"]), 0)
             for name in ("demo", "other"):
                 self.assertFalse((env.board / "projects" / name / "watch.json").exists())
