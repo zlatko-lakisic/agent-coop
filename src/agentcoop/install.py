@@ -248,6 +248,15 @@ def build_zipapp(dest: Path) -> None:
         shutil.rmtree(staging)
 
 
+def _agentcoopw_name(name: str) -> str:
+    """Return the no-console sibling name for a frozen Windows binary."""
+    if "agentcoopw" in name.lower():
+        return name
+    if "agentcoop-" in name:
+        return name.replace("agentcoop-", "agentcoopw-", 1)
+    return name.replace("agentcoop", "agentcoopw", 1)
+
+
 def stage_runtime(board: Path) -> None:
     """Copy the running command into the board bin folder."""
     from agentcoop.pathenv import pick_launcher, store_launcher, write_command_wrapper
@@ -256,11 +265,20 @@ def stage_runtime(board: Path) -> None:
     bindir.mkdir(parents=True, exist_ok=True)
     if getattr(sys, "frozen", False):
         src = Path(sys.executable)
-        name = "agentcoop.exe" if os.name == "nt" else "agentcoop"
-        dest = bindir / name
-        if src.resolve() != dest.resolve():
-            shutil.copy2(src, dest)
-        if os.name != "nt":
+        if os.name == "nt":
+            quiet_build = "agentcoopw" in src.name.lower()
+            name = "agentcoopw.exe" if quiet_build else "agentcoop.exe"
+            dest = bindir / name
+            if src.resolve() != dest.resolve():
+                shutil.copy2(src, dest)
+            sibling = src.with_name(_agentcoopw_name(src.name))
+            quiet_dest = bindir / "agentcoopw.exe"
+            if sibling.is_file() and sibling.resolve() != quiet_dest.resolve():
+                shutil.copy2(sibling, quiet_dest)
+        else:
+            dest = bindir / "agentcoop"
+            if src.resolve() != dest.resolve():
+                shutil.copy2(src, dest)
             dest.chmod(0o700)
     else:
         argv0 = Path(sys.argv[0]).resolve() if sys.argv and sys.argv[0] else None

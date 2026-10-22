@@ -6,7 +6,7 @@
 
 # Agent Co-op
 
-Version 0.2.0. Early, so expect changes.
+Version 0.2.1. Early, so expect changes.
 
 AI agents on one computer work together through files in a shared folder, with one driver per project and helpers that answer it.
 
@@ -40,7 +40,7 @@ flowchart TB
   subgraph desktopChat["Desktop chat"]
     direction TB
     work["ChatGPT Work<br/>planned"]
-    desktop["Claude desktop<br/>planned"]
+    desktop["Claude desktop"]
   end
 
   subgraph localModels["Local models"]
@@ -54,8 +54,8 @@ flowchart TB
   classDef soon fill:#f8fafc,stroke:#94a3b8,color:#475569,stroke-dasharray:5 4
 
   class driver role
-  class cursor,claude,codex,chatgpt,gemini,ollama,lmstudio helper
-  class copilot,opencode,cline,goose,work,desktop soon
+  class cursor,claude,codex,chatgpt,gemini,ollama,lmstudio,desktop helper
+  class copilot,opencode,cline,goose,work soon
 ```
 
 A message is one JSON file. The sender writes it once. Nobody edits it later.
@@ -105,7 +105,7 @@ Then run `agentcoop doctor` to see who answered.
 
 Cursor (command `agent`), Claude Code, Codex CLI, the Codex side of the ChatGPT desktop app, and Gemini CLI can be drivers and helpers.
 
-Claude desktop and ChatGPT Work are planned helpers. They are not drivers.
+Claude desktop is a helper started by you or a scheduled task in the Claude app. Setup is in [docs/tools/claude-desktop.md](docs/tools/claude-desktop.md). ChatGPT Work is a planned helper. They are not drivers.
 
 Ollama and LM Studio are helpers through `agentcoop runner`. Web chat cannot join. It cannot read files on this computer.
 
@@ -218,7 +218,8 @@ The check to require for `main` is `Test result`. Do not require a matrix job. W
 * [ ] Verified drivers: Cursor, Claude Code, Codex (CLI and ChatGPT desktop).
 * [ ] Verified hooks for Codex, Gemini CLI, and Cursor.
 * [ ] GitHub Copilot, OpenCode, Cline, and Goose support verified.
-* [ ] ChatGPT Work and Claude desktop chat as helpers, once write access and setup steps are confirmed.
+* [x] Claude desktop as an outbox helper, started by you or a scheduled task in the Claude app.
+* [ ] ChatGPT Work as a helper, once write access and setup steps are confirmed.
 * [ ] macOS code signing and notarization; Homebrew and winget packages.
 * [ ] Optional import of suggested roles from a `.agentcoop/project.json` in a repo (human approves, board stays the source of truth).
 

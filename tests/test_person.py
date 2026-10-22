@@ -8,6 +8,8 @@ import threading
 import unittest
 import urllib.request
 from contextlib import redirect_stderr, redirect_stdout
+from unittest.mock import patch
+
 import support
 
 from agentcoop.cli import main
@@ -56,10 +58,14 @@ class PersonConfirmTests(unittest.TestCase):
                 ["project", "review", "--restore"],
                 ["project", "review", "--accept"],
                 ["disconnect", "claude_code"],
+                ["desktop", "add", "demo"],
+                ["desktop", "remove", "demo"],
             ]
             for command in commands:
                 err = io.StringIO()
-                with redirect_stderr(err), redirect_stdout(io.StringIO()):
+                with patch("sys.stdin.isatty", return_value=False), redirect_stderr(err), redirect_stdout(
+                    io.StringIO()
+                ):
                     code = main(command)
                 self.assertEqual(code, 2, command)
                 self.assertIn("a person has to confirm it", err.getvalue())

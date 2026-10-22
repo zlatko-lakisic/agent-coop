@@ -39,6 +39,10 @@ The board MUST use this layout:
 └── projects/<project-name>/
     ├── inbox/<agent>/msgs/
     ├── inbox/<agent>/done/
+    ├── inbox/<agent>/NEW.md
+    ├── outbox/<agent>/
+    ├── outbox/<agent>/sent/
+    ├── outbox/<agent>/rejected/
     ├── sent/<agent>/
     ├── files/<agent>/
     ├── progress/
@@ -55,6 +59,10 @@ Each path has one writer. A second writer MUST NOT update that path.
 | `config.json`, `agents.json`, `projects.json`, `.state/` | the human, through `agentcoop` |
 | `inbox/<agent>/msgs/<id>.json` | the sender named in that message |
 | `inbox/<agent>/done/<id>` | `<agent>` |
+| `inbox/<agent>/NEW.md` | agentcoop |
+| `outbox/<agent>/` | that agent |
+| `outbox/<agent>/sent/` | agentcoop |
+| `outbox/<agent>/rejected/` | agentcoop |
 | `sent/<agent>/` | `<agent>` |
 | `files/<agent>/` | `<agent>` |
 | `archive/<agent>/` | `<agent>` (or the human through `agentcoop archive`) |
@@ -107,6 +115,10 @@ Marking done MUST be the creation of an empty file `inbox/<agent>/done/<id>`. Mo
 A reply is a new message to the original sender with `re` set to the original id.
 
 A message the driver sent with `needs_reply: true` is waiting until some message in the driver's `msgs/` folder has `re` equal to that id.
+
+### Outbox helpers
+
+A helper that cannot run `agentcoop` MAY use an outbox. `agentcoop` writes `inbox/<agent>/NEW.md` listing that helper's new in-protocol messages. The helper writes one Markdown answer per message as `outbox/<agent>/<id>.md`. It MUST NOT edit `outbox/<agent>/sent/`. `agentcoop` posts each file as a reply, or moves it to `outbox/<agent>/rejected/` with a reason.
 
 ## 7. Roles and conversation rules
 

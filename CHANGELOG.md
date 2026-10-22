@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.1
+
+- Claude desktop joins as an outbox helper: grant two folders, upload a skill, and a scheduled task posts answers.
+- `agentcoop desktop add` and `agentcoop skill export` write the skill zip. Doctor warns when the export is stale or answers are waiting.
+- Windows releases include `agentcoopw`, a no-console binary for the scheduled task.
+
 ## 0.2.0
 
 - Project context, and a helper asks the driver once when there is none.

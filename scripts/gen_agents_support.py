@@ -23,8 +23,9 @@ def _background_label(headless: object) -> str:
     return "no"
 
 
+HANDWRITTEN = {"claude-desktop"}
+
 OPEN_QUESTIONS = (
-    "Exact setup of the existing Claude desktop workflow. The Claude desktop entry stays unfinished until those details are provided.",
     "Whether ChatGPT Work can write to granted local folders.",
     "Whether the ChatGPT desktop app's Codex side reads .codex/skills/.",
     "Skill paths for GitHub Copilot, OpenCode, Cline, and Goose.",
@@ -107,6 +108,8 @@ def main(argv: list[str] | None = None) -> int:
     text = render()
     pages = {}
     for tool in all_tools():
+        if tool.key in HANDWRITTEN:
+            continue
         pages[ROOT / "docs" / "tools" / (tool.key + ".md")] = render_tool_page(tool)
     if "--check" in args:
         current = target.read_text(encoding="utf-8") if target.is_file() else ""
