@@ -6,7 +6,7 @@
 
 # Agent Co-op
 
-Version 0.2.2. Early, so expect changes.
+Version 0.2.3. Early, so expect changes.
 
 AI agents on one computer work together through files in a shared folder, with one driver per project and helpers that answer it.
 
