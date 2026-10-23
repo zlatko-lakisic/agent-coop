@@ -1,0 +1,95 @@
+{
+  "rows": [
+    {
+      "version": "Unreleased",
+      "date": "",
+      "message_format": 1,
+      "spec": "0.3",
+      "board_format": 1,
+      "oldest_reader": "0.2.0",
+      "board_changes": "None",
+      "settings_changes": "None",
+      "downgrade_loses": "Nothing",
+      "desktop_skill": "Same",
+      "upgrade_from": "0.2.0"
+    },
+    {
+      "version": "0.2.5",
+      "date": "2026-10-22",
+      "message_format": 1,
+      "spec": "0.3",
+      "board_format": 1,
+      "oldest_reader": "0.2.0",
+      "board_changes": "Optional files update-check.json and bin/previous. Older programs ignore them.",
+      "settings_changes": "config.json may contain board_format, min_version, and update_check. All three are optional.",
+      "downgrade_loses": "You lose update from chat, the daily new-version notice, and the watch exit when the program itself changes. The board still opens.",
+      "desktop_skill": "Changed",
+      "upgrade_from": "0.2.0"
+    },
+    {
+      "version": "0.2.4",
+      "date": "2026-10-22",
+      "message_format": 1,
+      "spec": "0.3",
+      "board_format": 1,
+      "oldest_reader": "0.2.0",
+      "board_changes": "projects/<name>/watch.json and projects/<name>/watchers/. STATUS.md says whether checking is on.",
+      "settings_changes": "None",
+      "downgrade_loses": "Stop the co-op no longer stops agents. Watch no longer waits without a model.",
+      "desktop_skill": "Changed",
+      "upgrade_from": "Unknown"
+    },
+    {
+      "version": "0.2.3",
+      "date": "2026-10-22",
+      "message_format": 1,
+      "spec": "0.3",
+      "board_format": 1,
+      "oldest_reader": "0.2.0",
+      "board_changes": "None",
+      "settings_changes": "None",
+      "downgrade_loses": "The desktop skill name goes back to claude-desktop. A confirmation without a terminal no longer prints the page link.",
+      "desktop_skill": "Changed",
+      "upgrade_from": "Unknown"
+    },
+    {
+      "version": "0.2.2",
+      "date": "2026-10-22",
+      "message_format": 1,
+      "spec": "0.3",
+      "board_format": 1,
+      "oldest_reader": "0.2.0",
+      "board_changes": "projects/<name>/requests/ and projects/STATUS.md.",
+      "settings_changes": "A project may contain a notices list.",
+      "downgrade_loses": "Chat install, join, and leave stop working. 0.2.1 ignores STATUS.md and request files.",
+      "desktop_skill": "Same",
+      "upgrade_from": "Unknown"
+    },
+    {
+      "version": "0.2.1",
+      "date": "2026-10-22",
+      "message_format": 1,
+      "spec": "0.2",
+      "board_format": 1,
+      "oldest_reader": "0.2.0",
+      "board_changes": "Outbox folders for a helper that cannot write the inbox.",
+      "settings_changes": "None",
+      "downgrade_loses": "Claude desktop can no longer join. Windows scheduled tasks lose the no-console program.",
+      "desktop_skill": "Changed",
+      "upgrade_from": "Unknown"
+    },
+    {
+      "version": "0.2.0",
+      "date": "2026-10-17",
+      "message_format": 1,
+      "spec": "0.1",
+      "board_format": 1,
+      "oldest_reader": "0.2.0",
+      "board_changes": "First board: inbox, sent, files, archive, context, and progress.",
+      "settings_changes": "First copies of projects.json, agents.json, and config.json.",
+      "downgrade_loses": "Nothing. This is the first release.",
+      "desktop_skill": "Same",
+      "upgrade_from": "Unknown"
+    }
+  ]
+}

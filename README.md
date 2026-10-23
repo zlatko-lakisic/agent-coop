@@ -150,7 +150,7 @@ Say "Update Agent Co-op" in the agent's own chat. The same version or a newer on
 
 The daily check is one GET to the latest-release API. It sends no board data. It never updates by itself. Say "Turn off update checks" to stop it.
 
-If Agent Co-op was installed before the update command existed, follow [docs/agent-update.md](docs/agent-update.md). The terminal page is [docs/update.md](docs/update.md). The file list and hash check are in [docs/download-release.md](docs/download-release.md).
+If Agent Co-op was installed before the update command existed, follow [docs/agent-update.md](docs/agent-update.md). The terminal page is [docs/update.md](docs/update.md). The file list and hash check are in [docs/download-release.md](docs/download-release.md). Which versions can still open a board is in [COMPATIBILITY.md](COMPATIBILITY.md).
 
 When `agentcoop watch` prints that Agent Co-op was updated, it exits 5. Run `agentcoop watch` again.
 

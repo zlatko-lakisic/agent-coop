@@ -95,6 +95,21 @@ jobs:
         run: python scripts/gen_agents_support.py --check
       - name: Check relative links
         run: python scripts/check_links.py
+      - name: Compatibility table
+        run: |
+          python3 scripts/gen_compat.py --check
+          python3 scripts/check_compat.py --code
+      - name: Compatibility note
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" != "pull_request" ]; then
+            exit 0
+          fi
+          git fetch --no-tags --depth=1 origin "$BASE_REF"
+          git diff --name-only "origin/${BASE_REF}" HEAD | python3 scripts/check_compat.py
 
   upgrade-matrix:
     needs: changes
@@ -107,6 +122,9 @@ jobs:
         with:
           python-version: "3.12"
       - name: Upgrade every published release
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          AGENTCOOP_GITHUB_TOKEN: ${{ github.token }}
         run: python3 scripts/upgrade_matrix.py
 
   result:
