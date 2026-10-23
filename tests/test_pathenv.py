@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import os
+import shutil
+import sys
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -55,6 +57,30 @@ class PathEnvTests(unittest.TestCase):
     def test_launcher_falls_back_to_sys_executable(self) -> None:
         path = pick_launcher(which=lambda _name: None, name="posix", executable="/opt/python")
         self.assertTrue(path.endswith("python") or path == "/opt/python" or "python" in path)
+
+    def test_frozen_binary_replaces_a_running_copy(self) -> None:
+        with support.TempEnv() as env:
+            init_board_files(env.board)
+            bindir = env.board / "bin"
+            bindir.mkdir(parents=True, exist_ok=True)
+            name = "agentcoop.exe" if os.name == "nt" else "agentcoop"
+            dest = bindir / name
+            dest.write_bytes(b"running")
+            src = env.home / "built-agentcoop"
+            src.write_bytes(b"next")
+            real_copy = shutil.copy2
+
+            def guarded(source, target, *args, **kwargs):
+                target_path = Path(target)
+                if target_path.name == name and target_path.exists():
+                    raise OSError(26, "Text file busy")
+                return real_copy(source, target, *args, **kwargs)
+
+            with patch.object(sys, "frozen", True, create=True), patch.object(
+                sys, "executable", str(src)
+            ), patch("shutil.copy2", guarded):
+                stage_runtime(env.board)
+            self.assertEqual(dest.read_bytes(), b"next")
 
     def test_wrapper_content_and_mode(self) -> None:
         with support.TempEnv() as env:
