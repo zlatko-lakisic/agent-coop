@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased (planned 0.2.7)
+## Unreleased
+
+## 0.2.7 - 2026-10-23
 
 - On a long task, the driver and the helpers post progress on their own. Each update can carry a status, a step, and a counted percent.
 - A helper writes `progress/helpers/<agent>/`. The Claude desktop app writes `<message id>.progress.md`, which is not the answer.
