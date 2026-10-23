@@ -11,9 +11,11 @@
 ## 0.2.6 - 2026-10-22
 
 - A downgrade prints what you lose, from the compatibility table, before you type the version.
+- A binary can replace its own copy while that copy is still running.
 
 ## 0.2.5 - 2026-10-22
 
+- A binary can replace its own copy while that copy is still running.
 - You can install, update, or downgrade to a published version. The same version or a newer one needs no confirmation. An older version asks you to type the version.
 - Check, watch, and the background round look at GitHub at most once a day. They tell you when a newer version is out. They do not install it.
 - `agentcoop watch` exits 5 when the installed version changes, and says to run it again.
