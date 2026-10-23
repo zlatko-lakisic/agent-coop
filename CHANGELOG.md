@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.6 - 2026-10-22
+
+- A downgrade prints what you lose, from the compatibility table, before you type the version.
+
 ## 0.2.5 - 2026-10-22
 
 - You can install, update, or downgrade to a published version. The same version or a newer one needs no confirmation. An older version asks you to type the version.
