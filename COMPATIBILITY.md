@@ -7,7 +7,6 @@ One row per published version, newest first. The Unreleased row is work that is 
 | Version | Date | Message format | Spec | Board format | Oldest reader | Board changes | Settings changes | Downgrade loses | Desktop skill | Upgrade from |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | Unreleased |  | 1 | 0.3 | 1 | 0.2.0 | None | None | Nothing | Same | 0.2.0 |
-| 0.2.6 | 2026-10-22 | 1 | 0.3 | 1 | 0.2.0 | None | None | A downgrade no longer prints what you lose before it installs. | Changed | 0.2.0 |
 | 0.2.6 | 2026-10-22 | 1 | 0.3 | 1 | 0.2.0 | None | None | A downgrade no longer prints what you lose before it installs the older version. | Changed | 0.2.0 |
 | 0.2.5 | 2026-10-22 | 1 | 0.3 | 1 | 0.2.0 | Optional files update-check.json and bin/previous. Older programs ignore them. | config.json may contain board_format, min_version, and update_check. All three are optional. | You lose update from chat, the daily new-version notice, and the watch exit when the program itself changes. The board still opens. | Changed | 0.2.0 |
 | 0.2.4 | 2026-10-22 | 1 | 0.3 | 1 | 0.2.0 | projects/<name>/watch.json and projects/<name>/watchers/. STATUS.md says whether checking is on. | None | Stop the co-op no longer stops agents. Watch no longer waits without a model. | Changed | Unknown |
