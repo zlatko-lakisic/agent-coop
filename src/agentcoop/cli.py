@@ -788,7 +788,7 @@ def cmd_progress_list(args: argparse.Namespace) -> int:
 
 def cmd_wait(args: argparse.Namespace) -> int:
     """Block until a reply arrives or the timeout passes."""
-    import time
+    from agentcoop.progress import wait_for_reply
 
     agent = _agent(args)
     board = _board()
@@ -796,23 +796,7 @@ def cmd_wait(args: argparse.Namespace) -> int:
     minutes = int(args.timeout)
     if minutes < 1 or minutes > 30:
         raise CoopError("The wait must be between 1 and 30 minutes.", code=2)
-    deadline = time.monotonic() + minutes * 60
-    while True:
-        messages, _issues = new_messages(board, project, agent)
-        for item in messages:
-            if item.re == args.for_id:
-                print(file_id(item) + "  " + item.subject)
-                return 0
-        if time.monotonic() >= deadline:
-            print(
-                "No reply to "
-                + args.for_id
-                + " after "
-                + str(minutes)
-                + " minutes. Keep working on something else, or post a progress update saying you are blocked."
-            )
-            return 3
-        time.sleep(5)
+    return wait_for_reply(board, project, agent, args.for_id, minutes)
 
 
 def cmd_watch(args: argparse.Namespace) -> int:

@@ -791,6 +791,12 @@ def render_check(report: InboxReport, *, summary: bool = False) -> str:
             reminder = reminder_line(Path(report.board_path), report.project, report.agent)
             if reminder:
                 lines.append(reminder)
+            from agentcoop.progress import check_task_line, helper_tasks
+
+            for task in helper_tasks(Path(report.board_path), report.project):
+                line = check_task_line(task)
+                if line:
+                    lines.append(line)
     else:
         lines.append(
             'Agent Co-op: you are a helper for "'

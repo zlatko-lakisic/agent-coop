@@ -310,6 +310,172 @@ def helper_progress_dir(board: Path, project: str, agent: str) -> Path:
     return progress_dir(board, project) / "helpers" / agent
 
 
+def helper_tasks(board: Path, project: str, now: datetime | None = None) -> list[dict]:
+    """Return the newest progress document for each helper request.
+
+    A task with Status done is left out after one day.
+    """
+    from agentcoop.progressmeta import parse_fields
+
+    root = progress_dir(board, project) / "helpers"
+    if not root.is_dir():
+        return []
+    clock = now or datetime.now(timezone.utc)
+    if clock.tzinfo is None:
+        clock = clock.replace(tzinfo=timezone.utc)
+    newest: dict[tuple[str, str], tuple[str, Path]] = {}
+    for agent_dir in sorted(root.iterdir()):
+        if not agent_dir.is_dir():
+            continue
+        for path in agent_dir.glob("*.md"):
+            name = path.name
+            if len(name) < 18 or name[16] != "_":
+                continue
+            stamp = name[:16]
+            message_id = name[17:-3]
+            key = (agent_dir.name, message_id)
+            current = newest.get(key)
+            if current is None or stamp > current[0]:
+                newest[key] = (stamp, path)
+    tasks = []
+    for (agent, message_id), (stamp, path) in sorted(newest.items()):
+        try:
+            text = path.read_text(encoding="utf-8")
+            mtime = path.stat().st_mtime
+        except OSError:
+            continue
+        fields = {}
+        try:
+            fields = parse_fields(text)
+        except CoopError:
+            fields = {}
+        age_seconds = max(0, int(clock.timestamp() - mtime))
+        status = str(fields.get("Status") or "working")
+        if status == "done" and age_seconds > 86400:
+            continue
+        tasks.append(
+            {
+                "agent": agent,
+                "id": message_id,
+                "status": status,
+                "step": str(fields.get("Step") or ""),
+                "percent": str(fields.get("Percent") or ""),
+                "now": str(fields.get("Now") or ""),
+                "age_seconds": age_seconds,
+                "path": path,
+                "stamp": stamp,
+            }
+        )
+    return tasks
+
+
+def task_lines(board: Path, project: str, now: datetime | None = None) -> list[str]:
+    """Return one short line for the driver task and each helper task."""
+    clock = now or datetime.now(timezone.utc)
+    if clock.tzinfo is None:
+        clock = clock.replace(tzinfo=timezone.utc)
+    every = int(load_config(board).get("progress_every_minutes") or 10)
+    stale_after = every * 2 * 60
+    lines = []
+    record = (load_projects(board).get("projects") or {}).get(project) or {}
+    driver = str(record.get("driver") or "")
+    latest = latest_progress(board, project)
+    if latest is not None and driver:
+        line = _file_task_line(driver, latest, clock, stale_after)
+        if line:
+            lines.append(line)
+    for task in helper_tasks(board, project, now=clock):
+        who = str(task["agent"]) + " on " + str(task["id"])
+        line = _format_task_line(
+            who,
+            str(task.get("status") or "working"),
+            str(task.get("step") or ""),
+            str(task.get("percent") or ""),
+            str(task.get("now") or ""),
+            int(task.get("age_seconds") or 0),
+            stale_after,
+        )
+        if line:
+            lines.append(line)
+    return lines
+
+
+def _file_task_line(who: str, path: Path, clock: datetime, stale_after: int) -> str:
+    from agentcoop.progressmeta import parse_fields
+
+    try:
+        text = path.read_text(encoding="utf-8")
+        age = max(0, int(clock.timestamp() - path.stat().st_mtime))
+    except OSError:
+        return ""
+    try:
+        fields = parse_fields(text)
+    except CoopError:
+        fields = {}
+    status = str(fields.get("Status") or "working")
+    if status == "done" and age > 86400:
+        return ""
+    now = str(fields.get("Now") or "") or section_text(text, "Working on now").replace("\n", " ").strip()
+    return _format_task_line(
+        who,
+        status,
+        str(fields.get("Step") or ""),
+        str(fields.get("Percent") or ""),
+        now,
+        age,
+        stale_after,
+    )
+
+
+def _format_task_line(
+    who: str,
+    status: str,
+    step: str,
+    percent: str,
+    now: str,
+    age_seconds: int,
+    stale_after: int,
+) -> str:
+    bits = [status or "working"]
+    if step:
+        bits.append("step " + step)
+    if percent:
+        bits.append(str(percent) + "%")
+    sentence = " ".join(now.split()).rstrip(".")
+    if sentence:
+        bits.append(sentence[:1].lower() + sentence[1:])
+    bits.append(str(age_seconds // 60) + " min ago")
+    line = who + ": " + ", ".join(bits)
+    if status != "done" and age_seconds > stale_after:
+        line += ", no update for " + str(age_seconds // 60) + " min"
+    return line + "."
+
+
+def check_task_line(task: dict) -> str:
+    """Return one check header line for a helper task that is still running."""
+    if task.get("status") == "done":
+        return ""
+    bits = []
+    if task.get("percent"):
+        bits.append(str(task["percent"]) + "%")
+    now = str(task.get("now") or "").strip().rstrip(".")
+    if now:
+        bits.append(now[:1].lower() + now[1:])
+    minutes = max(0, int(task.get("age_seconds") or 0) // 60)
+    bits.append(str(minutes) + " min ago")
+    return str(task.get("agent") or "") + " on " + str(task.get("id") or "") + ": " + ", ".join(bits) + "."
+
+
+def progress_files_for(board: Path, project: str, agent: str, message_id: str) -> list[Path]:
+    """Return one helper's progress files for one message, oldest first."""
+    folder = helper_progress_dir(board, project, agent)
+    if not folder.is_dir():
+        return []
+    suffix = "_" + message_id + ".md"
+    found = [path for path in folder.glob("*.md") if path.name.endswith(suffix)]
+    return sorted(found, key=lambda path: path.name)
+
+
 def write_helper_progress(
     board: Path,
     project: str,
@@ -367,6 +533,106 @@ def write_helper_progress(
     finally:
         os.close(fd)
     return name
+
+
+def wait_for_reply(
+    board: Path,
+    project: str,
+    agent: str,
+    message_id: str,
+    minutes: int,
+    *,
+    sleep=None,
+    monotonic=None,
+    wall=None,
+) -> int:
+    """Wait for a reply. Fresh helper progress moves the deadline, up to 60 minutes."""
+    import time
+
+    from agentcoop.core import file_id, new_messages
+    from agentcoop.paths import inbox_msgs
+    from agentcoop.progressmeta import parse_fields
+
+    pause = sleep or time.sleep
+    clock = monotonic or time.monotonic
+    wall_clock = wall or time.time
+    every = int(load_config(board).get("progress_every_minutes") or 10)
+    fresh_seconds = every * 2 * 60
+    started = clock()
+    cap = started + 60 * 60
+    deadline = started + minutes * 60
+    record = (load_projects(board).get("projects") or {}).get(project) or {}
+    helper = ""
+    for name in record.get("helpers") or {}:
+        if (inbox_msgs(board, project, name) / (message_id + ".json")).is_file():
+            helper = str(name)
+            break
+    seen: set[str] = set()
+    first_mtime: float | None = None
+    while True:
+        messages, _issues = new_messages(board, project, agent)
+        for item in messages:
+            if item.re == message_id:
+                print(file_id(item) + "  " + item.subject)
+                return 0
+        if helper:
+            for path in progress_files_for(board, project, helper, message_id):
+                if path.name in seen:
+                    continue
+                seen.add(path.name)
+                try:
+                    text = path.read_text(encoding="utf-8")
+                    mtime = path.stat().st_mtime
+                except OSError:
+                    continue
+                if first_mtime is None:
+                    first_mtime = mtime
+                try:
+                    fields = parse_fields(text)
+                except CoopError:
+                    fields = {}
+                step = str(fields.get("Step") or "")
+                percent = str(fields.get("Percent") or "")
+                now_text = str(fields.get("Now") or "").strip()
+                bits = []
+                if step and percent:
+                    bits.append("step " + step + " (" + percent + "%).")
+                elif step:
+                    bits.append("step " + step + ".")
+                elif percent:
+                    bits.append(percent + "%.")
+                if now_text:
+                    bits.append(now_text if now_text.endswith(".") else now_text + ".")
+                print(helper + ": " + " ".join(bits))
+        if helper and seen:
+            newest = progress_files_for(board, project, helper, message_id)
+            if newest:
+                try:
+                    age = wall_clock() - newest[-1].stat().st_mtime
+                except OSError:
+                    age = fresh_seconds + 1
+                if age <= fresh_seconds:
+                    deadline = min(cap, clock() + minutes * 60)
+        current = clock()
+        if current >= deadline or current >= cap:
+            if seen and helper and first_mtime is not None:
+                worked = max(0, int((wall_clock() - first_mtime) // 60))
+                print(
+                    helper
+                    + " has been working for "
+                    + str(worked)
+                    + " minutes. The wait stops at 60 minutes."
+                )
+            else:
+                print(
+                    "No reply to "
+                    + message_id
+                    + " after "
+                    + str(minutes)
+                    + " minutes. Keep working on something else, or post a progress update saying you are blocked."
+                )
+            return 3
+        pause(5)
 
 
 def _load_urgent(board: Path) -> dict:
