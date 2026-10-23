@@ -415,6 +415,10 @@ def _run_driver(board, agent, project, record, *, popen, timeout_minutes) -> int
         return 0
     if not _has_mail_in(board, agent, project):
         return 0
+    from agentcoop.cursorloop import leave_cursor_idle
+
+    if leave_cursor_idle(board, project, agent, "driver"):
+        return 0
     folder = Path(record["path"])
     try:
         dest, person, note = prepare_worktree(board, project, folder)
@@ -609,6 +613,15 @@ def _should_start(board, agent, project, role) -> bool:
     from agentcoop.schedule import schedulable_reason
 
     if not _has_mail_in(board, agent, project):
+        return False
+    from agentcoop.cursorloop import leave_cursor_idle
+
+    if leave_cursor_idle(board, project, agent, role):
+        from agentcoop.cursorloop import maybe_notify, status_idle_line
+
+        line = status_idle_line(board, project, agent)
+        if line:
+            maybe_notify(board, line)
         return False
     if schedulable_reason(board, agent, role=role):
         return False

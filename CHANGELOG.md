@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## Unreleased (planned 0.2.7)
 
 - On a long task, the driver and the helpers post progress on their own. Each update can carry a status, a step, and a counted percent.
 - A helper writes `progress/helpers/<agent>/`. The Claude desktop app writes `<message id>.progress.md`, which is not the answer.
@@ -9,6 +9,12 @@
 - New boards use `progress_long_task_minutes` 5 and `progress_every_minutes` 10.
 - Fixed: a later Claude desktop answer to the same message was not delivered, and `sent/` did not show that. Each different answer is posted. An exact copy is not posted twice. A receipt sits next to the sent file.
 - A helper can ask the driver for attention with a nudge. The driver replies with a short status before continuing. One open nudge at a time, and at most one every 30 minutes.
+- Fixed: saving the board retries a Windows rename that fails because a file is still open.
+- The site shows the Codex and ChatGPT logos.
+- Cursor keeps checking with `agentcoop cursor-loop`. A tick names new mail within a few seconds, and continues an open task at the schedule interval. A second loop is refused. Stop prints one line and exits.
+- A project stop hook wakes Cursor when the loop is gone. It waits until 5 seconds before a 30 second timeout, and it does not send a follow-up when there is no mail.
+- When the Cursor chat is not watching, messages wait until you say Start working. Other tools still run in the background. `agentcoop idle background` and `agentcoop idle wait` switch that.
+- A tag release must point at a commit that is on main. The GitHub release page target is main.
 
 ## 0.2.6 - 2026-10-22
 

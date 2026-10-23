@@ -79,7 +79,7 @@ TOOLS: tuple[Tool, ...] = (
         can_run_commands=True,
         can_write_files=True,
         join_method="rule",
-        hooks="todo",
+        hooks="supported",
         read_only_lock="todo",
         detect=(
             _home_dir(".cursor"),
@@ -89,11 +89,26 @@ TOOLS: tuple[Tool, ...] = (
                 win32="%LOCALAPPDATA%/Programs/cursor/Cursor.exe",
             ),
         ),
-        install_paths=(_rule(".cursor/rules/agent-coop.mdc"),),
+        install_paths=(
+            _rule(".cursor/rules/agent-coop.mdc"),
+            _hook("project", ".cursor/hooks.json"),
+        ),
         status="untested",
         notes=(
-            "Project rule only (loads every turn). "
-            "TODO: hook format for Cursor is not verified, so hooks are not installed. "
+            "Project rule, plus a project stop hook in .cursor/hooks.json. "
+            "The hook runs agentcoop hook cursor-stop. Timeout is 30 seconds. "
+            "It waits until 5 seconds are left, then returns nothing when there is no mail. "
+            "loop_limit is unlimited so mail can keep waking the chat. "
+            "sessionStart cannot start a command, so the rule starts cursor-loop. "
+            "A tick wakes the chat only when the agent is watching AGENT_LOOP_TICK_board. "
+            "A finished background command wakes the agent while a turn is still running. "
+            "After the turn ends the shell can die, and a Cursor restart kills it, so the stop hook is the other wake. "
+            "One 60 second tick woke a macOS chat after the turn ended. "
+            "The Start working flow in an existing Cursor window is untested on macOS and Linux. "
+            "When the chat is not watching, Cursor waits for Start working. "
+            "Other tools still run in the background. "
+            "Say Run the driver in the background when the chat is idle to change Cursor. "
+            "notify_when_idle is off. A notification is not sent unless that setting is true. "
             "TODO: detection paths per OS are not confirmed. "
             "The command is agent, installed into ~/.local/bin. cursor-agent is the older name. "
             "https://cursor.com/docs/cli/installation "
@@ -109,8 +124,8 @@ TOOLS: tuple[Tool, ...] = (
             "A person's ~/.cursor/cli-config.json may also hold permissions. How the two files "
             "combine is not documented, so keep broad allow rules out of the global file. "
             "Sign in with agent login. https://cursor.com/docs/cli/reference/parameters "
-            "After Start working, Cursor starts agentcoop watch in the background. "
-            "A finished background command wakes the agent. "
+            "After Start working, the Cursor driver starts agentcoop cursor-loop in the background "
+            "and watches for AGENT_LOOP_TICK_board. Helpers still use agentcoop watch. "
             "Cursor waits about 30 seconds for a foreground command, then moves it to the background. "
             "It does not kill that command. "
             "Shell Mode in the CLI kills a command at 30 seconds and that limit cannot be changed: "

@@ -79,6 +79,12 @@ def render_status(board: Path, now: datetime | None = None) -> str:
         for task_line in task_lines(board, name, now=moment):
             lines.append(task_line)
         lines.extend(_watching_lines(board, name, project, moment))
+        from agentcoop.cursorloop import status_idle_line
+
+        driver = str(project.get("driver") or "")
+        idle = status_idle_line(board, name, driver, now=moment)
+        if idle:
+            lines.append(idle)
         from agentcoop.outbox import unread_answer_lines
 
         lines.extend(unread_answer_lines(board, name, project, moment))

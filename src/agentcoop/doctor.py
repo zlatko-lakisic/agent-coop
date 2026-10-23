@@ -236,7 +236,12 @@ def _agent_checks(name: str, record: dict) -> list[DoctorItem]:
         tool = get_tool(tool_key)
     except KeyError:
         tool = None
-    if tool is not None and tool.hooks == "supported":
+    user_hooks = False
+    if tool is not None:
+        user_hooks = any(
+            item.get("kind") == "hook" and item.get("scope") == "user" for item in tool.install_paths
+        )
+    if tool is not None and tool.hooks == "supported" and user_hooks:
         hooked = any(entry.get("kind") == "hook" for entry in installed)
         if not hooked:
             items.append(

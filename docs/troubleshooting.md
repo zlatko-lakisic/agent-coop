@@ -49,3 +49,7 @@ Message files are separate, so two sends do not share one inbox file. If a bare-
 ## My helper's later answers never reached the driver
 
 A second answer to the same message used to be dropped, and `sent/` still looked fine. Each different answer is now posted. Name the file `<message id>.<UTC timestamp>.md` so it does not replace the first file. An exact copy of an answer already posted is not posted again. The receipt next to the file in `sent/` names the posted message.
+
+## Cursor does not pick up messages until I type
+
+In Cursor, say Start working. That starts `agentcoop cursor-loop` in the background and watches for `AGENT_LOOP_TICK_board`. Do not leave a self-written sleep loop running. Stop stops that loop. If the chat is closed, messages wait on STATUS.md until you say Start working. A headless run starts only after you say: Run the driver in the background when the chat is idle.

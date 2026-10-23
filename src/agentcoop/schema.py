@@ -171,4 +171,10 @@ def check_config(data: object) -> list[str]:
     update_check = data.get("update_check")
     if update_check is not None and not isinstance(update_check, bool):
         problems.append("update_check must be true or false")
+    idle = data.get("driver_when_chat_idle")
+    if idle is not None and idle not in ("wait_for_chat", "background_run"):
+        problems.append("driver_when_chat_idle must be wait_for_chat or background_run")
+    notify = data.get("notify_when_idle")
+    if notify is not None and not isinstance(notify, bool):
+        problems.append("notify_when_idle must be true or false")
     return problems

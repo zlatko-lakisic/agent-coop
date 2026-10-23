@@ -1,4 +1,7 @@
-TODO: Cursor hook format is not verified yet. Do not install this automatically.
-When the format is confirmed, the hook should run:
-{{AGENTCOOP}} check --as {{AGENT_NAME}} --summary
+The installed Cursor hook is built by agentcoop, not from this file.
+It is .cursor/hooks.json in the project, with a stop hook:
+{{AGENTCOOP}} hook cursor-stop --as {{AGENT_NAME}}
+Timeout is 30 seconds. loop_limit is unlimited.
+The hook waits until 5 seconds are left, then returns nothing when there is no mail.
+sessionStart cannot start a command, so the rule starts cursor-loop.
 Board: {{BOARD}}
