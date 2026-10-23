@@ -14,6 +14,32 @@
       "upgrade_from": "0.2.0"
     },
     {
+      "version": "0.2.6",
+      "date": "2026-10-22",
+      "message_format": 1,
+      "spec": "0.3",
+      "board_format": 1,
+      "oldest_reader": "0.2.0",
+      "board_changes": "None",
+      "settings_changes": "None",
+      "downgrade_loses": "A downgrade no longer prints what you lose before it installs.",
+      "desktop_skill": "Changed",
+      "upgrade_from": "0.2.0"
+    },
+    {
+      "version": "0.2.6",
+      "date": "2026-10-22",
+      "message_format": 1,
+      "spec": "0.3",
+      "board_format": 1,
+      "oldest_reader": "0.2.0",
+      "board_changes": "None",
+      "settings_changes": "None",
+      "downgrade_loses": "A downgrade no longer prints what you lose before it installs the older version.",
+      "desktop_skill": "Changed",
+      "upgrade_from": "0.2.0"
+    },
+    {
       "version": "0.2.5",
       "date": "2026-10-22",
       "message_format": 1,
