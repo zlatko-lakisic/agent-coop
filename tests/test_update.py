@@ -5,6 +5,7 @@ from __future__ import annotations
 import io
 import json
 import unittest
+import zipfile
 from contextlib import redirect_stdout
 from pathlib import Path
 from unittest.mock import patch
@@ -49,9 +50,12 @@ def _ready(env: support.TempEnv) -> Path:
     return env.board
 
 
-def _script(path: Path, body: str) -> None:
-    path.write_text(body, encoding="utf-8")
-    path.chmod(0o755)
+def _zipapp(path: Path) -> None:
+    """Write a zipapp that exits 0. Windows cannot run a shell script."""
+    payload = io.BytesIO()
+    with zipfile.ZipFile(payload, "w") as archive:
+        archive.writestr("__main__.py", "raise SystemExit(0)\n")
+    path.write_bytes(payload.getvalue())
 
 
 class VersionTests(unittest.TestCase):
@@ -157,7 +161,7 @@ class DowngradeTests(unittest.TestCase):
             board = _ready(env)
             folder = board / "bin" / "previous" / "0.2.3"
             folder.mkdir(parents=True)
-            _script(folder / "agentcoop", "#!/bin/sh\nexit 0\n")
+            _zipapp(folder / "agentcoop.pyz")
             (board / "bin" / "previous" / "last").write_text("0.2.3\n", encoding="utf-8")
             (board / "bin" / "previous" / "order.txt").write_text("0.2.3\n", encoding="utf-8")
             out = io.StringIO()
