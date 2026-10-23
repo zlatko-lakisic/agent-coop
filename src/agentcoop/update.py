@@ -225,6 +225,10 @@ def _guard_downgrade(board: Path, target: tuple[int, int, int], installed: tuple
     if target >= installed:
         return
     assert_downgrade_allowed(board, target)
+    from agentcoop.compat import loss_lines
+
+    for line in loss_lines(installed, target):
+        print(line)
     if not has_update_command(target):
         print(no_update_line(target))
     confirm_downgrade(target)

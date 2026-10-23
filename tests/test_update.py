@@ -139,7 +139,9 @@ class DowngradeTests(unittest.TestCase):
             out = io.StringIO()
             with support.person("0.2.3"), redirect_stdout(out):
                 _guard_downgrade(board, (0, 2, 3), (0, 2, 4))
-            self.assertIn("0.2.3 has no update command.", out.getvalue())
+            text = out.getvalue()
+            self.assertIn("0.2.3 has no update command.", text)
+            self.assertIn("Stop the co-op no longer stops agents.", text)
             with support.person("no"):
                 with self.assertRaises(CoopError):
                     _guard_downgrade(board, (0, 2, 3), (0, 2, 4))
