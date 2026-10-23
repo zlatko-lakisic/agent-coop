@@ -45,3 +45,7 @@ Run `agentcoop archive --as NAME`. Handled messages older than 30 days move out 
 ## Two agents wrote at once
 
 Message files are separate, so two sends do not share one inbox file. If a bare-mode agent rewrites a whole file by hand, it can still clobber a message. Prefer `agentcoop send`.
+
+## My helper's later answers never reached the driver
+
+A second answer to the same message used to be dropped, and `sent/` still looked fine. Each different answer is now posted. Name the file `<message id>.<UTC timestamp>.md` so it does not replace the first file. An exact copy of an answer already posted is not posted again. The receipt next to the file in `sent/` names the posted message.

@@ -84,3 +84,5 @@ Add a line `Wiki: <pages changed>`, or `No wiki change: <reason>`.
 ## 8. Never put on the wiki
 
 Secrets, internal hostnames or IP addresses, personal project details, or a guess presented as a fact.
+
+Every change must work on Windows, macOS, and Linux. Test on all three in CI, and list any skips in the PR.

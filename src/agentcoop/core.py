@@ -36,7 +36,9 @@ from agentcoop.safety import check_attachment, require_attachment, secret_warnin
 
 ID_RE = re.compile(r"^[A-Za-z0-9_.-]{1,96}$")
 TS_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
-KNOWN_TYPES = {"question", "answer", "task", "status", "ack", "patch", "context_request"}
+KNOWN_TYPES = {"question", "answer", "task", "status", "ack", "patch", "context_request", "nudge"}
+NUDGE_CHARS = 500
+NUDGE_MINUTES = 30
 YOUNG_SECONDS = 5
 
 
@@ -298,6 +300,79 @@ def _clip_field(value: str) -> str:
     return value[:200]
 
 
+def _message_time(message: Message) -> datetime | None:
+    try:
+        return datetime.strptime(message.ts, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+    except ValueError:
+        return None
+
+
+def _stored_messages(board: Path, project: str, agent: str) -> list[Message]:
+    from agentcoop.paths import archive_dir
+
+    found: list[Message] = []
+    folders = [inbox_msgs(board, project, agent), archive_dir(board, project, agent) / "msgs"]
+    for folder in folders:
+        for path in list_message_paths(folder):
+            message = load_message(path)
+            if message is not None:
+                found.append(message)
+    return found
+
+
+def _nudge_is_open(board: Path, project: str, nudge: Message, driver: str) -> bool:
+    sent_at = _message_time(nudge)
+    if sent_at is None:
+        return True
+    for message in _stored_messages(board, project, nudge.sender):
+        if message.sender != driver:
+            continue
+        replied = _message_time(message)
+        if replied is not None and replied > sent_at:
+            return False
+    return True
+
+
+def _nudge_violation(board: Path, project_name: str, message: Message, driver: str) -> str | None:
+    """Return a reason when this nudge is not allowed. None means it is allowed."""
+    if message.recipient != driver or message.re:
+        return "A nudge goes to the driver, with no reply id."
+    if message.sender == driver:
+        return "Only a helper can ask the driver for attention."
+    if len(message.body) > NUDGE_CHARS:
+        return "A nudge can be at most 500 characters."
+    this_id = None if message.path is None else file_id(message)
+    stored = [
+        item
+        for item in _stored_messages(board, project_name, driver)
+        if item.type == "nudge" and item.sender == message.sender and file_id(item) != this_id
+    ]
+    open_ones = [item for item in stored if _nudge_is_open(board, project_name, item, driver)]
+    moment = _message_time(message) or utc_now()
+    earlier = []
+    for item in stored:
+        when = _message_time(item)
+        if when is not None and when <= moment:
+            earlier.append((when, item))
+    latest = max((when for when, _item in earlier), default=None)
+    wait_until = latest + timedelta(minutes=NUDGE_MINUTES) if latest is not None else moment
+    if wait_until < moment:
+        wait_until = moment
+    if open_ones:
+        return (
+            "You already asked "
+            + driver
+            + " for attention. The next nudge is allowed at "
+            + format_ts(wait_until)
+            + ", and only after "
+            + driver
+            + " sends you a message."
+        )
+    if latest is not None and moment < latest + timedelta(minutes=NUDGE_MINUTES):
+        return "The next nudge is allowed at " + format_ts(latest + timedelta(minutes=NUDGE_MINUTES)) + "."
+    return None
+
+
 def protocol_violation(project: dict, message: Message, board: Path, project_name: str) -> str | None:
     """Return a plain reason when a message breaks the role rules."""
     if message.path is not None and message.path.parent.name == "msgs":
@@ -315,9 +390,13 @@ def protocol_violation(project: dict, message: Message, board: Path, project_nam
     if message.sender not in members or message.recipient not in members:
         return "The sender or recipient is not a member of this project."
     if message.sender == driver:
+        if message.type == "nudge":
+            return "Only a helper can ask the driver for attention."
         if message.recipient not in helpers:
             return "The driver can only message helpers."
         return None
+    if message.type == "nudge":
+        return _nudge_violation(board, project_name, message, driver)
     # Helper rules. One exception: a context_request to the driver with no re,
     # when the helper has no open context request in this project.
     if (
@@ -370,6 +449,7 @@ def assert_can_send(
     recipient: str,
     re_id: str | None,
     msg_type: str = "status",
+    now: datetime | None = None,
 ) -> dict:
     """Raise when agentcoop send must refuse this message. Returns the project."""
     projects, intact = read_projects_checked(board)
@@ -395,7 +475,7 @@ def assert_can_send(
     probe = Message(
         v=1,
         id="probe",
-        ts=format_ts(utc_now()),
+        ts=format_ts(utc_now(now)),
         project=project_name,
         sender=sender,
         recipient=recipient,
@@ -443,6 +523,10 @@ def send(
         )
     if type == "context_request":
         needs_reply = True
+    if type == "nudge":
+        needs_reply = True
+        if len(body) > NUDGE_CHARS:
+            raise CoopError("A nudge can be at most 500 characters.")
     if len(subject) > 120:
         raise CoopError("The subject is too long. Keep it to 120 characters.")
     if not allow_secret and (secret_warning(subject) or secret_warning(body)):
@@ -458,7 +542,7 @@ def send(
             "The message is too long. Put the long text in a file under your files "
             "folder and attach that path."
         )
-    project_record = assert_can_send(board, project, sender, recipient, re, msg_type=type)
+    project_record = assert_can_send(board, project, sender, recipient, re, msg_type=type, now=now)
     roots = list(config.get("allowed_roots") or [])
     project_path = Path(project_record["path"])
     for attachment in attachments or []:
@@ -571,10 +655,14 @@ def check_inbox(
                 )
         checked.append(CheckedMessage(message=message, violation=violation, attachments=statuses))
     if role == "driver":
-        # Open context requests first, then everything else in the same order.
+        # Nudges first, then open context requests, then everything else.
         checked.sort(
             key=lambda item: (
-                0 if item.message.type == "context_request" and item.violation is None else 1,
+                0
+                if item.message.type == "nudge" and item.violation is None
+                else 1
+                if item.message.type == "context_request" and item.violation is None
+                else 2,
                 item.message.id,
             )
         )
@@ -783,6 +871,11 @@ def render_check(report: InboxReport, *, summary: bool = False) -> str:
         helper_line = ", ".join(helper_bits) if helper_bits else "(none)"
         lines.append('Agent Co-op: you are the driver for "' + report.project + '".')
         lines.append("Helpers: " + helper_line + ".")
+        for item in visible:
+            if item.violation or item.message.type != "nudge":
+                continue
+            flat = " ".join(item.message.body.split())
+            lines.append(item.message.sender + " asks for your attention: " + flat)
         for notice in report.notices:
             lines.append(notice)
         if report.board_path:

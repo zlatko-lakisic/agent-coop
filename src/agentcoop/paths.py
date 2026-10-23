@@ -7,6 +7,32 @@ import sys
 from pathlib import Path
 
 
+# Windows MAX_PATH is 260 characters, including the terminating NUL.
+WINDOWS_PATH_LIMIT = 260
+
+
+def require_board_path(path: Path) -> None:
+    """Refuse a board path Windows cannot store.
+
+    On Windows, a path of 260 characters or more raises CoopError and nothing
+    is written. macOS and Linux allow the longer path. Copying that board to
+    Windows can fail on the long file.
+    """
+    if os.name != "nt":
+        return
+    text = os.fspath(path)
+    if len(text) < WINDOWS_PATH_LIMIT:
+        return
+    from agentcoop.errors import CoopError
+
+    raise CoopError(
+        "This path is "
+        + str(len(text))
+        + " characters, longer than Windows allows (260). "
+        + "Shorten the board folder or the file name. Nothing was written."
+    )
+
+
 def home_dir() -> Path:
     """Return the home directory, honoring HOME and USERPROFILE."""
     return Path.home()

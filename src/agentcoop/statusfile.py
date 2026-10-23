@@ -79,6 +79,9 @@ def render_status(board: Path, now: datetime | None = None) -> str:
         for task_line in task_lines(board, name, now=moment):
             lines.append(task_line)
         lines.extend(_watching_lines(board, name, project, moment))
+        from agentcoop.outbox import unread_answer_lines
+
+        lines.extend(unread_answer_lines(board, name, project, moment))
         lines.append("")
     return "\n".join(lines).rstrip() + "\n"
 

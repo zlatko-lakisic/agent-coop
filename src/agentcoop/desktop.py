@@ -53,7 +53,7 @@ def skill_folder_name(project: str) -> str:
 def answer_path_for(outbox: str) -> str:
     """Return the answer file path the skill should write, with a message-id slot."""
     sep = "\\" if "\\" in outbox else "/"
-    return outbox + sep + "<message id>.md"
+    return outbox + sep + "<message id>.<UTC timestamp>.md"
 
 
 def export_zip_path(board: Path, project: str, agent: str, dest_dir: Path | None = None) -> Path:

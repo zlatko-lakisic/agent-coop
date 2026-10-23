@@ -567,12 +567,19 @@ def wait_for_reply(
         if (inbox_msgs(board, project, name) / (message_id + ".json")).is_file():
             helper = str(name)
             break
+    from agentcoop.core import iter_project_messages
+
     seen: set[str] = set()
+    already = {
+        file_id(item)
+        for item in iter_project_messages(board, project, agent)
+        if item.re == message_id
+    }
     first_mtime: float | None = None
     while True:
         messages, _issues = new_messages(board, project, agent)
         for item in messages:
-            if item.re == message_id:
+            if item.re == message_id and file_id(item) not in already:
                 print(file_id(item) + "  " + item.subject)
                 return 0
         if helper:

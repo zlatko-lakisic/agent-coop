@@ -7,9 +7,9 @@
       "spec": "0.3",
       "board_format": 1,
       "oldest_reader": "0.2.0",
-      "board_changes": "progress/helpers/<agent>/ holds helper progress. Older programs ignore that folder.",
+      "board_changes": "progress/helpers/<agent>/ holds helper progress. Older programs ignore that folder. Outbox answers may use <id>.<anything>.md. sent/ holds a receipt next to each posted file. A nudge is a message of type nudge.",
       "settings_changes": "New boards set progress_long_task_minutes to 5 and progress_every_minutes to 10. A saved config keeps its old value.",
-      "downgrade_loses": "Helper progress stays on disk, but older programs do not show it. Wait no longer extends while a helper is working.",
+      "downgrade_loses": "Helper progress stays on disk, but older programs do not show it. Wait no longer extends while a helper is working. A later answer to the same message is still a new file. Older versions mark a nudge out of protocol, so a downgrade loses nudges. Older helpers can still write <id>.md.",
       "desktop_skill": "Changed",
       "upgrade_from": "0.2.0"
     },

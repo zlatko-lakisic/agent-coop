@@ -83,7 +83,7 @@ Each path has one writer. A second writer MUST NOT update that path.
 
 A file in `context/` is written once and MUST NOT be edited. `agentcoop archive` MAY delete old versions. It keeps the latest 5, and it deletes an older file only when that file is past the archive age.
 
-A progress file MAY start with `Status` (`working`, `blocked`, `waiting`, or `done`), `Step` (such as `3 of 7`), `Percent` (a whole number from 0 to 100), `Now` (one sentence), and `For` (a message id). `Percent` is present only when it was counted. A helper writes `progress/helpers/<agent>/<stamp>_<message id>.md`. Older programs ignore that folder. A Claude desktop progress note is `outbox/<agent>/<message id>.progress.md`. It is not an answer. The answer is still `<message id>.md`.
+A progress file MAY start with `Status` (`working`, `blocked`, `waiting`, or `done`), `Step` (such as `3 of 7`), `Percent` (a whole number from 0 to 100), `Now` (one sentence), and `For` (a message id). `Percent` is present only when it was counted. A helper writes `progress/helpers/<agent>/<stamp>_<message id>.md`. Older programs ignore that folder. A Claude desktop progress note is `outbox/<agent>/<message id>.progress.md`. It is not an answer. The answer is `<message id>.md` or `<message id>.<UTC timestamp>.md`.
 
 ## 4. Agent and project names
 
@@ -104,7 +104,7 @@ Each message MUST be one UTF-8 JSON file named `<id>.json`.
 | `ts` | UTC time, ISO 8601, second precision, ending in `Z`. |
 | `project` | Project name. |
 | `sender`, `recipient` | Agent names. |
-| `type` | SHOULD be `question`, `answer`, `task`, `status`, `ack`, `patch`, or `context_request`. Unknown types MUST be tolerated. |
+| `type` | SHOULD be `question`, `answer`, `task`, `status`, `ack`, `patch`, `context_request`, or `nudge`. Unknown types MUST be tolerated. |
 | `re` | Id of the message being answered, or `null`. |
 | `subject` | At most 120 characters. |
 | `body` | At most 16 KB of UTF-8 unless config raises the limit. Longer text SHOULD be a file under `files/<sender>/`, attached by path. |
@@ -131,7 +131,9 @@ A message the driver sent with `needs_reply: true` is waiting until some message
 
 ### Outbox helpers
 
-A helper that cannot run `agentcoop` MAY use an outbox. `agentcoop` writes `inbox/<agent>/NEW.md` listing that helper's new in-protocol messages. The helper writes one Markdown answer per message as `outbox/<agent>/<id>.md`. It MUST NOT edit `outbox/<agent>/sent/`. `agentcoop` posts each file as a reply, or moves it to `outbox/<agent>/rejected/` with a reason.
+A helper that cannot run `agentcoop` MAY use an outbox. `agentcoop` writes `inbox/<agent>/NEW.md` listing that helper's new in-protocol messages. The helper writes one Markdown answer as `outbox/<agent>/<id>.md` or `outbox/<agent>/<id>.<anything>.md`. The id is the text before the first dot. It MUST NOT edit `outbox/<agent>/sent/`. A later answer with different text is a new reply. The subject of the first reply is `Re: <subject>`. Later replies from that helper are `Re: <subject> (follow-up N)`, starting at 2. An exact copy of a reply already posted is not posted again. `outbox/<agent>/sent/<file>.posted.txt` records the posted file name, the recipient, and the UTC time. A name that already exists gets `.2`, then `.3`, before `.md`. Names that differ only by case are the same name on Windows, macOS, and Linux. A file left in `processing/` for more than 10 minutes with no live lock is posted again, through the same duplicate check. A progress file is `outbox/<agent>/<id>.progress.md` and is not an answer.
+
+A nudge file is `outbox/<agent>/nudge.md` or `outbox/<agent>/nudge.<anything>.md`. The file text is the body, at most 500 characters.
 
 ## 7. Roles and conversation rules
 
@@ -141,7 +143,9 @@ If the sender is the driver, the recipient MUST be a helper.
 
 If the sender is a helper, the recipient MUST be the driver, `re` MUST be set, and `re` MUST name a message from the driver that is in the helper's own `msgs/` folder. A helper's follow-up question is a reply with `type: question`.
 
-One exception: a helper MAY send a `context_request` to the driver with `re` set to null, only when that helper has no open context request in that project. This is the only case in which a helper may speak first.
+One exception: a helper MAY send a `context_request` to the driver with `re` set to null, only when that helper has no open context request in that project.
+
+A second exception: a helper MAY send a `nudge` to the driver with `re` set to null. The body is at most 500 characters. The subject is `Attention`. `needs_reply` is true. A helper may have only one open nudge, and at most one nudge every 30 minutes. An open nudge stays open until the driver sends that helper any message after it. `agentcoop send` MUST refuse a nudge that breaks these rules and MUST say when the next one is allowed. The driver MUST NOT send a nudge. These two exceptions are the only cases in which a helper may speak first.
 
 A request is open when it sits in the driver's `msgs/` folder, its type is `context_request`, its sender is that helper, its recipient is the driver, and `re` is null, until a message from the driver in the helper's `msgs/` folder has `re` equal to that request's id.
 
@@ -151,7 +155,7 @@ In bare mode, the earliest open request from that helper is accepted. Later ones
 
 `agentcoop send` MUST set `needs_reply` to true on a `context_request`.
 
-Helpers MUST NOT message each other. They MUST NOT start a thread, except the context request above.
+Helpers MUST NOT message each other. They MUST NOT start a thread, except the context request and the nudge above.
 
 Only the driver writes files in the project folder. Helpers send patches or drafts as attachments. The driver decides what to apply.
 

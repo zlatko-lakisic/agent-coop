@@ -12,7 +12,7 @@ A helper posts on an open request from the driver:
 agentcoop progress write --as <helper> --for <message id> --percent 50 --step "2 of 4" --status working --body -
 ```
 
-That file is `progress/helpers/<helper>/<stamp>_<message id>.md`. It is not a message. The Claude desktop app writes `outbox/claude_desktop/<message id>.progress.md`, and the next check moves it. The answer is still `<message id>.md`.
+That file is `progress/helpers/<helper>/<stamp>_<message id>.md`. It is not a message. The Claude desktop app writes `outbox/claude_desktop/<message id>.progress.md`, and the next check moves it. The answer is `<message id>.<UTC timestamp>.md`.
 
 `agentcoop status` and `projects/STATUS.md` show one short line for the driver's task and each helper task. A task with no update for more than twice `progress_every_minutes` says how long it has been quiet. A task marked done drops off after one day. `agentcoop wait --for <id>` prints each new helper update and keeps waiting while that update is fresh, up to 60 minutes.
 
