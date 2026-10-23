@@ -18,6 +18,7 @@ import urllib.request
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "src"))
 REPO = "zlatko-lakisic/agent-coop"
 VERSIONS = ("0.2.0", "0.2.1", "0.2.2", "0.2.3", "0.2.4")
 API = "https://api.github.com/repos/" + REPO
@@ -118,13 +119,31 @@ def _confirm(argv: list[str], env: dict, cwd: Path, typed: str) -> None:
         raise SystemExit("Downgrade to " + typed + " failed (exit " + str(code) + ").")
 
 
+def _private(board: Path) -> None:
+    """Drop group and other bits. A temp folder is created with the process umask."""
+    if os.name == "nt" or not board.is_dir():
+        return
+    for dirpath, dirnames, filenames in os.walk(board):
+        os.chmod(dirpath, os.stat(dirpath).st_mode & ~0o077)
+        for name in dirnames:
+            path = os.path.join(dirpath, name)
+            os.chmod(path, os.stat(path).st_mode & ~0o077)
+        for name in filenames:
+            path = os.path.join(dirpath, name)
+            os.chmod(path, os.stat(path).st_mode & ~0o077)
+
+
 def _marker_files(board: Path) -> list[Path]:
+    """Return messages, context, and progress. Generated pages may be rewritten."""
     found: list[Path] = []
     projects = board / "projects"
     if not projects.is_dir():
         return found
     for path in projects.rglob("*"):
-        if path.is_file() and path.suffix in (".json", ".md"):
+        if not path.is_file():
+            continue
+        parts = path.relative_to(projects).parts
+        if "context" in parts or "progress" in parts or "msgs" in parts:
             found.append(path)
     return found
 
@@ -260,6 +279,7 @@ def _upgrade_and_return(version: str) -> None:
         before = {str(path.relative_to(board)): path.read_bytes() for path in _marker_files(board)}
         installed = _run(_new_argv("update", "--install-this"), env, work)
         _need(installed, "install-this")
+        _private(board)
         doctor = _run(_new_argv("doctor"), env, work)
         _need(doctor, "doctor")
         for rel, body in before.items():
