@@ -222,7 +222,7 @@ def reminder_line(board: Path, project: str, agent: str, *, now: datetime | None
     record = (load_projects(board).get("projects") or {}).get(project) or {}
     if role_of(record, agent) != "driver":
         return ""
-    minutes = int(load_config(board).get("progress_every_minutes") or 15)
+    minutes = int(load_config(board).get("progress_every_minutes") or 10)
     moment = now or datetime.now(timezone.utc)
     if moment.tzinfo is None:
         moment = moment.replace(tzinfo=timezone.utc)
@@ -303,6 +303,70 @@ def _driver_was_active(board: Path, project: str, agent: str, moment: datetime, 
         if moment - when <= window:
             return True
     return False
+
+
+def helper_progress_dir(board: Path, project: str, agent: str) -> Path:
+    """Return the folder of one helper's progress documents."""
+    return progress_dir(board, project) / "helpers" / agent
+
+
+def write_helper_progress(
+    board: Path,
+    project: str,
+    agent: str,
+    message_id: str,
+    body: str,
+    *,
+    status: str = "working",
+    step: str = "",
+    percent: str = "",
+    now: str = "",
+    allow_secret: bool = False,
+    moment: datetime | None = None,
+) -> str:
+    """Write helper progress for one open request from the driver. Returns the file name."""
+    from agentcoop.core import file_id, new_messages
+    from agentcoop.progressmeta import format_fields
+
+    require_board(board)
+    validate_agent_name(agent)
+    record = (load_projects(board).get("projects") or {}).get(project)
+    if record is None:
+        raise CoopError("There is no project named " + project + ".")
+    if role_of(record, agent) != "helper":
+        raise CoopError("Only a helper writes progress for a request. The driver writes project progress.")
+    driver = str(record.get("driver") or "")
+    messages, _issues = new_messages(board, project, agent)
+    open_request = False
+    for item in messages:
+        if file_id(item) == message_id and item.sender == driver:
+            open_request = True
+            break
+    if not open_request:
+        raise CoopError(message_id + " is not an open request from the driver to " + agent + ".")
+    text = format_fields(status=status or "working", step=step, percent=percent, now=now, for_id=message_id, rest=body)
+    if not allow_secret and secret_warning(text):
+        raise CoopError(
+            "This progress update looks like it contains a password or API key, so it was "
+            "not saved. Remove the secret and write again. If this is a false alarm, "
+            "add --allow-secret."
+        )
+    when = moment or datetime.now(timezone.utc).replace(microsecond=0)
+    if when.tzinfo is None:
+        when = when.replace(tzinfo=timezone.utc)
+    stamp = when.astimezone(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    folder = helper_progress_dir(board, project, agent)
+    private_dir(folder)
+    name = stamp + "_" + message_id + ".md"
+    path = folder / name
+    payload = text if text.endswith("\n") else text + "\n"
+    mode = 0o600 if os.name != "nt" else 0o666
+    fd = os.open(str(path), os.O_CREAT | os.O_EXCL | os.O_WRONLY | getattr(os, "O_BINARY", 0), mode)
+    try:
+        os.write(fd, payload.encode("utf-8"))
+    finally:
+        os.close(fd)
+    return name
 
 
 def _load_urgent(board: Path) -> dict:
