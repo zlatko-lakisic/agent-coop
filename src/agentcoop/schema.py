@@ -73,6 +73,20 @@ def check_projects(data: object) -> list[str]:
         if notices is not None:
             if not isinstance(notices, list) or any(not isinstance(item, str) for item in notices):
                 problems.append(name + " notices must be a list of text")
+        profiles = record.get("profiles")
+        if profiles is not None:
+            if not isinstance(profiles, dict):
+                problems.append(name + " profiles must be an object")
+            else:
+                for agent, profile in profiles.items():
+                    if not isinstance(profile, dict):
+                        problems.append(name + " profile for " + str(agent) + " must be an object")
+                        continue
+                    accepts = profile.get("accepts")
+                    if accepts is not None and (
+                        not isinstance(accepts, list) or any(not isinstance(item, str) or not item for item in accepts)
+                    ):
+                        problems.append(name + " accepts must be a list of text")
     return problems
 
 
@@ -115,6 +129,11 @@ def check_agents(data: object) -> list[str]:
         cli_path = record.get("cli_path")
         if cli_path is not None and not isinstance(cli_path, str):
             problems.append(name + " cli_path must be text")
+        accepts = record.get("accepts")
+        if accepts is not None and (
+            not isinstance(accepts, list) or any(not isinstance(item, str) or not item for item in accepts)
+        ):
+            problems.append(name + " accepts must be a list of text")
     return problems
 
 
@@ -144,6 +163,10 @@ def check_config(data: object) -> list[str]:
         "progress_limit_bytes",
         "progress_every_minutes",
         "progress_long_task_minutes",
+        "share_max_mb",
+        "share_keep_days",
+        "share_hard_max_mb",
+        "share_warn_total_gb",
     ):
         value = data.get(key)
         if value is not None and (not isinstance(value, int) or isinstance(value, bool) or value <= 0):

@@ -191,6 +191,23 @@ function drawTalk() {
     });
     html += "</div>";
   });
+  if (project.files && project.files.length) {
+    html += "<h2>Shared files</h2>";
+    project.files.forEach(function (file) {
+      var media = file.media || "";
+      var label = escapeHtml(file.name) + " (" + escapeHtml(file.kind) + ", " + escapeHtml(file.size) + ", " + escapeHtml(media) + ")";
+      if (file.description) label += " " + escapeHtml(file.description);
+      if (media.indexOf("image/") === 0) {
+        html += "<div><img alt='" + escapeHtml(file.name) + "' src='" + file.url + "' style='max-width:240px;max-height:160px'></div>";
+      } else if (media.indexOf("video/") === 0) {
+        html += "<div><video controls src='" + file.url + "' style='max-width:320px'></video><div class='meta'>" + label + "</div></div>";
+      } else if (media.indexOf("audio/") === 0) {
+        html += "<div><audio controls src='" + file.url + "'></audio><div class='meta'>" + label + "</div></div>";
+      } else {
+        html += "<div><a href='" + file.url + "'>" + escapeHtml(file.name) + "</a> <span class='meta'>" + label + "</span></div>";
+      }
+    });
+  }
   box.innerHTML = html;
 }
 

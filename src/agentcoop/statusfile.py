@@ -88,6 +88,9 @@ def render_status(board: Path, now: datetime | None = None) -> str:
         from agentcoop.outbox import unread_answer_lines
 
         lines.extend(unread_answer_lines(board, name, project, moment))
+        from agentcoop.share import status_lines as share_status_lines
+
+        lines.extend(share_status_lines(board, name))
         lines.append("")
     return "\n".join(lines).rstrip() + "\n"
 

@@ -108,7 +108,8 @@ Each message MUST be one UTF-8 JSON file named `<id>.json`.
 | `re` | Id of the message being answered, or `null`. |
 | `subject` | At most 120 characters. |
 | `body` | At most 16 KB of UTF-8 unless config raises the limit. Longer text SHOULD be a file under `files/<sender>/`, attached by path. |
-| `attachments` | Absolute paths. MAY be empty. |
+| `attachments` | Absolute paths. MAY be empty. After a normal send these paths are the shared copies. |
+| `attachment_info` | Optional. One object per attachment, in the same order. Readers that do not know this field MUST ignore it. |
 | `needs_reply` | Boolean. |
 
 Readers MUST ignore file names that start with a dot.
@@ -188,6 +189,22 @@ These locations are always denied: `~/.ssh`, `~/.aws`, `~/.gnupg`, `~/.config/gh
 After `Path.resolve()`, the path MUST sit inside the message's project folder, the board's `projects/<project>/files/` folder, or a folder listed in `config.json` `allowed_roots`. A symlink MUST NOT be able to escape those folders.
 
 `send` MUST reject violations. `check` MUST mark them `BLOCKED: do not open`.
+
+### Shared copies
+
+A normal send MUST copy each attachment into `projects/<project>/files/shared/<message id>/<file name>` before the message is visible. The copy MUST be a regular file, written under a temporary name and then renamed. If the source size changes during the copy, the send MUST refuse that file. The same sha256 already stored for that project MUST be reused instead of copied again.
+
+`attachments` MUST remain a list of absolute paths, now pointing at those copies, so an older reader still opens a file. `attachment_info` MUST match that list one to one. Each entry has `name`, `path`, `source_path`, `bytes`, `sha256`, `media_type`, `kind`, and `description`. `alt_of`, when present, is the sha256 of another attachment in the same message. An archive entry MAY set `contents` to `not checked`. Agent Co-op MUST NOT unpack an archive.
+
+`media_type` SHOULD come from the file name and the first bytes, so a wrong extension is caught. The sender MAY set it. `kind` is a short hint such as `screenshot`, `image`, `video`, `audio`, `data`, `document`, `patch`, `archive`, or `other`. Unknown kinds MUST be allowed.
+
+A file larger than `share_max_mb` (default 200) MUST NOT be copied unless the person allows that one file. A file larger than `share_hard_max_mb` (default 4096) MUST be refused. A program or a script MUST be held until the person allows that one file. Approval of one file MUST NOT allow a different file. Private files stay denied no matter who approves. A text file that looks like a key MUST be refused, and approval MUST NOT override that. A symlink whose target is outside the allowed folders MUST be refused, and the shared copy MUST NOT itself be a symlink. The copy step MAY also read a file the helper wrote in its own `outbox/` folder. The path stored on the message is the shared copy.
+
+An agent MAY declare `accepts` as a list of media type patterns (`image/*`, `application/pdf`, `*/*`). A missing list means unknown and MUST NOT block a send. When a file does not match, the sender and the recipient's check MUST show one note, and the file MUST still be sent.
+
+Shared files MUST be removed `share_keep_days` days (default 30) after every non-archived message that references them has been archived, unless the file is pinned.
+
+An outbox helper MAY place files in `outbox/<agent>/<answer name without .md>.files/`, with an optional `files.json` of `description` and `kind` per file name. A file that cannot be shared MUST be moved to `rejected/` with a reason. The answer MUST still be posted, and it MUST say which files were held back.
 
 If the subject or body looks like a common API key or private key, `send` MUST refuse unless `--allow-secret` is given.
 

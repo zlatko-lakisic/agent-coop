@@ -99,6 +99,11 @@ def _process_one(board: Path, project: str, agent: str, path: Path, join_named, 
     try:
         if action == "join":
             text = join_named(agent, project, note=note)
+            accepts = data.get("accepts")
+            if isinstance(accepts, list) and all(isinstance(item, str) and item.strip() for item in accepts):
+                from agentcoop.share import set_accepts
+
+                set_accepts(board, project, agent, [str(item) for item in accepts])
         else:
             text = leave_named(agent, project)
     except CoopError as exc:

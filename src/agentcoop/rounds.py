@@ -144,6 +144,9 @@ def tick(board: Path) -> int:
 
         process_board_requests(board)
         sync_board_outboxes(board)
+        from agentcoop.share import prune_due
+
+        prune_due(board)
         refresh_status(board)
         agents = load_agents(board).get("agents") or {}
         projects = load_projects(board).get("projects") or {}
@@ -210,6 +213,10 @@ def format_status(board: Path) -> str:
         + str(config.get("progress_every_minutes") or 10)
         + " minutes."
     )
+    from agentcoop.share import limits as share_limits
+
+    cap = share_limits(board)
+    lines.append("Shared files: up to " + str(cap["max_mb"]) + " MB each.")
     for project_name, project in (load_projects(board).get("projects") or {}).items():
         for notice in project.get("notices") or []:
             if isinstance(notice, str) and notice:
@@ -454,6 +461,29 @@ def _run_driver(board, agent, project, record, *, popen, timeout_minutes) -> int
     return 0
 
 
+def _attached_progress(folder: Path, message) -> str:
+    """Return progress text copied with a message, when the source was the progress file."""
+    try:
+        root = folder.resolve()
+    except OSError:
+        return ""
+    candidates: list[tuple[str, str]] = []
+    for info in getattr(message, "attachment_info", None) or []:
+        if isinstance(info, dict):
+            candidates.append((str(info.get("source_path") or ""), str(info.get("path") or "")))
+    for raw in message.attachments:
+        candidates.append((raw, raw))
+    for source, shared in candidates:
+        try:
+            if not source or not Path(source).resolve().is_relative_to(root):
+                continue
+            text_path = Path(shared or source)
+            return text_path.read_text(encoding="utf-8").rstrip()
+        except (OSError, ValueError):
+            continue
+    return ""
+
+
 def _helper_prompt(board, agent, project, record, message) -> tuple[str, str | None]:
     from agentcoop.context import latest_version
     from agentcoop.core import file_id
@@ -479,13 +509,9 @@ def _helper_prompt(board, agent, project, record, message) -> tuple[str, str | N
     from agentcoop.progress import progress_dir
 
     folder = progress_dir(board, project)
-    for raw in message.attachments:
-        try:
-            if Path(raw).resolve().is_relative_to(folder.resolve()):
-                lines.extend(["Driver progress:", Path(raw).read_text(encoding="utf-8").rstrip(), ""])
-                break
-        except (OSError, ValueError):
-            continue
+    progress_text = _attached_progress(folder, message)
+    if progress_text:
+        lines.extend(["Driver progress:", progress_text, ""])
     lines.extend(
         [
             "Message " + file_id(message),

@@ -109,6 +109,11 @@ def build_parser() -> argparse.ArgumentParser:
     send_cmd.add_argument("--type", default="question")
     send_cmd.add_argument("--re", dest="re_id")
     send_cmd.add_argument("--attach", action="append", default=[])
+    send_cmd.add_argument("--describe", action="append", default=[])
+    send_cmd.add_argument("--kind", action="append", default=[])
+    send_cmd.add_argument("--media-type", action="append", dest="media_type", default=[])
+    send_cmd.add_argument("--alt-of", action="append", dest="alt_of", default=[])
+    send_cmd.add_argument("--over-limit", action="store_true")
     send_cmd.add_argument("--needs-reply", action="store_true")
     send_cmd.add_argument("--allow-secret", action="store_true")
     send_cmd.set_defaults(func=cmd_send)
@@ -170,6 +175,7 @@ def build_parser() -> argparse.ArgumentParser:
     connect_cmd.add_argument("--model", default="")
     connect_cmd.add_argument("--host", default="")
     connect_cmd.add_argument("--api", default="")
+    connect_cmd.add_argument("--accepts", default="")
     connect_cmd.set_defaults(func=cmd_connect)
 
     disconnect_cmd = sub.add_parser("disconnect", help="Disconnect one agent")
@@ -357,10 +363,46 @@ def build_parser() -> argparse.ArgumentParser:
     draft_cmd.add_argument("--body-file")
     draft_cmd.set_defaults(func=cmd_draft)
 
+    share_cmd = sub.add_parser("share", help="Copy a file onto the board and print its path")
+    _add_as(share_cmd)
+    _add_project(share_cmd)
+    share_cmd.add_argument("path")
+    share_cmd.add_argument("--describe", default="")
+    share_cmd.add_argument("--kind", default="")
+    share_cmd.add_argument("--over-limit", action="store_true")
+    share_cmd.set_defaults(func=cmd_share)
+
+    files_cmd = sub.add_parser("files", help="List, pin, and remove shared files")
+    files_sub = files_cmd.add_subparsers(dest="files_cmd", required=True)
+    files_list = files_sub.add_parser("list", help="List shared files")
+    _add_project(files_list)
+    files_list.set_defaults(func=cmd_files_list)
+    files_pin = files_sub.add_parser("pin", help="Keep a shared file")
+    _add_as(files_pin)
+    _add_project(files_pin)
+    files_pin.add_argument("token")
+    files_pin.set_defaults(func=cmd_files_pin)
+    files_unpin = files_sub.add_parser("unpin", help="Let a shared file be removed later")
+    _add_as(files_unpin)
+    _add_project(files_unpin)
+    files_unpin.add_argument("token")
+    files_unpin.set_defaults(func=cmd_files_unpin)
+    files_prune = files_sub.add_parser("prune", help="Remove shared files past their keep time")
+    _add_project(files_prune)
+    files_prune.set_defaults(func=cmd_files_prune)
+
+    accepts_cmd = sub.add_parser("accepts", help="Say which file types you accept")
+    _add_as(accepts_cmd)
+    _add_project(accepts_cmd)
+    accepts_cmd.add_argument("--for", dest="for_agent", default="")
+    accepts_cmd.add_argument("patterns", nargs="?")
+    accepts_cmd.set_defaults(func=cmd_accepts)
+
     join_cmd = sub.add_parser("join", help="Join the current project as yourself")
     _add_as(join_cmd)
     _add_project(join_cmd)
     join_cmd.add_argument("--note", default="")
+    join_cmd.add_argument("--accepts", default="")
     join_cmd.add_argument("words", nargs="*")
     join_cmd.set_defaults(func=cmd_join)
     leave_cmd = sub.add_parser("leave", help="Leave a project you help with")
@@ -459,11 +501,17 @@ def _project(args: argparse.Namespace, agent: str | None) -> str:
     )
 
 
-def _print_sent(recipient: str, subject: str, body: str) -> None:
+def _print_sent(recipient: str, subject: str, body: str, files: list | None = None) -> None:
     """Print a one-line summary on standard error so a captured id stays one line."""
     from agentcoop.chatlines import sent_line
 
-    print(sent_line(recipient, subject, body), file=sys.stderr, flush=True)
+    print(sent_line(recipient, subject, body, files=files), file=sys.stderr, flush=True)
+
+
+def _aligned(flag: str, values: list[str], count: int) -> list[str]:
+    if len(values) > count:
+        raise CoopError(flag + " was given more times than --attach.", code=2)
+    return list(values) + [""] * (count - len(values))
 
 
 def _read_body(args: argparse.Namespace) -> str:
@@ -479,6 +527,124 @@ def _read_body(args: argparse.Namespace) -> str:
     if args.body == "-":
         return sys.stdin.read()
     return args.body
+
+
+def _sent_files(board: Path, project: str, agent: str, mid: str) -> list:
+    from agentcoop.core import read_message_file
+    from agentcoop.paths import sent_dir
+
+    path = sent_dir(board, project, agent) / (mid + ".json")
+    message, _issue = read_message_file(path)
+    if message is None:
+        return []
+    return list(message.attachment_info)
+
+
+def cmd_share(args: argparse.Namespace) -> int:
+    """Copy a file onto the board and print the shared path."""
+    from agentcoop.share import share_ahead
+
+    agent = _agent(args)
+    board = _board()
+    project = resolve_project(board, explicit=args.project, cwd=Path.cwd(), agent=agent)
+    path = share_ahead(
+        board,
+        project,
+        args.path,
+        sender=agent,
+        description=args.describe or "",
+        kind=args.kind or "",
+        over_limit=bool(args.over_limit),
+    )
+    print(path)
+    return 0
+
+
+def cmd_files_list(args: argparse.Namespace) -> int:
+    from agentcoop.share import list_rows
+
+    board = _board()
+    project = resolve_project(board, explicit=args.project, cwd=Path.cwd(), agent=None)
+    rows = list_rows(board, project)
+    if not rows:
+        print("No shared files.")
+        return 0
+    for row in rows:
+        print(row)
+    return 0
+
+
+def cmd_files_pin(args: argparse.Namespace) -> int:
+    from agentcoop.share import set_pin
+
+    agent = _agent(args)
+    board = _board()
+    project = resolve_project(board, explicit=args.project, cwd=Path.cwd(), agent=agent)
+    print(set_pin(board, project, args.token, pinned=True, actor=agent))
+    return 0
+
+
+def cmd_files_unpin(args: argparse.Namespace) -> int:
+    from agentcoop.share import set_pin
+
+    agent = _agent(args)
+    board = _board()
+    project = resolve_project(board, explicit=args.project, cwd=Path.cwd(), agent=agent)
+    print(set_pin(board, project, args.token, pinned=False, actor=agent))
+    return 0
+
+
+def cmd_files_prune(args: argparse.Namespace) -> int:
+    from agentcoop.share import prune
+
+    board = _board()
+    project = resolve_project(board, explicit=args.project, cwd=Path.cwd(), agent=None)
+    removed = prune(board, project)
+    if not removed:
+        print("No shared files were removed.")
+        return 0
+    for path in removed:
+        print("Removed " + path)
+    return 0
+
+
+def cmd_accepts(args: argparse.Namespace) -> int:
+    """Set what an agent accepts. Changing someone else needs the person."""
+    from agentcoop.confirm import confirm_person
+    from agentcoop.share import accepts_of, set_accepts
+
+    agent = _agent(args)
+    board = _board()
+    project = resolve_project(board, explicit=args.project, cwd=Path.cwd(), agent=agent)
+    target = args.for_agent or agent
+    if not args.patterns:
+        current = accepts_of(board, project, target)
+        if not current:
+            print(target + " has not said what it accepts.")
+        else:
+            print(target + " accepts " + ", ".join(current) + ".")
+        return 0
+    if target != agent:
+        confirm_person(
+            "Change what " + target + " accepts to " + args.patterns + ".",
+            expected=target,
+            kind="agent",
+            asked_by=agent,
+        )
+    patterns = [part.strip() for part in str(args.patterns).split(",") if part.strip()]
+    set_accepts(board, project, target, patterns)
+    print(target + " accepts " + ", ".join(patterns) + ".")
+    return 0
+
+
+def _save_declared_accepts(args: argparse.Namespace, name: str) -> None:
+    patterns = [part.strip() for part in str(getattr(args, "accepts", "") or "").split(",") if part.strip()]
+    if not patterns:
+        return
+    from agentcoop.share import remember_accepts
+
+    remember_accepts(_board(), name, patterns)
+    print(name + " accepts " + ", ".join(patterns) + ".")
 
 
 def cmd_send(args: argparse.Namespace) -> int:
@@ -504,6 +670,11 @@ def cmd_send(args: argparse.Namespace) -> int:
             subject = "Attention"
         else:
             raise CoopError("Add a subject with --subject.", code=2)
+    count = len(attachments)
+    describes = _aligned("--describe", list(args.describe or []), count)
+    kinds = _aligned("--kind", list(args.kind or []), count)
+    media_types = _aligned("--media-type", list(args.media_type or []), count)
+    alt_ofs = _aligned("--alt-of", list(args.alt_of or []), count)
     ids = []
     for recipient in recipients:
         mid = send(
@@ -518,9 +689,18 @@ def cmd_send(args: argparse.Namespace) -> int:
             attachments=list(attachments),
             needs_reply=bool(args.needs_reply),
             allow_secret=bool(args.allow_secret),
+            describes=describes,
+            kinds=kinds,
+            media_types=media_types,
+            alt_ofs=alt_ofs,
+            over_limit=bool(args.over_limit),
         )
         ids.append(mid)
-        _print_sent(recipient, subject, body)
+        infos = _sent_files(board, project, agent, mid)
+        _print_sent(recipient, subject, body, files=infos)
+        for info in infos:
+            if info.get("mismatch"):
+                print(str(info["mismatch"]), file=sys.stderr)
         if args.urgent:
             from agentcoop.progress import record_urgent
 
@@ -1178,6 +1358,7 @@ def cmd_connect(args: argparse.Namespace) -> int:
             yes=bool(args.yes),
         )
         print(name + " is connected.")
+        _save_declared_accepts(args, name)
         if args.self_tool == "cursor":
             print(
                 "When Cursor is not watching, messages wait until you say Start working. "
@@ -1196,6 +1377,7 @@ def cmd_connect(args: argparse.Namespace) -> int:
         api=args.api or None,
     )
     print(name + " is connected.")
+    _save_declared_accepts(args, name)
     if args.tool == "cursor":
         print(
             "When Cursor is not watching, messages wait until you say Start working. "
@@ -1454,6 +1636,14 @@ def cmd_join(args: argparse.Namespace) -> int:
         note=args.note or None,
     )
     print(text)
+    if args.accepts:
+        from agentcoop.share import set_accepts
+
+        board = _board()
+        project = resolve_project(board, explicit=args.project, cwd=Path.cwd(), agent=agent)
+        patterns = [part.strip() for part in str(args.accepts).split(",") if part.strip()]
+        set_accepts(board, project, agent, patterns)
+        print(agent + " accepts " + ", ".join(patterns) + ".")
     _print_sent("the project", "Join", text)
     return 0
 

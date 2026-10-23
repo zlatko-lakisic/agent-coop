@@ -6,6 +6,7 @@ Later steps use <board>/bin/agentcoop, not the copy in this checkout.
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 import shutil
 import subprocess
@@ -258,6 +259,125 @@ def _watch_smoke(command: Path, env: dict, root: Path) -> int:
     if checked.returncode != 0 or "A later correction." not in text or "asks for your attention" not in text:
         sys.stderr.write(text)
         return checked.returncode or 1
+    image = demo / "shot.png"
+    image.write_bytes(b"\x89PNG\r\n\x1a\nsmoke")
+    picture = subprocess.run(
+        [
+            str(command),
+            "send",
+            "--as",
+            "cursor",
+            "--project",
+            "smoke",
+            "--to",
+            "claude_code",
+            "--subject",
+            "Shot",
+            "--body",
+            "A picture.",
+            "--attach",
+            str(image),
+            "--describe",
+            "battle",
+            "--kind",
+            "screenshot",
+        ],
+        env=env,
+        cwd=str(demo),
+        capture_output=True,
+        text=True,
+    )
+    if picture.returncode != 0 or "screenshot" not in (picture.stdout + picture.stderr):
+        sys.stderr.write(picture.stdout + picture.stderr)
+        return picture.returncode or 1
+    note = demo / "from-helper.md"
+    note.write_text("from the helper\n", encoding="utf-8")
+    shared = subprocess.run(
+        [
+            str(command),
+            "share",
+            str(note),
+            "--as",
+            "claude_code",
+            "--project",
+            "smoke",
+            "--describe",
+            "notes",
+            "--kind",
+            "document",
+        ],
+        env=env,
+        cwd=str(demo),
+        capture_output=True,
+        text=True,
+    )
+    shared_path = shared.stdout.strip()
+    if shared.returncode != 0 or not Path(shared_path).is_file():
+        sys.stderr.write(shared.stdout + shared.stderr)
+        return shared.returncode or 1
+    back = subprocess.run(
+        [
+            str(command),
+            "send",
+            "--as",
+            "claude_code",
+            "--project",
+            "smoke",
+            "--to",
+            "cursor",
+            "--type",
+            "answer",
+            "--re",
+            message_id,
+            "--subject",
+            "Re: Ping",
+            "--body",
+            "The file is attached.",
+            "--attach",
+            shared_path,
+        ],
+        env=env,
+        cwd=str(demo),
+        capture_output=True,
+        text=True,
+    )
+    if back.returncode != 0 or "from-helper.md" not in (back.stdout + back.stderr):
+        sys.stderr.write(back.stdout + back.stderr)
+        return back.returncode or 1
+    board = Path(env["HOME"]) / ".agent_board"
+    config_path = board / "config.json"
+    config = json.loads(config_path.read_text(encoding="utf-8"))
+    config["share_max_mb"] = 1
+    config_path.write_text(json.dumps(config, indent=2) + "\n", encoding="utf-8")
+    big = demo / "big.bin"
+    with big.open("wb") as handle:
+        handle.seek(1024 * 1024)
+        handle.write(b"x")
+    refused = subprocess.run(
+        [
+            str(command),
+            "send",
+            "--as",
+            "cursor",
+            "--project",
+            "smoke",
+            "--to",
+            "claude_code",
+            "--subject",
+            "Too big",
+            "--body",
+            "This should wait for the person.",
+            "--attach",
+            str(big),
+        ],
+        env=env,
+        cwd=str(demo),
+        capture_output=True,
+        text=True,
+    )
+    if refused.returncode == 0 or "Do not split it" not in (refused.stdout + refused.stderr):
+        sys.stderr.write(refused.stdout + refused.stderr)
+        return refused.returncode or 1
     return 0
 
 
