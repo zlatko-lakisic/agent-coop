@@ -120,35 +120,34 @@ class ShareCopyTests(unittest.TestCase):
             folder = _ready(env)
             source = folder / "grow.txt"
             source.write_text("hello", encoding="utf-8")
-            real_stat = os.stat
+            real_stat = Path.stat
+            seen = {"n": 0}
 
-            def fake(path, *args, **kwargs):
-                result = real_stat(path, *args, **kwargs)
-                if Path(path).name == "grow.txt":
-                    fake.calls += 1
-                    if fake.calls >= 3:
-                        return os.stat_result(
-                            (
-                                result.st_mode,
-                                result.st_ino,
-                                result.st_dev,
-                                result.st_nlink,
-                                result.st_uid,
-                                result.st_gid,
-                                result.st_size + 3,
-                                result.st_atime,
-                                result.st_mtime,
-                                result.st_ctime,
-                            )
-                        )
-                return result
+            def fake_stat(self, *args, **kwargs):
+                result = real_stat(self, *args, **kwargs)
+                if self.name != "grow.txt":
+                    return result
+                import inspect
 
-            fake.calls = 0
-            with patch("agentcoop.share.os.stat", side_effect=fake):
+                if not any(frame.function == "_copy_bytes" for frame in inspect.stack()):
+                    return result
+                seen["n"] += 1
+                if seen["n"] < 2:
+                    return result
+
+                class Bigger:
+                    def __getattr__(self, name):
+                        if name == "st_size":
+                            return result.st_size + 3
+                        return getattr(result, name)
+
+                return Bigger()
+
+            with patch("pathlib.Path.stat", fake_stat):
                 with self.assertRaises(CoopError) as caught:
                     _send(env, source)
             self.assertIn("changed while it was being copied", str(caught.exception))
-            self.assertFalse(any(path.suffix == ".partial" or ".partial" in path.name for path in share_root(env.board, "frontend").rglob("*")))
+            self.assertFalse(any(".partial" in path.name for path in share_root(env.board, "frontend").rglob("*")))
 
     def test_same_hash_is_not_copied_twice(self) -> None:
         with support.TempEnv() as env:
@@ -257,7 +256,7 @@ class ShareAcceptTests(unittest.TestCase):
             )
             image = folder / "shot.png"
             image.write_bytes(PNG)
-            note = folder / "notes.md"
+            note = folder / "notes.txt"
             note.write_text("words\n", encoding="utf-8")
             image_id = _send(env, image, kinds=["image"])
             image_message = load_message(inbox_msgs(env.board, "frontend", "claude_code") / (image_id + ".json"))
