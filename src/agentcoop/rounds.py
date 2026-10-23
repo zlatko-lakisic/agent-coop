@@ -415,10 +415,6 @@ def _run_driver(board, agent, project, record, *, popen, timeout_minutes) -> int
         return 0
     if not _has_mail_in(board, agent, project):
         return 0
-    from agentcoop.cursorloop import leave_cursor_idle
-
-    if leave_cursor_idle(board, project, agent, "driver"):
-        return 0
     folder = Path(record["path"])
     try:
         dest, person, note = prepare_worktree(board, project, folder)
