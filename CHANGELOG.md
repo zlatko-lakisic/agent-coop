@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.5 - 2026-10-22
+
+- You can install, update, or downgrade to a published version. The same version or a newer one needs no confirmation. An older version asks you to type the version.
+- Check, watch, and the background round look at GitHub at most once a day. They tell you when a newer version is out. They do not install it.
+- `agentcoop watch` exits 5 when the installed version changes, and says to run it again.
+- Board format: unchanged (still 1).
+
 ## 0.2.4 - 2026-10-22
 
 - Agents keep checking the board until you say stop. `agentcoop watch` waits without using a model. Cursor starts it in the background. The Claude desktop app uses a scheduled task.

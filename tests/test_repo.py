@@ -32,6 +32,14 @@ class RepoTests(unittest.TestCase):
                     break
         self.assertEqual(offenders, [])
 
+    def test_update_docs_exist(self) -> None:
+        for name in (
+            "docs/agent-setup.md",
+            "docs/agent-update.md",
+            "skills/agent-coop/SKILL.md",
+        ):
+            self.assertTrue((ROOT / name).is_file(), name)
+
     def test_agents_support_is_current(self) -> None:
         script = ROOT / "scripts" / "gen_agents_support.py"
         result = subprocess.run([sys.executable, str(script), "--check"], cwd=ROOT, capture_output=True, text=True)

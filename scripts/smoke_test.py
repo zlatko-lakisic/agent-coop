@@ -5,7 +5,9 @@ Later steps use <board>/bin/agentcoop, not the copy in this checkout.
 
 from __future__ import annotations
 
+import hashlib
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -142,6 +144,50 @@ def _watch_smoke(command: Path, env: dict, root: Path) -> int:
     return 0
 
 
+def _payload_from(starter: list[str]) -> Path | None:
+    """Return the built file smoke was given, when it is a real file."""
+    for item in starter:
+        path = Path(item)
+        if path.is_file() and path.suffix.lower() in (".pyz", ".exe", ".zip"):
+            return path
+        if path.is_file() and path.name.startswith("agentcoop"):
+            return path
+    return None
+
+
+def _update_smoke(command: Path, starter: list[str], env: dict, root: Path) -> int:
+    """Check the daily lookup, then install the built file that is already on disk."""
+    checked = subprocess.run(
+        [str(command), "update", "--check"],
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+    text = checked.stdout + checked.stderr
+    if checked.returncode != 0:
+        sys.stderr.write(text)
+        return checked.returncode or 1
+    payload = _payload_from(starter)
+    if payload is None:
+        return 0
+    folder = root / "from-file"
+    folder.mkdir()
+    dest = folder / payload.name
+    shutil.copy2(payload, dest)
+    digest = hashlib.sha256(dest.read_bytes()).hexdigest()
+    (folder / "SHA256SUMS").write_text(digest + "  " + dest.name + "\n", encoding="utf-8")
+    installed = subprocess.run(
+        [str(command), "update", "--from-file", str(dest)],
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+    if installed.returncode != 0:
+        sys.stderr.write(installed.stdout + installed.stderr)
+        return installed.returncode or 1
+    return 0
+
+
 def main() -> int:
     root = Path(__file__).resolve().parents[1]
     src = root / "src"
@@ -210,6 +256,8 @@ def main() -> int:
                 return 1
         sys.stdout.write(text)
         if _watch_smoke(command, env, Path(raw)) != 0:
+            return 1
+        if _update_smoke(command, starter, env, Path(raw)) != 0:
             return 1
         prepare = subprocess.run(
             [*starter, "desktop", "prepare"],

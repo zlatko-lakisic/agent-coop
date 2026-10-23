@@ -55,7 +55,15 @@ def render_status(board: Path, now: datetime | None = None) -> str:
             last = "Last round: none yet."
     else:
         last = "Last round: none yet."
-    lines = ["# Status", "", "Updated: " + stamp, "", schedule, last, ""]
+    lines = ["# Status", ""]
+    try:
+        from agentcoop.updatecheck import status_lines
+
+        lines.extend(status_lines(board))
+        lines.append("")
+    except Exception:
+        pass
+    lines.extend(["Updated: " + stamp, "", schedule, last, ""])
     projects = load_projects(board).get("projects") or {}
     for name in sorted(projects):
         project = projects[name]
