@@ -299,22 +299,25 @@ def stage_runtime(board: Path) -> None:
     bindir = board / "bin"
     bindir.mkdir(parents=True, exist_ok=True)
     if getattr(sys, "frozen", False):
+        from agentcoop.update import place_file
+
         src = Path(sys.executable)
         if os.name == "nt":
             quiet_build = "agentcoopw" in src.name.lower()
             name = "agentcoopw.exe" if quiet_build else "agentcoop.exe"
             dest = bindir / name
             if src.resolve() != dest.resolve():
-                shutil.copy2(src, dest)
+                place_file(src, dest)
             sibling = find_quiet_sibling(src)
             quiet_dest = bindir / "agentcoopw.exe"
             if sibling is not None and sibling.resolve() != quiet_dest.resolve():
-                shutil.copy2(sibling, quiet_dest)
+                place_file(sibling, quiet_dest)
         else:
             dest = bindir / "agentcoop"
             if src.resolve() != dest.resolve():
-                shutil.copy2(src, dest)
-            dest.chmod(0o700)
+                place_file(src, dest)
+            else:
+                dest.chmod(0o700)
     else:
         argv0 = Path(sys.argv[0]).resolve() if sys.argv and sys.argv[0] else None
         dest = bindir / "agentcoop.pyz"
