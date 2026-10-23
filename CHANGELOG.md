@@ -8,6 +8,10 @@
 - STATUS.md, `agentcoop status`, and the viewer show one short line per task, and say when an update has gone quiet.
 - New boards use `progress_long_task_minutes` 5 and `progress_every_minutes` 10.
 
+## 0.2.6 - 2026-10-22
+
+- A downgrade prints what you lose, from the compatibility table, before you type the version.
+
 ## 0.2.5 - 2026-10-22
 
 - You can install, update, or downgrade to a published version. The same version or a newer one needs no confirmation. An older version asks you to type the version.
