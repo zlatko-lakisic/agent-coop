@@ -30,6 +30,13 @@ from agentcoop.statusfile import status_path
 ROOT = support.ROOT
 PHRASES = (
     "Install Agent Co-op from github.com/zlatko-lakisic/agent-coop",
+    "Install Agent Co-op 0.2.3 from github.com/zlatko-lakisic/agent-coop",
+    "Update Agent Co-op",
+    "Update to 0.2.4",
+    "Downgrade to 0.2.3",
+    "Go back to the previous version",
+    "Turn off update checks",
+    "Turn on update checks",
     "You are the driver for this project",
     "Join this project",
     "Start working",
@@ -664,6 +671,9 @@ class SkillTests(unittest.TestCase):
         path = ROOT / "skills" / "agent-coop" / "SKILL.md"
         text = path.read_text(encoding="utf-8")
         self.assertLess(len(text.splitlines()), 150)
+        from agentcoop import __version__
+
+        self.assertIn("Skill version: " + __version__, text)
         self.assertTrue(text.startswith("---\n"))
         end = text.index("\n---\n", 4)
         front = {}
