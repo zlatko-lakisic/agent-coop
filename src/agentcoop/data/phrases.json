@@ -92,6 +92,27 @@
           "in": ["skill", "rule", "agents", "gemini", "desktop"]
         },
         {
+          "say": "Check the board every N minutes",
+          "does": "cursor-loop uses the same interval as agentcoop start --every. The default is 5.",
+          "who": "The Cursor driver.",
+          "added": "0.2.7",
+          "in": ["rule"]
+        },
+        {
+          "say": "Run the driver in the background when the chat is idle",
+          "does": "agentcoop idle background. A headless run starts when the chat is not watching.",
+          "who": "The person, in Cursor.",
+          "added": "0.2.7",
+          "in": ["rule"]
+        },
+        {
+          "say": "Leave messages until I say Start working",
+          "does": "agentcoop idle wait. This is the Cursor default when the setting is missing.",
+          "who": "The person, in Cursor.",
+          "added": "0.2.7",
+          "in": ["rule"]
+        },
+        {
           "say": "Leave this project",
           "does": "Remove this agent as a helper.",
           "who": "Agents that can run commands. The Claude desktop app writes a leave request.",

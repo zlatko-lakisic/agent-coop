@@ -29,7 +29,7 @@ OPEN_QUESTIONS = (
     "Whether ChatGPT Work can write to granted local folders.",
     "Whether the ChatGPT desktop app's Codex side reads .codex/skills/.",
     "Skill paths for GitHub Copilot, OpenCode, Cline, and Goose.",
-    "Current hook formats for Codex, Gemini CLI, and Cursor.",
+    "Current hook formats for Codex and Gemini CLI.",
     "Read-only permission settings per tool (exact config keys).",
     "Detection paths for each app on each OS.",
 )

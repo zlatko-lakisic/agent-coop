@@ -317,6 +317,21 @@ def build_parser() -> argparse.ArgumentParser:
     watch_cmd.add_argument("--timeout", type=int, default=10)
     watch_cmd.set_defaults(func=cmd_watch)
 
+    loop_cmd = sub.add_parser("cursor-loop", help="Keep an open Cursor chat checking the board")
+    _add_as(loop_cmd)
+    _add_project(loop_cmd)
+    loop_cmd.add_argument("loop_action", nargs="?", default="", help="stop ends the loop")
+    loop_cmd.set_defaults(func=cmd_cursor_loop)
+
+    hook_cmd = sub.add_parser("hook", help="Answer a Cursor hook")
+    hook_cmd.add_argument("hook_name", help="cursor-stop")
+    _add_as(hook_cmd)
+    hook_cmd.set_defaults(func=cmd_hook)
+
+    idle_cmd = sub.add_parser("idle", help="Choose what happens when Cursor is not watching")
+    idle_cmd.add_argument("idle_mode", choices=("wait", "background"))
+    idle_cmd.set_defaults(func=cmd_idle)
+
     start_cmd = sub.add_parser("start", help="Turn on background checks")
     start_cmd.add_argument("--every", type=int, default=5)
     start_cmd.set_defaults(func=cmd_start)
@@ -836,10 +851,16 @@ def cmd_watch(args: argparse.Namespace) -> int:
         raise CoopError("Use agentcoop watch, agentcoop watch stop, or agentcoop watch start.", code=2)
     if action == "stop":
         set_project_watching(board, project, False, agent)
+        from agentcoop.cursorloop import set_agent_watching
+
+        set_agent_watching(board, project, agent, False)
         print(sent_line("the project", "Stop checking", "Checking is stopped for " + project + "."), flush=True)
         return 0
     if action == "start":
         set_project_watching(board, project, True, agent)
+        from agentcoop.cursorloop import set_agent_watching
+
+        set_agent_watching(board, project, agent, True)
         print(sent_line("the project", "Start checking", "Checking is on for " + project + "."), flush=True)
         return 0
     minutes = int(args.timeout)
@@ -849,6 +870,51 @@ def cmd_watch(args: argparse.Namespace) -> int:
             code=2,
         )
     return run_watch(board, project, agent, timeout_seconds=minutes * 60)
+
+
+def cmd_cursor_loop(args: argparse.Namespace) -> int:
+    """Keep printing ticks until checking stops or the program changes."""
+    from agentcoop.cursorloop import run_cursor_loop, set_agent_watching
+    from agentcoop.watch import assert_member
+
+    agent = _agent(args)
+    board = _board()
+    project = resolve_project(board, explicit=args.project, cwd=Path.cwd(), agent=agent)
+    assert_member(board, project, agent)
+    if args.loop_action == "stop":
+        set_agent_watching(board, project, agent, False)
+        print("Checking is stopped. cursor-loop will exit.", flush=True)
+        return 0
+    if args.loop_action:
+        raise CoopError("Use agentcoop cursor-loop or agentcoop cursor-loop stop.", code=2)
+    return run_cursor_loop(board, project, agent)
+
+
+def cmd_hook(args: argparse.Namespace) -> int:
+    """Read a Cursor hook payload and print the follow-up, if any."""
+    import json
+    import sys
+
+    from agentcoop.cursorloop import cursor_stop_followup
+
+    if args.hook_name != "cursor-stop":
+        raise CoopError("The only hook is cursor-stop.", code=2)
+    agent = _agent(args)
+    board = _board()
+    raw = sys.stdin.read()
+    result = cursor_stop_followup(board, agent, raw)
+    if result:
+        print(json.dumps(result), flush=True)
+    return 0
+
+
+def cmd_idle(args: argparse.Namespace) -> int:
+    """Save whether an idle Cursor chat waits or runs in the background."""
+    from agentcoop.cursorloop import set_idle_mode
+
+    mode = "wait_for_chat" if args.idle_mode == "wait" else "background_run"
+    print(set_idle_mode(_board(), mode), flush=True)
+    return 0
 
 
 def cmd_context_show(args: argparse.Namespace) -> int:
@@ -1080,6 +1146,12 @@ def cmd_setup(args: argparse.Namespace) -> int:
     print("Agent Co-op is set up.")
     print("Board: " + result["board"])
     print(format_setup_summary(_board(), result["connected"]))
+    if "cursor" in (result.get("connected") or []):
+        print(
+            "When Cursor is not watching, messages wait until you say Start working. "
+            "To run the driver in the background instead, say: "
+            "Run the driver in the background when the chat is idle."
+        )
     left = result.get("left_alone") or []
     if left:
         print("Files you changed, left in place:")
@@ -1106,6 +1178,12 @@ def cmd_connect(args: argparse.Namespace) -> int:
             yes=bool(args.yes),
         )
         print(name + " is connected.")
+        if args.self_tool == "cursor":
+            print(
+                "When Cursor is not watching, messages wait until you say Start working. "
+                "To run the driver in the background instead, say: "
+                "Run the driver in the background when the chat is idle."
+            )
         return 0
     if args.self_tool:
         raise CoopError("Use --tool only with connect self.", code=2)
@@ -1118,6 +1196,12 @@ def cmd_connect(args: argparse.Namespace) -> int:
         api=args.api or None,
     )
     print(name + " is connected.")
+    if args.tool == "cursor":
+        print(
+            "When Cursor is not watching, messages wait until you say Start working. "
+            "To run the driver in the background instead, say: "
+            "Run the driver in the background when the chat is idle."
+        )
     return 0
 
 

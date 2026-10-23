@@ -270,9 +270,20 @@ def _place_named(board: Path, files: dict[str, Path], *, windows: bool | None = 
 def _finish_board(board: Path, new_version: str, old_version: str) -> None:
     """Migrations, installed files, the schedule, and the desktop skill."""
     apply_migrations(board)
-    from agentcoop.install import refresh_installed_files
+    from agentcoop.install import install_project_files, project_instruction_agents, refresh_installed_files
+    from agentcoop.projects import load_projects
 
     left = refresh_installed_files(board)
+    for project_name, project in (load_projects(board).get("projects") or {}).items():
+        for agent in project_instruction_agents(board, project):
+            install_project_files(
+                board,
+                project_name,
+                agent,
+                yes=True,
+                gitignore=True,
+                only_missing=True,
+            )
     from agentcoop.rounds import refresh_schedule_command
 
     refresh_schedule_command(board)

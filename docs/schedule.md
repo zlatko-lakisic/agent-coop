@@ -14,6 +14,8 @@ A helper reply that is empty is a failed run. After three failures the driver ge
 
 A scheduled Cursor run uses `agent -p --trust --workspace <folder>`. It never passes `--force`, `-f`, or `--yolo`.
 
+When the open Cursor chat is watching, or its stop hook ran within the progress interval, the round does not start a second Cursor driver. When the chat is not watching, Cursor leaves the mail until you say Start working. Other tools still run in the background. `agentcoop idle background` switches Cursor to a headless run. `agentcoop idle wait` switches it back. STATUS.md says when messages are waiting.
+
 Before a driver run, Agent Co-op writes `<worktree>/.cursor/cli.json`. That file allows reading, writing the worktree and the board, and running `git`, `agentcoop`, and any commands set with `agentcoop project set <name> --driver-shell`. It denies writes to `.env` files, key files, and the board's settings. The file is listed in the worktree's git exclude list, so it is not committed.
 
 Before a helper run, Agent Co-op writes `<board>/projects/<project>/.cursor/cli.json` with `Read(**)` allowed and `Write(**)` and `Shell(*)` denied.

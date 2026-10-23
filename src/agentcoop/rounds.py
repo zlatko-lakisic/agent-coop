@@ -610,6 +610,15 @@ def _should_start(board, agent, project, role) -> bool:
 
     if not _has_mail_in(board, agent, project):
         return False
+    from agentcoop.cursorloop import leave_cursor_idle
+
+    if leave_cursor_idle(board, project, agent, role):
+        from agentcoop.cursorloop import maybe_notify, status_idle_line
+
+        line = status_idle_line(board, project, agent)
+        if line:
+            maybe_notify(board, line)
+        return False
     if schedulable_reason(board, agent, role=role):
         return False
     reason = _watch_skip_reason(board, agent, project)

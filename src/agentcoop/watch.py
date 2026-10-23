@@ -99,13 +99,14 @@ def write_heartbeat(
     *,
     since: datetime,
     seen: datetime,
+    how: str = "watch",
 ) -> None:
     """Write the heartbeat atomically."""
     payload = {
         "agent": agent,
         "since": format_ts(since),
         "last_seen": format_ts(seen),
-        "how": "watch",
+        "how": how,
     }
     atomic_write_bytes(watcher_path(board, project, agent), dump_json(payload))
     _refresh(board)
@@ -187,6 +188,9 @@ def run_watch(
     clock = now or (lambda: datetime.now(timezone.utc))
     pause = sleep or time.sleep
     stream = out if out is not None else sys.stdout
+    started = _aware(clock())
+    if heartbeat_fresh(board, project, agent, now=started):
+        raise CoopError(agent + " is already watching. A second watch was not started.")
     from agentcoop.updatecheck import header_line
 
     notice = header_line(board, agent, record=True)

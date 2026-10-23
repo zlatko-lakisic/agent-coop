@@ -142,6 +142,8 @@ def remove_marked_section(original: str, agent: str = "") -> str:
 def merge_hook_settings(existing: dict, addition: dict) -> dict:
     """Add hook entries that are not already present. Keep every other hook."""
     result = json.loads(json.dumps(existing))
+    if addition.get("version") is not None and "version" not in result:
+        result["version"] = addition["version"]
     hooks = result.setdefault("hooks", {})
     for event, entries in (addition.get("hooks") or {}).items():
         current = hooks.setdefault(event, [])
@@ -213,6 +215,8 @@ def remove_hook_command(settings: dict, command: str) -> dict:
 
 
 def _hook_command(entry: dict) -> str:
+    if isinstance(entry, dict) and entry.get("command"):
+        return str(entry["command"])
     for hook in entry.get("hooks") or []:
         if isinstance(hook, dict) and hook.get("command"):
             return str(hook["command"])
@@ -406,9 +410,9 @@ def _refresh_one_entry(
     if kind == "gitignore":
         return None
     if kind == "hook":
-        if tool_key != "claude-code":
+        addition = _hook_addition(board, agent_name, tool_key)
+        if addition is None:
             return None
-        addition = claude_code_hooks(board, agent_name)
         try:
             existing = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
@@ -638,6 +642,7 @@ def install_project_files(
     *,
     yes: bool = False,
     gitignore: bool = False,
+    only_missing: bool = False,
 ) -> list[str]:
     """Install project-scoped files for one agent. Returns relative paths written."""
     agents = load_agents(board)
@@ -654,11 +659,15 @@ def install_project_files(
         if project is None:
             raise CoopError("There is no project named " + project_name + ".")
         root = Path(project["path"])
+        if only_missing and not root.is_dir():
+            return
         manifest = project.setdefault("installed", [])
         for item in tool.install_paths:
             if item["scope"] != "project":
                 continue
             if item["kind"] == "hook" and tool.hooks != "supported":
+                continue
+            if only_missing and (root / item["path"]).is_file():
                 continue
             _install_one(
                 board,
@@ -990,6 +999,17 @@ def claude_code_hooks(board: Path, agent_name: str) -> dict:
     }
 
 
+def _hook_addition(board: Path, agent_name: str, tool_key: str) -> dict | None:
+    """Return the hooks to merge for one tool, or None when that tool has none."""
+    if tool_key == "claude-code":
+        return claude_code_hooks(board, agent_name)
+    if tool_key == "cursor":
+        from agentcoop.cursorloop import cursor_hooks
+
+        return cursor_hooks(board, agent_name)
+    return None
+
+
 def _install_hook(
     board: Path,
     agent_name: str,
@@ -999,9 +1019,9 @@ def _install_hook(
     tool_key: str,
     scope: str,
 ) -> None:
-    if tool_key != "claude-code":
+    addition = _hook_addition(board, agent_name, tool_key)
+    if addition is None:
         return
-    addition = claude_code_hooks(board, agent_name)
     command = ""
     for entries in (addition.get("hooks") or {}).values():
         for entry in entries:
