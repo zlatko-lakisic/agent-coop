@@ -160,6 +160,9 @@ def setup_board(
             _turn_on_schedule(board, every)
         project = None
     prune_out_of_scope_project_files(board)
+    from agentcoop.migrate import ensure_board_metadata
+
+    ensure_board_metadata(board)
     return {
         "board": str(board),
         "found": found,

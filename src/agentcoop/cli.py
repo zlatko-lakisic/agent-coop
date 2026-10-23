@@ -33,6 +33,7 @@ from agentcoop.projects import (
     board_is_ready,
     integrity_ok,
     load_agents,
+    load_config,
     load_projects,
     read_projects_checked,
     require_board,
@@ -63,6 +64,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
     try:
+        _cleanup_replaced_binaries()
         return int(args.func(args))
     except CoopError as exc:
         print(str(exc), file=sys.stderr)
@@ -90,7 +92,8 @@ def build_parser() -> argparse.ArgumentParser:
         prog="agentcoop",
         epilog=(
             "Exit codes: 1 error, 2 usage, 3 not set up, 4 no project, "
-            "5 roles paused, 6 settings file is not in the expected format."
+            "5 roles paused (watch also uses 5 when Agent Co-op was updated), "
+            "6 settings file is not in the expected format."
         ),
     )
     sub = parser.add_subparsers(dest="command", required=True)
@@ -157,6 +160,7 @@ def build_parser() -> argparse.ArgumentParser:
     setup_cmd.add_argument("--add-to-path", choices=("yes", "no"), default="no")
     setup_cmd.add_argument("--schedule", choices=("yes", "no"), default="yes")
     setup_cmd.add_argument("--every", type=int, default=5)
+    setup_cmd.add_argument("--version", default="", dest="setup_version")
     setup_cmd.set_defaults(func=cmd_setup)
 
     connect_cmd = sub.add_parser("connect", help="Connect one agent")
@@ -382,6 +386,16 @@ def build_parser() -> argparse.ArgumentParser:
     version_cmd = sub.add_parser("version", help="Show the tool and spec versions")
     version_cmd.set_defaults(func=cmd_version)
 
+    update_cmd = sub.add_parser("update", help="Install a published version")
+    update_cmd.add_argument("--to", dest="to_version", default="")
+    update_cmd.add_argument("--check", action="store_true")
+    update_cmd.add_argument("--list", dest="list_versions", action="store_true")
+    update_cmd.add_argument("--rollback", action="store_true")
+    update_cmd.add_argument("--from-file", dest="from_file", default="")
+    update_cmd.add_argument("--install-this", dest="install_this", action="store_true")
+    update_cmd.add_argument("--notify", choices=("on", "off"), default="")
+    update_cmd.set_defaults(func=cmd_update)
+
     uninstall_cmd = sub.add_parser("uninstall", help="Remove Agent Co-op from this computer")
     uninstall_cmd.add_argument("--agent", action="store_true")
     uninstall_cmd.add_argument("--dry-run", action="store_true")
@@ -499,8 +513,31 @@ def cmd_send(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cleanup_replaced_binaries() -> None:
+    """Remove Windows binaries renamed aside during the previous update."""
+    try:
+        from agentcoop.update import cleanup_old_binaries
+
+        board = board_root()
+        if board.is_dir():
+            cleanup_old_binaries(board)
+    except Exception:
+        return
+
+
+def cmd_update(args: argparse.Namespace) -> int:
+    """Install a published version, or turn the daily check on or off."""
+    from agentcoop.update import run_update
+
+    return run_update(args)
+
+
 def cmd_check(args: argparse.Namespace) -> int:
     """Print new messages."""
+    from agentcoop.updatecheck import quiet_update_check
+
+    if board_is_ready(board_root()):
+        quiet_update_check(board_root())
     agent = _agent(args)
     if args.summary:
         board = board_root()
@@ -758,6 +795,9 @@ def cmd_watch(args: argparse.Namespace) -> int:
 
     agent = _agent(args)
     board = _board()
+    from agentcoop.updatecheck import quiet_update_check
+
+    quiet_update_check(board)
     project = resolve_project(board, explicit=args.project, cwd=Path.cwd(), agent=agent)
     assert_member(board, project, agent)
     action = args.watch_action or ""
@@ -948,8 +988,24 @@ def _helpers(items: list[str]) -> dict[str, str]:
     return result
 
 
+def _print_update_check_line() -> None:
+    """Tell the person the daily check is on, unless they turned it off."""
+    try:
+        if load_config(_board()).get("update_check") is not False:
+            print(
+                'Agent Co-op checks GitHub once a day for a new version. '
+                'Say "Turn off update checks" to stop it.'
+            )
+    except CoopError:
+        return
+
+
 def cmd_setup(args: argparse.Namespace) -> int:
     """Set up or detect."""
+    if getattr(args, "setup_version", ""):
+        from agentcoop.update import setup_at_version
+
+        return setup_at_version(args)
     if args.detect:
         result = setup_board(detect_only=True)
         if args.json:
@@ -998,6 +1054,7 @@ def cmd_setup(args: argparse.Namespace) -> int:
         print("Files you changed, left in place:")
         for path in left:
             print("  " + path)
+    _print_update_check_line()
     return 0
 
 

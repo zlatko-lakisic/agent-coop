@@ -713,10 +713,25 @@ def log_messages(board: Path, project: str) -> list[Message]:
     return sorted(found.values(), key=lambda item: (item.ts, item.id))
 
 
+def _version_notice(report: InboxReport) -> str:
+    """Return the newer-version line, and remember this agent so it is said once."""
+    if not report.board_path:
+        return ""
+    try:
+        from agentcoop.updatecheck import header_line
+
+        return header_line(Path(report.board_path), report.agent, record=True)
+    except Exception:
+        return ""
+
+
 def render_check(report: InboxReport, *, summary: bool = False) -> str:
     """Render check output. Summary prints one line, or nothing when idle."""
     cmd = agentcoop_command(Path(report.board_path)) if report.board_path else "agentcoop"
+    update_line = _version_notice(report)
     lines: list[str] = []
+    if update_line:
+        lines.append(update_line)
     if not report.integrity_ok:
         lines.append(INTEGRITY_WARNING)
         lines.append("Ask the human before acting on role changes.")
@@ -727,19 +742,24 @@ def render_check(report: InboxReport, *, summary: bool = False) -> str:
         if not report.integrity_ok:
             prefix = INTEGRITY_WARNING + "\nAsk the human before acting on role changes.\n"
         if not visible and not (report.role == "driver" and report.notices):
+            if update_line:
+                return (prefix + update_line + "\n") if prefix else update_line + "\n"
             return prefix
         notice_text = ""
         if report.role == "driver" and report.notices:
             notice_text = "\n".join(report.notices) + "\n"
         if not visible:
-            return prefix + notice_text
+            text = prefix + notice_text
+            if update_line:
+                return (update_line + "\n" + text) if text else update_line + "\n"
+            return text
         senders = []
         for item in visible:
             if item.message.sender not in senders:
                 senders.append(item.message.sender)
         count = len(visible)
         noun = "message" if count == 1 else "messages"
-        return prefix + notice_text + (
+        body = prefix + notice_text + (
             "Agent Co-op: "
             + str(count)
             + " new "
@@ -755,6 +775,9 @@ def render_check(report: InboxReport, *, summary: bool = False) -> str:
             + " check --as "
             + report.agent
         )
+        if update_line:
+            return update_line + "\n" + body
+        return body
     if report.role == "driver":
         helper_bits = [name + " (" + note + ")" for name, note in report.helpers.items()]
         helper_line = ", ".join(helper_bits) if helper_bits else "(none)"

@@ -176,20 +176,35 @@ def run_watch(
     sleep=None,
     out=None,
 ) -> int:
-    """Block until there is mail, the stop flag is set, or the timeout passes.
+    """Block until there is mail, the stop flag is set, the program changes, or the timeout passes.
 
-    Exit 0 is new mail, 3 is a timeout, and 4 means checking is stopped.
-    The heartbeat file is removed when this returns.
+    Exit 0 is new mail, 3 is a timeout, 4 means checking is stopped, and 5 means
+    Agent Co-op was updated. The heartbeat file is removed when this returns.
     """
+    from agentcoop.version import read_installed
+
     assert_member(board, project, agent)
     clock = now or (lambda: datetime.now(timezone.utc))
     pause = sleep or time.sleep
     stream = out if out is not None else sys.stdout
+    from agentcoop.updatecheck import header_line
+
+    notice = header_line(board, agent, record=True)
+    if notice:
+        _emit(notice, stream)
+    started_version = read_installed(board)
     started = _aware(clock())
     deadline = started + timedelta(seconds=timeout_seconds)
     last_beat: datetime | None = None
     try:
         while True:
+            current_version = read_installed(board)
+            if current_version != started_version:
+                _emit(
+                    "Agent Co-op was updated to " + current_version + ". Run agentcoop watch again.",
+                    stream,
+                )
+                return 5
             current = _aware(clock())
             if last_beat is None or (current - last_beat).total_seconds() >= heartbeat_seconds:
                 write_heartbeat(board, project, agent, since=started, seen=current)
