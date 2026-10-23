@@ -642,6 +642,7 @@ def install_project_files(
     *,
     yes: bool = False,
     gitignore: bool = False,
+    only_missing: bool = False,
 ) -> list[str]:
     """Install project-scoped files for one agent. Returns relative paths written."""
     agents = load_agents(board)
@@ -658,11 +659,15 @@ def install_project_files(
         if project is None:
             raise CoopError("There is no project named " + project_name + ".")
         root = Path(project["path"])
+        if only_missing and not root.is_dir():
+            return
         manifest = project.setdefault("installed", [])
         for item in tool.install_paths:
             if item["scope"] != "project":
                 continue
             if item["kind"] == "hook" and tool.hooks != "supported":
+                continue
+            if only_missing and (root / item["path"]).is_file():
                 continue
             _install_one(
                 board,

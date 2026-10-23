@@ -418,3 +418,33 @@ class InstallTests(unittest.TestCase):
             commands = [entry.get("command") for entry in data["hooks"]["stop"]]
             self.assertIn("echo kept", commands)
             self.assertTrue(any("hook cursor-stop" in (item or "") for item in commands))
+
+    def test_update_adds_a_missing_hook_and_leaves_an_edited_rule(self) -> None:
+        with support.TempEnv() as env:
+            folder = _ready(env, gitignore="yes")
+            hook = folder / ".cursor" / "hooks.json"
+            rule = folder / ".cursor" / "rules" / "agent-coop.mdc"
+            hook.unlink()
+            rule.write_text("edited by the person\n", encoding="utf-8")
+            from agentcoop.install import install_project_files
+            from agentcoop.projects import mutate_projects
+
+            def change(data: dict) -> None:
+                installed = data["projects"]["demo"].get("installed") or []
+                data["projects"]["demo"]["installed"] = [
+                    entry for entry in installed if not str(entry.get("path", "")).endswith("hooks.json")
+                ]
+
+            mutate_projects(env.board, change)
+            install_project_files(
+                env.board,
+                "demo",
+                "cursor",
+                yes=True,
+                gitignore=True,
+                only_missing=True,
+            )
+            self.assertTrue(hook.is_file())
+            self.assertIn("hook cursor-stop", hook.read_text(encoding="utf-8"))
+            self.assertEqual(rule.read_text(encoding="utf-8"), "edited by the person\n")
+            self.assertIn(".cursor/hooks.json", (folder / ".gitignore").read_text(encoding="utf-8"))
