@@ -145,7 +145,9 @@ class ClaudeDesktopTests(unittest.TestCase):
             self.assertIn("subject: Need help", text)
             self.assertIn(body.splitlines()[0], text)
             self.assertIn("Line two of the question.", text)
-            self.assertIn(native_path(note.resolve()), text)
+            self.assertIn("notes.txt", text)
+            self.assertNotIn(native_path(note.resolve()), text)
+            self.assertIn("shared", text.replace("\\", "/"))
             self.assertNotIn("Answer written, waiting to be posted.", text)
             _write_answer(env, mid, "working on it")
             write_new_md(env.board, "demo", "claude_desktop")
@@ -236,7 +238,10 @@ class ClaudeDesktopTests(unittest.TestCase):
             replies = _driver_replies(env, mid)
             self.assertEqual(len(replies), 1)
             self.assertTrue(replies[0].attachments)
-            self.assertIn(str(attached.resolve()), [str(Path(item).resolve()) for item in replies[0].attachments])
+            shared = Path(replies[0].attachments[0])
+            self.assertTrue(shared.is_file())
+            self.assertEqual(shared.read_bytes(), attached.read_bytes())
+            self.assertIn("shared", str(shared).replace("\\", "/"))
 
     def test_secret_is_rejected_and_stays_new(self) -> None:
         with support.TempEnv() as env:

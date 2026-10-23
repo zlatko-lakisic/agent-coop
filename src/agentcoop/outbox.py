@@ -162,6 +162,9 @@ def write_new_md(
         if message.body:
             lines.extend(message.body.splitlines())
     lines.extend(_delivery_lines(board, project, agent))
+    from agentcoop.share import pending_notes
+
+    lines.extend(pending_notes(board, project, agent))
     text = "\n".join(lines) + "\n"
     path = inbox_new_md(board, project, agent)
     payload = text.encode("utf-8")
@@ -544,6 +547,19 @@ def _post_claimed(
         message_id=mid,
         answer=text,
     )
+    from agentcoop.share import take_outbox_files
+
+    extra, _extra_info, held_note = take_outbox_files(
+        board,
+        project,
+        agent,
+        path,
+        recipient=original.sender,
+    )
+    if extra:
+        attachments = list(attachments) + extra
+    if held_note:
+        body = (body.rstrip() + "\n\n" + held_note).strip()
     match = _matching_reply(board, project, agent, driver, mid, body, attachments)
     if match is not None:
         mark_done(board, project, agent, [mid])

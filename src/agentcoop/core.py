@@ -59,6 +59,7 @@ class Message:
     attachments: list[str]
     needs_reply: bool
     path: Path | None = None
+    attachment_info: list[dict] = field(default_factory=list)
 
     def to_dict(self) -> dict:
         """Return the on-disk JSON object."""
@@ -76,6 +77,9 @@ class Message:
             "attachments": list(self.attachments),
             "needs_reply": self.needs_reply,
         }
+        if self.attachment_info:
+            payload["attachment_info"] = list(self.attachment_info)
+        return payload
 
 
 @dataclass
@@ -199,6 +203,9 @@ def _message_from_dict(data: dict, path: Path | None) -> Message:
         attachments=[str(item) for item in attachments],
         needs_reply=bool(data.get("needs_reply", False)),
         path=path,
+        attachment_info=[item for item in (data.get("attachment_info") or []) if isinstance(item, dict)]
+        if isinstance(data.get("attachment_info"), list)
+        else [],
     )
 
 
@@ -512,6 +519,11 @@ def send(
     needs_reply: bool = False,
     allow_secret: bool = False,
     now: datetime | None = None,
+    describes: list[str] | None = None,
+    kinds: list[str] | None = None,
+    media_types: list[str] | None = None,
+    alt_ofs: list[str] | None = None,
+    over_limit: bool = False,
 ) -> str:
     """Write a message and return its id."""
     require_board(board)
@@ -545,7 +557,8 @@ def send(
     project_record = assert_can_send(board, project, sender, recipient, re, msg_type=type, now=now)
     roots = list(config.get("allowed_roots") or [])
     project_path = Path(project_record["path"])
-    for attachment in attachments or []:
+    sources = list(attachments or [])
+    for attachment in sources:
         require_attachment(
             attachment,
             project_path=project_path,
@@ -556,9 +569,42 @@ def send(
     moment = utc_now(now)
     ensure_agent_dirs(board, project, sender)
     ensure_agent_dirs(board, project, recipient)
+    from agentcoop.share import mismatch_note, place_file
+
+    describe_list = list(describes or [])
+    kind_list = list(kinds or [])
+    media_list = list(media_types or [])
+    alt_list = list(alt_ofs or [])
     last_error: Exception | None = None
     for _attempt in range(8):
         mid = make_id(sender, moment)
+        shared_paths: list[str] = []
+        infos: list[dict] = []
+        for index, source in enumerate(sources):
+            info = place_file(
+                board,
+                project,
+                source,
+                sender=sender,
+                recipient=recipient,
+                message_id=mid,
+                description=describe_list[index] if index < len(describe_list) else "",
+                kind=kind_list[index] if index < len(kind_list) else "",
+                media_type=media_list[index] if index < len(media_list) else "",
+                alt_of=alt_list[index] if index < len(alt_list) else "",
+                over_limit=over_limit,
+                ask=over_limit,
+            )
+            note = mismatch_note(board, project, recipient, str(info.get("media_type") or ""))
+            if note:
+                info = dict(info)
+                info["mismatch"] = note
+            shared_paths.append(str(info["path"]))
+            infos.append(info)
+        sent_body = body
+        held = [str(info.get("name") or "file") for info in infos if info.get("held") == "program"]
+        if held:
+            sent_body = body + "\n\n" + " ".join(name + " was held until it was allowed." for name in held)
         payload = {
             "v": 1,
             "id": mid,
@@ -569,10 +615,12 @@ def send(
             "type": type,
             "re": re,
             "subject": subject,
-            "body": body,
-            "attachments": list(attachments or []),
+            "body": sent_body,
+            "attachments": shared_paths,
             "needs_reply": bool(needs_reply),
         }
+        if infos:
+            payload["attachment_info"] = infos
         try:
             write_message_file(inbox_msgs(board, project, recipient), payload)
         except FileExistsError as exc:
@@ -902,6 +950,11 @@ def render_check(report: InboxReport, *, summary: bool = False) -> str:
         )
         lines.append("Your files folder: " + report.files_path)
     if report.board_path:
+        from agentcoop.share import limits as share_limits
+
+        cap = share_limits(Path(report.board_path))
+        lines.append("Shared files: up to " + str(cap["max_mb"]) + " MB each.")
+    if report.board_path:
         from agentcoop.context import format_context_header
 
         for header in format_context_header(
@@ -961,7 +1014,34 @@ def render_check(report: InboxReport, *, summary: bool = False) -> str:
             + re_text
         )
         lines.append("    subject: " + message.subject)
-        if item.attachments:
+        if message.attachment_info:
+            from agentcoop.share import group_lines, mismatch_note
+
+            notes = {}
+            for info in message.attachment_info:
+                path = str(info.get("path") or "")
+                blocked = next(
+                    (status for status in item.attachments if status.path == path and status.blocked),
+                    None,
+                )
+                note = str(info.get("mismatch") or "")
+                if report.board_path:
+                    live = mismatch_note(
+                        Path(report.board_path),
+                        report.project,
+                        message.recipient,
+                        str(info.get("media_type") or ""),
+                    )
+                    if live:
+                        note = live
+                if blocked is not None:
+                    note = (note + " " if note else "") + "BLOCKED: do not open"
+                if note:
+                    notes[path] = note
+            lines.append("    attachments:")
+            for line in group_lines(message.attachment_info, notes):
+                lines.append("      " + line)
+        elif item.attachments:
             lines.append("    attachments:")
             for attachment in item.attachments:
                 if attachment.blocked:

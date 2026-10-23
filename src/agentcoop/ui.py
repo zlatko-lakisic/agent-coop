@@ -75,6 +75,9 @@ class ViewerHandler(BaseHTTPRequestHandler):
             text = format_doctor(run_doctor(self.server.board, project=project))
             self._send(200, text.encode("utf-8"), "text/plain; charset=utf-8")
             return
+        if path.startswith("/files/"):
+            self._shared_file(path)
+            return
         self._send(404, b"Not found.\n")
 
     def do_POST(self) -> None:  # noqa: N802
@@ -140,6 +143,46 @@ class ViewerHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def _shared_file(self, path: str) -> None:
+        """Serve one file from a project's shared folder, and nowhere else."""
+        parts = [part for part in path.split("/") if part and part != "."]
+        if len(parts) < 3 or parts[0] != "files":
+            self._send(404, b"Not found.\n")
+            return
+        project = parts[1]
+        from agentcoop.share import share_root
+
+        root = share_root(self.server.board, project)
+        try:
+            root_real = root.resolve()
+        except OSError:
+            self._send(404, b"Not found.\n")
+            return
+        target = root.joinpath(*parts[2:])
+        if target.is_symlink():
+            self._send(403, b"That file is not available.\n")
+            return
+        try:
+            real = target.resolve()
+        except OSError:
+            self._send(404, b"Not found.\n")
+            return
+        if root_real != real and root_real not in real.parents:
+            self._send(403, b"That file is not available.\n")
+            return
+        if not real.is_file() or real.name.startswith(".") or real.name in ("index.json", "pending.json"):
+            self._send(404, b"Not found.\n")
+            return
+        import mimetypes
+
+        media = mimetypes.guess_type(real.name)[0] or "application/octet-stream"
+        try:
+            data = real.read_bytes()
+        except OSError:
+            self._send(404, b"Not found.\n")
+            return
+        self._send(200, data, media)
+
     def _state(self) -> dict:
         board = self.server.board
         projects, intact = read_projects_checked(board)
@@ -171,6 +214,7 @@ class ViewerHandler(BaseHTTPRequestHandler):
                     "context": context,
                     "progress": _progress_row(board, name),
                     "tasks": _task_rows(board, name),
+                    "files": _shared_rows(board, name, self.server.token),
                 }
             )
         agent_rows = []
@@ -199,6 +243,46 @@ class ViewerHandler(BaseHTTPRequestHandler):
             "note": "This page is for you. Agents do not connect to it.",
             "banner": banner,
         }
+
+
+def _shared_rows(board: Path, project: str, token: str) -> list[dict]:
+    """Return shared files the viewer may show. Paths stay inside the shared folder."""
+    from urllib.parse import quote
+
+    from agentcoop.share import human_size, load_index, share_root
+
+    root = share_root(board, project)
+    rows = []
+    for row in load_index(board, project).get("files") or []:
+        if not isinstance(row, dict):
+            continue
+        path = Path(str(row.get("path") or ""))
+        if not path.is_file() or path.is_symlink():
+            continue
+        try:
+            relative = path.resolve().relative_to(root.resolve())
+        except (OSError, ValueError):
+            continue
+        url = (
+            "/files/"
+            + quote(project)
+            + "/"
+            + "/".join(quote(part) for part in relative.parts)
+            + "?t="
+            + quote(token)
+        )
+        rows.append(
+            {
+                "name": str(row.get("name") or path.name),
+                "kind": str(row.get("kind") or "file"),
+                "media": str(row.get("media_type") or ""),
+                "bytes": int(row.get("bytes") or 0),
+                "size": human_size(int(row.get("bytes") or 0)),
+                "url": url,
+                "description": str(row.get("description") or ""),
+            }
+        )
+    return rows
 
 
 def _task_rows(board: Path, project: str) -> list[dict]:
