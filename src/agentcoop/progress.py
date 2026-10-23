@@ -152,11 +152,11 @@ def list_progress_text(board: Path, project: str, limit: int | None = None) -> s
     return "\n".join(lines) + "\n"
 
 
-def progress_template_text() -> str:
-    """Return the blank progress template."""
+def progress_template_text(*, helper: bool = False) -> str:
+    """Return the blank progress template. Helpers get the short one."""
     from agentcoop.install import read_template
 
-    text = read_template("progress.md.tmpl")
+    text = read_template("helper-progress.md.tmpl" if helper else "progress.md.tmpl")
     return text if text.endswith("\n") else text + "\n"
 
 

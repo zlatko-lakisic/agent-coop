@@ -442,6 +442,36 @@ class StatusTests(unittest.TestCase):
             self.assertNotIn("Finished the run", render_status(env.board))
 
 
+class TemplateTests(unittest.TestCase):
+    def test_every_template_has_the_rules_and_the_desktop_copies_match(self) -> None:
+        from agentcoop import __version__
+
+        root = Path(__file__).resolve().parents[1]
+        phrase = "Never estimate a percent from a feeling."
+        for name in ("SKILL.md.tmpl", "cursor-rule.mdc.tmpl", "AGENTS.md.tmpl", "GEMINI.md.tmpl"):
+            text = (root / "src" / "agentcoop" / "templates" / name).read_text(encoding="utf-8")
+            self.assertIn(phrase, text)
+            self.assertIn("progress_long_task_minutes", text)
+            self.assertIn("progress_every_minutes", text)
+            self.assertIn("Still on step 3 of 7", text)
+            self.assertIn("Progress: step 3 of 7 (43%)", text)
+            self.assertIn("progress write --as", text)
+            self.assertNotIn("every 15 minutes", text)
+        driver = (root / "src" / "agentcoop" / "templates" / "progress.md.tmpl").read_text(encoding="utf-8")
+        helper = (root / "src" / "agentcoop" / "templates" / "helper-progress.md.tmpl").read_text(encoding="utf-8")
+        self.assertIn("## Working on now", driver)
+        self.assertIn("Status: working", driver)
+        self.assertIn("## Done so far", helper)
+        left = (root / "skills" / "agent-coop" / "SKILL.md").read_bytes()
+        right = (root / "src" / "agentcoop" / "data" / "agent-coop" / "SKILL.md").read_bytes()
+        self.assertEqual(left, right)
+        text = left.decode("utf-8")
+        self.assertIn("Skill version: " + __version__, text)
+        self.assertIn(".progress.md", text)
+        self.assertIn(phrase, text)
+        self.assertLess(len(text.splitlines()), 150)
+
+
 class SettingTests(unittest.TestCase):
     def test_defaults(self) -> None:
         with support.TempEnv() as env:
