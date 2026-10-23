@@ -15,6 +15,7 @@
 - A project stop hook wakes Cursor when the loop is gone. It waits until 5 seconds before a 30 second timeout, and it does not send a follow-up when there is no mail.
 - When the Cursor chat is not watching, messages wait until you say Start working. Other tools still run in the background. `agentcoop idle background` and `agentcoop idle wait` switch that.
 - A tag release must point at a commit that is on main. The GitHub release page target is main.
+- A helper can describe itself on join with tags, what it can do, and a cost. The person can change a profile, and changing another agent asks them to allow it.
 
 ## 0.2.6 - 2026-10-22
 

@@ -361,6 +361,9 @@ def build_parser() -> argparse.ArgumentParser:
     _add_as(join_cmd)
     _add_project(join_cmd)
     join_cmd.add_argument("--note", default="")
+    join_cmd.add_argument("--tags", default="")
+    join_cmd.add_argument("--can", default="")
+    join_cmd.add_argument("--cost", default="")
     join_cmd.add_argument("words", nargs="*")
     join_cmd.set_defaults(func=cmd_join)
     leave_cmd = sub.add_parser("leave", help="Leave a project you help with")
@@ -368,6 +371,16 @@ def build_parser() -> argparse.ArgumentParser:
     _add_project(leave_cmd)
     leave_cmd.add_argument("words", nargs="*")
     leave_cmd.set_defaults(func=cmd_leave)
+
+    profile_cmd = sub.add_parser("profile", help="Set what a helper is good at")
+    _add_as(profile_cmd)
+    _add_project(profile_cmd)
+    profile_cmd.add_argument("helper", nargs="?")
+    profile_cmd.add_argument("--tags", default=None)
+    profile_cmd.add_argument("--can", default=None)
+    profile_cmd.add_argument("--cost", default="")
+    profile_cmd.add_argument("--note", default=None)
+    profile_cmd.set_defaults(func=cmd_profile)
 
     skill_cmd = sub.add_parser("skill", help="Export a helper skill zip")
     skill_sub = skill_cmd.add_subparsers(dest="skill_cmd", required=True)
@@ -1441,6 +1454,68 @@ def _desktop_project(args: argparse.Namespace) -> str:
     return name
 
 
+def _profile_list(text: str | None, *, kind: str) -> list[str] | None:
+    """Return a parsed list, or None when the flag was left off."""
+    if text is None or text == "":
+        return None
+    from agentcoop.profiles import parse_list
+
+    return parse_list(text, kind="can" if kind == "can" else "tags")
+
+
+def _profile_cost(text: str | None) -> str | None:
+    if not text:
+        return None
+    from agentcoop.profiles import parse_cost
+
+    return parse_cost(text)
+
+
+def cmd_profile(args: argparse.Namespace) -> int:
+    """Set a helper profile. Changing someone else asks the person to allow it."""
+    from agentcoop.confirm import confirm_person
+    from agentcoop.profiles import set_profile
+    from agentcoop.watch import assert_member
+
+    actor = _agent(args)
+    board = _board()
+    project = resolve_project(board, explicit=args.project, cwd=Path.cwd(), agent=actor)
+    if not args.helper:
+        from agentcoop.profiles import describe, profile_of
+        from agentcoop.projects import load_projects
+
+        record = (load_projects(board).get("projects") or {}).get(project) or {}
+        helpers = record.get("helpers") or {}
+        if not helpers:
+            print("This project has no helpers.", flush=True)
+            return 0
+        for name in helpers:
+            print(name + ": " + describe(profile_of(record, name)), flush=True)
+        return 0
+    helper = args.helper
+    assert_member(board, project, helper)
+    if actor != helper:
+        confirm_person(
+            "This will change " + helper + "'s profile on " + project + ".",
+            expected=helper,
+            kind="agent",
+            asked_by=actor,
+        )
+    print(
+        set_profile(
+            board,
+            project,
+            helper,
+            tags=_profile_list(args.tags, kind="tags"),
+            can=_profile_list(args.can, kind="can"),
+            cost=_profile_cost(args.cost),
+            note=args.note,
+        ),
+        flush=True,
+    )
+    return 0
+
+
 def cmd_join(args: argparse.Namespace) -> int:
     """Join a project as the agent that is asking."""
     from agentcoop.membership import join_self
@@ -1452,6 +1527,9 @@ def cmd_join(args: argparse.Namespace) -> int:
         cwd=Path.cwd(),
         words=" ".join(args.words or []),
         note=args.note or None,
+        tags=_profile_list(args.tags, kind="tags"),
+        can=_profile_list(args.can, kind="can"),
+        cost=_profile_cost(args.cost),
     )
     print(text)
     _print_sent("the project", "Join", text)

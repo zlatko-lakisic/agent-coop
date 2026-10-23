@@ -79,6 +79,23 @@ def process_project_requests(board: Path, project: str, now: datetime | None = N
             _process_one(board, project, agent, path, join_named, leave_named)
 
 
+def _request_list(value: object, *, kind: str) -> list[str] | None:
+    """Read tags or can from a join request. A missing field stays unset."""
+    if value is None:
+        return None
+    if isinstance(value, list):
+        text = ",".join(str(item) for item in value)
+    elif isinstance(value, str):
+        text = value
+    else:
+        raise CoopError("tags and can must be a list or a comma-separated line.", code=2)
+    if not text.strip():
+        return None
+    from agentcoop.profiles import parse_list
+
+    return parse_list(text, kind=kind)
+
+
 def _process_one(board: Path, project: str, agent: str, path: Path, join_named, leave_named) -> None:
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
@@ -97,8 +114,15 @@ def _process_one(board: Path, project: str, agent: str, path: Path, join_named, 
         return
     note = data.get("note") if isinstance(data.get("note"), str) else None
     try:
+        tags = _request_list(data.get("tags"), kind="tags")
+        can = _request_list(data.get("can"), kind="can")
+        cost = None
+        if isinstance(data.get("cost"), str) and data.get("cost"):
+            from agentcoop.profiles import parse_cost
+
+            cost = parse_cost(data.get("cost"))
         if action == "join":
-            text = join_named(agent, project, note=note)
+            text = join_named(agent, project, note=note, tags=tags, can=can, cost=cost)
         else:
             text = leave_named(agent, project)
     except CoopError as exc:

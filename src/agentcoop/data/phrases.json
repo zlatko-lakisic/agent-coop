@@ -113,6 +113,20 @@
           "in": ["rule"]
         },
         {
+          "say": "Set <agent>'s tags to <tags>",
+          "does": "agentcoop profile <agent> --tags <tags>. Changing another agent asks you to allow it.",
+          "who": "The person, in an agent's chat.",
+          "added": "0.2.7",
+          "in": ["skill", "rule", "agents", "gemini"]
+        },
+        {
+          "say": "What are my helpers good at?",
+          "does": "agentcoop profile, then a short summary of tags, can, and cost.",
+          "who": "The person, in the driver's chat.",
+          "added": "0.2.7",
+          "in": ["skill", "rule", "agents", "gemini"]
+        },
+        {
           "say": "Leave this project",
           "does": "Remove this agent as a helper.",
           "who": "Agents that can run commands. The Claude desktop app writes a leave request.",

@@ -47,7 +47,7 @@ Match the Claude project name, or the chat name, to a folder under `<board>/proj
 
 To join or leave, write `<board>/projects/<project>/requests/claude_desktop/<UTC timestamp>.json`.
 
-Join: `{"action": "join"}`. Leave: `{"action": "leave"}`. You may add `"note"`.
+Join: `{"action": "join"}`. Leave: `{"action": "leave"}`. You may add `"note"`, `"tags"`, `"can"` (`read`, `run`, `vision`, `web`), and `"cost"` (`low`, `medium`, or `high`).
 
 Say: I asked to join <project>. It takes effect at the next check by any agent or the next background round.
 

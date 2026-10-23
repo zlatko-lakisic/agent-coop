@@ -73,6 +73,26 @@ def check_projects(data: object) -> list[str]:
         if notices is not None:
             if not isinstance(notices, list) or any(not isinstance(item, str) for item in notices):
                 problems.append(name + " notices must be a list of text")
+        profiles = record.get("profiles")
+        if profiles is not None:
+            if not isinstance(profiles, dict):
+                problems.append(name + " profiles must be an object")
+            else:
+                for agent, profile in profiles.items():
+                    if not isinstance(agent, str) or not AGENT_NAME_RE.fullmatch(agent):
+                        problems.append(name + " has a profile name that is not valid")
+                    if not isinstance(profile, dict):
+                        problems.append(name + " profile for " + str(agent) + " must be an object")
+                        continue
+                    for key in ("tags", "can"):
+                        values = profile.get(key)
+                        if values is not None and (
+                            not isinstance(values, list) or any(not isinstance(item, str) for item in values)
+                        ):
+                            problems.append(name + " profile " + key + " must be a list of text")
+                    cost = profile.get("cost")
+                    if cost is not None and cost not in ("low", "medium", "high"):
+                        problems.append(name + " profile cost must be low, medium, or high")
     return problems
 
 
