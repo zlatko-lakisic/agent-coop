@@ -25,7 +25,11 @@ API = "https://api.github.com/repos/" + REPO
 
 
 def _get(url: str, timeout: float = 60) -> bytes:
-    request = urllib.request.Request(url, headers={"User-Agent": "agentcoop", "Accept": "application/vnd.github+json"})
+    headers = {"User-Agent": "agentcoop", "Accept": "application/vnd.github+json"}
+    token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN") or ""
+    if token and url.startswith("https://api.github.com/"):
+        headers["Authorization"] = "Bearer " + token
+    request = urllib.request.Request(url, headers=headers)
     with urllib.request.urlopen(request, timeout=timeout) as response:
         return response.read()
 
