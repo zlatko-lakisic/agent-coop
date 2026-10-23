@@ -36,3 +36,15 @@ If that agent must ask you to allow a change, it prints one of these before it w
 * `It waits for 2 minutes.`
 
 If nobody allows it in time, it prints `Nobody allowed the change in time, so nothing changed.`
+
+## Update the skill
+
+The skill file has a line `Skill version:`. STATUS.md says the installed version.
+
+If the person says "Update Agent Co-op":
+
+1. Read STATUS.md.
+2. If it says a newer Agent Co-op is out, tell them to say that in Cursor, then stop.
+3. If the skill is older than the installed version, offer to save the skill from the installed tag, not from main: `https://github.com/zlatko-lakisic/agent-coop/blob/v<installed>/skills/agent-coop/SKILL.md`.
+
+At each check, if STATUS.md shows a newer installed version than this skill, say once: My Agent Co-op skill is older than the installed version. Say: Update Agent Co-op.

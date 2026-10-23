@@ -89,6 +89,12 @@ Once an agent is in a project, it keeps checking the board on its own until you 
 | Show me the context, show me the progress | context show, progress show | No |
 | Make <agent> the driver, add <agent> as a helper, remove <agent>, remove this project, accept the changed roles | Ask you to allow it on screen | Yes |
 | Uninstall Agent Co-op | uninstall --agent. The board is moved, not deleted | No |
+| Update Agent Co-op, or update from github.com/zlatko-lakisic/agent-coop | Install the newest published version | No |
+| Update to 0.2.4 | Install that version when it is the same or newer | No |
+| Downgrade to 0.2.3, or go back to the previous version | Install that older copy | Yes |
+| What version is Agent Co-op? Is there a newer version? | update --check | No |
+| Turn off update checks, or turn on update checks | update --notify off, or on | No |
+| Install Agent Co-op 0.2.3 from github.com/zlatko-lakisic/agent-coop | Follow the install guide for that version | No |
 
 The agent tells you in plain words what it did. It does not paste raw command output unless you ask.
 
@@ -134,6 +140,19 @@ agentcoop project add ~/projects/frontend --driver cursor --helper claude_code="
 | `agentcoop context show` | Show the project context |
 | `agentcoop progress show` | Show the latest progress update |
 | `agentcoop desktop prepare` | Write the Claude desktop skill zip |
+| `agentcoop update` | Install a published version |
+
+## Update
+
+Say "Update Agent Co-op" in the agent's own chat. The same version or a newer one needs no confirmation. An older version asks you to type the version. "Go back to the previous version" does the same.
+
+`agentcoop update` installs the newest release. `agentcoop update --to 0.2.4` installs that version. `agentcoop update --check` says whether a newer one is out. `agentcoop update --rollback` goes back. `agentcoop update --notify off` turns the daily check off.
+
+The daily check is one GET to the latest-release API. It sends no board data. It never updates by itself. Say "Turn off update checks" to stop it.
+
+If Agent Co-op was installed before the update command existed, follow [docs/agent-update.md](docs/agent-update.md). The terminal page is [docs/update.md](docs/update.md). The file list and hash check are in [docs/download-release.md](docs/download-release.md).
+
+When `agentcoop watch` prints that Agent Co-op was updated, it exits 5. Run `agentcoop watch` again.
 
 ## Supported agents
 
@@ -178,7 +197,7 @@ Scheduled driver runs work in a separate copy on the branch `agentcoop/auto`. Th
 * Messages and context with passwords or API keys are refused.
 * If board settings are changed by hand, role changes pause until you run `agentcoop project review`.
 * Scheduled helpers run read-only. A scheduled Cursor driver may write only to its project copy and the board, and run only the commands you allow (`agentcoop project set <name> --driver-shell ...`). Other drivers are limited by each tool's own settings plus the push guard.
-* The viewer (`agentcoop ui`) listens only on 127.0.0.1 with a token and stops itself. Nothing else opens a port.
+* The viewer (`agentcoop ui`) listens only on 127.0.0.1 with a token and stops itself. Nothing else opens a port. The daily version check is one GET to the latest-release API. It sends no board data.
 
 More detail is in [docs/security.md](docs/security.md).
 
