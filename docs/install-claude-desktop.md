@@ -49,4 +49,6 @@ If the person says "Update Agent Co-op":
 
 At each check, if STATUS.md shows a newer installed version than this skill, say once: My Agent Co-op skill is older than the installed version. Say: Update Agent Co-op.
 
-On a long task, the desktop app writes `outbox/claude_desktop/<message id>.progress.md` before the answer is ready. That file is progress, not the answer. The answer is still `<message id>.md`. The next check moves the progress file into `progress/helpers/claude_desktop/`.
+On a long task, the desktop app writes `outbox/claude_desktop/<message id>.progress.md` before the answer is ready. That file is progress, not the answer. The answer is `<message id>.<UTC timestamp>.md`. A later answer uses a new timestamp and does not replace the earlier file. The next check moves the progress file into `progress/helpers/claude_desktop/`.
+
+To ask the driver for attention, write `outbox/claude_desktop/nudge.<UTC timestamp>.md`. The file text is the message, at most 500 characters. One open nudge at a time, and at most one every 30 minutes.

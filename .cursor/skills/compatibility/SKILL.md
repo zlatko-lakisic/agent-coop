@@ -45,3 +45,5 @@ Leave the table alone. In the pull request body, add a line `No compatibility ch
 ## 6. Version bump
 
 In the version bump pull request, turn the Unreleased row into the new version and the release date. Add a new Unreleased row with `Nothing` and `None`.
+
+Every change must work on Windows, macOS, and Linux. Test on all three in CI, and list any skips in the PR.

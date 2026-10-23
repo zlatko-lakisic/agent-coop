@@ -256,29 +256,26 @@ class ClaudeDesktopTests(unittest.TestCase):
             left, _issues = new_messages(env.board, "demo", "claude_desktop")
             self.assertEqual([item.id for item in left], [mid])
 
-    def test_unknown_id_and_already_answered_go_to_rejected(self) -> None:
+    def test_unknown_id_is_rejected_and_a_done_message_can_be_followed_up(self) -> None:
         with support.TempEnv() as env:
             _ready(env)
             mid = _ask(env, "First question")
             mark_done(env.board, "demo", "claude_desktop", [mid])
-            answered = _write_answer(env, mid, "too late")
+            answered = _write_answer(env, mid, "a later correction")
             unknown = outbox_dir(env.board, "demo", "claude_desktop") / "missing.md"
             unknown.write_text("no such message\n", encoding="utf-8")
             _age(answered)
             _age(unknown)
             process_outbox(env.board, "demo", "claude_desktop")
             rejected = outbox_rejected_dir(env.board, "demo", "claude_desktop")
-            self.assertTrue((rejected / (mid + ".md")).is_file())
-            self.assertIn(
-                "already answered",
-                (rejected / (mid + ".md.reason.txt")).read_text(encoding="utf-8"),
-            )
+            self.assertFalse((rejected / (mid + ".md")).is_file())
+            self.assertEqual(len(_driver_replies(env, mid)), 1)
+            self.assertEqual(_driver_replies(env, mid)[0].subject, "Re: Need help")
             self.assertTrue((rejected / "missing.md").is_file())
             self.assertIn(
                 "There is no message with this id for claude_desktop.",
                 (rejected / "missing.md.reason.txt").read_text(encoding="utf-8"),
             )
-            self.assertEqual(_driver_replies(env, mid), [])
 
     def test_existing_reply_moves_to_sent_without_sending_again(self) -> None:
         with support.TempEnv() as env:
@@ -294,7 +291,7 @@ class ClaudeDesktopTests(unittest.TestCase):
                 type="answer",
                 re=mid,
             )
-            path = _write_answer(env, mid, "second copy")
+            path = _write_answer(env, mid, "Posted by hand")
             _age(path)
             process_outbox(env.board, "demo", "claude_desktop")
             self.assertEqual(len(_driver_replies(env, mid)), 1)
@@ -409,7 +406,7 @@ class ClaudeDesktopTests(unittest.TestCase):
                 }
             )
             self.assertIn("C:\\Users\\you\\.agent_board", rendered)
-            self.assertIn("<message id>.md", rendered)
+            self.assertIn("<message id>.<UTC timestamp>.md", rendered)
             self.assertIn("\\", answer_path_for(win_out))
 
     def test_desktop_add_needs_person_and_prints_setup(self) -> None:

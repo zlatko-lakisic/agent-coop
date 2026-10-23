@@ -7,6 +7,8 @@
 - Progress does not wake anyone. `wait --for` prints helper progress and keeps waiting while it is fresh, up to 60 minutes.
 - STATUS.md, `agentcoop status`, and the viewer show one short line per task, and say when an update has gone quiet.
 - New boards use `progress_long_task_minutes` 5 and `progress_every_minutes` 10.
+- Fixed: a later Claude desktop answer to the same message was not delivered, and `sent/` did not show that. Each different answer is posted. An exact copy is not posted twice. A receipt sits next to the sent file.
+- A helper can ask the driver for attention with a nudge. The driver replies with a short status before continuing. One open nudge at a time, and at most one every 30 minutes.
 
 ## 0.2.6 - 2026-10-22
 

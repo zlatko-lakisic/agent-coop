@@ -362,11 +362,75 @@ class WaitTests(unittest.TestCase):
                 body="Done.",
                 re=mid,
             )
+
+            class OldClock:
+                def __init__(self) -> None:
+                    self.mono = 0.0
+
+                def monotonic(self) -> float:
+                    return self.mono
+
+                def time(self) -> float:
+                    return time.time()
+
+                def sleep(self, seconds: float) -> None:
+                    self.mono += seconds
+
+            old = OldClock()
             out = io.StringIO()
             with redirect_stdout(out):
-                code = wait_for_reply(env.board, "demo", "cursor", mid, 1, sleep=lambda _s: None, monotonic=lambda: 0, wall=time.time)
+                code = wait_for_reply(
+                    env.board,
+                    "demo",
+                    "cursor",
+                    mid,
+                    1,
+                    sleep=old.sleep,
+                    monotonic=old.monotonic,
+                    wall=old.time,
+                )
+            self.assertEqual(code, 3)
+            self.assertNotIn(reply, out.getvalue())
+
+            class FreshClock:
+                def __init__(self) -> None:
+                    self.mono = 0.0
+                    self.reply = ""
+
+                def monotonic(self) -> float:
+                    return self.mono
+
+                def time(self) -> float:
+                    return time.time()
+
+                def sleep(self, seconds: float) -> None:
+                    if not self.reply:
+                        self.reply = send(
+                            env.board,
+                            project="demo",
+                            sender="claude_code",
+                            recipient="cursor",
+                            subject="Re: Look (follow-up 2)",
+                            body="A later note.",
+                            re=mid,
+                        )
+                    self.mono += seconds
+
+            fresh = FreshClock()
+            out = io.StringIO()
+            with redirect_stdout(out):
+                code = wait_for_reply(
+                    env.board,
+                    "demo",
+                    "cursor",
+                    mid,
+                    1,
+                    sleep=fresh.sleep,
+                    monotonic=fresh.monotonic,
+                    wall=fresh.time,
+                )
             self.assertEqual(code, 0)
-            self.assertIn(reply, out.getvalue())
+            self.assertIn(fresh.reply, out.getvalue())
 
 
 class StatusTests(unittest.TestCase):

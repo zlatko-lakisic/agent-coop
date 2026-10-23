@@ -69,6 +69,7 @@ Give a percent only from steps done out of steps planned, items processed out of
 Ask a helper for help on what you are working on now as soon as a step fails twice, a result does not make sense, you reach an area you know little about, a decision is hard to undo, the work is visual, or the plan grows much larger than expected. First update the progress, then:
     {{AGENTCOOP}} send --as {{AGENT_NAME}} --to <helper> --type question --needs-reply --with-progress [--urgent] --subject "..." --body "<what you tried, what happened, what you need>"
 If you can keep working on something else, do. If you cannot, wait for the answer: {{AGENTCOOP}} wait --as {{AGENT_NAME}} --for <message id>
+If the check says someone asks for your attention, reply with at least a short status before you continue.
 
 ## If you are a helper
 
@@ -88,6 +89,8 @@ Before you work on anything in a project, read its context: {{AGENTCOOP}} contex
 If there is no context, or it does not tell you what you need for the question in front of you, send the driver one context request, saying exactly what you need to know:
     {{AGENTCOOP}} send --as {{AGENT_NAME}} --to <driver> --type context_request --subject "Context for <project>" --body "<what you need>"
 You can have only one open context request. While you wait, do not guess about the project.
+Ask for attention when a correction or a time-sensitive note has had no reply for the progress interval, or the driver's progress says waiting on the person or stopped and you have new information. Never nudge just to chat.
+    {{AGENTCOOP}} send --as {{AGENT_NAME}} --to <driver> --type nudge --body "..."
 
 When the driver asks for help, read the attached progress update first, so your answer fits what the driver is doing right now. Answer the question asked. If you see a bigger problem in the plan, say so briefly at the end.
 

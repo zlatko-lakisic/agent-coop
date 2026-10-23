@@ -103,7 +103,7 @@ def build_parser() -> argparse.ArgumentParser:
     send_cmd.add_argument("--to", required=True)
     send_cmd.add_argument("--with-progress", action="store_true")
     send_cmd.add_argument("--urgent", action="store_true")
-    send_cmd.add_argument("--subject", required=True)
+    send_cmd.add_argument("--subject")
     send_cmd.add_argument("--body")
     send_cmd.add_argument("--body-file")
     send_cmd.add_argument("--type", default="question")
@@ -483,6 +483,12 @@ def cmd_send(args: argparse.Namespace) -> int:
     if not recipients:
         raise CoopError("Name who should receive the message with --to.", code=2)
     body = _read_body(args)
+    subject = args.subject
+    if not subject:
+        if args.type == "nudge":
+            subject = "Attention"
+        else:
+            raise CoopError("Add a subject with --subject.", code=2)
     ids = []
     for recipient in recipients:
         mid = send(
@@ -490,7 +496,7 @@ def cmd_send(args: argparse.Namespace) -> int:
             project=project,
             sender=agent,
             recipient=recipient,
-            subject=args.subject,
+            subject=subject,
             body=body,
             type=args.type,
             re=args.re_id,
@@ -499,7 +505,7 @@ def cmd_send(args: argparse.Namespace) -> int:
             allow_secret=bool(args.allow_secret),
         )
         ids.append(mid)
-        _print_sent(recipient, args.subject, body)
+        _print_sent(recipient, subject, body)
         if args.urgent:
             from agentcoop.progress import record_urgent
 

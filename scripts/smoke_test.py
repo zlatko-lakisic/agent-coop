@@ -196,6 +196,68 @@ def _watch_smoke(command: Path, env: dict, root: Path) -> int:
     if driver_progress.returncode != 0 or "50" not in (driver_progress.stdout + driver_progress.stderr):
         sys.stderr.write(driver_progress.stdout + driver_progress.stderr)
         return driver_progress.returncode or 1
+    for body in ("First answer.", "A later correction."):
+        reply = subprocess.run(
+            [
+                str(command),
+                "send",
+                "--as",
+                "claude_code",
+                "--to",
+                "cursor",
+                "--project",
+                "smoke",
+                "--type",
+                "answer",
+                "--re",
+                message_id,
+                "--subject",
+                "Re: Ping",
+                "--body",
+                body,
+            ],
+            env=env,
+            cwd=str(demo),
+            capture_output=True,
+            text=True,
+        )
+        if reply.returncode != 0:
+            sys.stderr.write(reply.stdout + reply.stderr)
+            return reply.returncode or 1
+    nudge = subprocess.run(
+        [
+            str(command),
+            "send",
+            "--as",
+            "claude_code",
+            "--to",
+            "cursor",
+            "--project",
+            "smoke",
+            "--type",
+            "nudge",
+            "--body",
+            "The correction is ready.",
+        ],
+        env=env,
+        cwd=str(demo),
+        capture_output=True,
+        text=True,
+    )
+    if nudge.returncode != 0:
+        sys.stderr.write(nudge.stdout + nudge.stderr)
+        return nudge.returncode or 1
+    checked = subprocess.run(
+        [str(command), "check", "--as", "cursor", "--project", "smoke"],
+        env=env,
+        cwd=str(demo),
+        capture_output=True,
+        text=True,
+    )
+    text = checked.stdout + checked.stderr
+    if checked.returncode != 0 or "A later correction." not in text or "asks for your attention" not in text:
+        sys.stderr.write(text)
+        return checked.returncode or 1
     return 0
 
 
