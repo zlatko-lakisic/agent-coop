@@ -19,6 +19,27 @@ CODE_DIRS = (
     ".github/workflows/",
 )
 CODE_DIR_NAMES = frozenset({"src", "tests", "scripts", ".github/workflows"})
+# A wiki pull request may change these and still skip the code matrix.
+WIKI_FILES = frozenset(
+    {
+        "scripts/gen_wiki.py",
+        "scripts/check_wiki_links.py",
+        "scripts/check_wiki_note.py",
+        "tests/test_wiki_scripts.py",
+        "src/agentcoop/data/phrases.json",
+        ".github/workflows/wiki.yml",
+        ".cursor/skills/wiki/SKILL.md",
+    }
+)
+WIKI_PREFIXES = (".cursor/skills/wiki/",)
+# These may ride along with a wiki pull request without starting the code matrix.
+WIKI_ACCOMPANY = frozenset(
+    {
+        ".github/workflows/test.yml",
+        "scripts/ci_changes.py",
+        "tests/test_ci_changes.py",
+    }
+)
 
 
 def normalize(path: str) -> str:
@@ -39,8 +60,37 @@ def is_code_path(path: str) -> bool:
     return any(text.startswith(prefix) for prefix in CODE_DIRS)
 
 
+def is_wiki_path(path: str) -> bool:
+    """Return True when this path belongs to the wiki generator."""
+    text = normalize(path)
+    if text in WIKI_FILES:
+        return True
+    return any(text.startswith(prefix) for prefix in WIKI_PREFIXES)
+
+
+def wiki_only(paths: list[str]) -> bool:
+    """Return True when this change is a wiki pull request.
+
+    Wiki files, docs, and the test workflow note do not need the code matrix
+    or a new binary. A program change in the same pull request still does.
+    """
+    saw_wiki = False
+    for path in paths:
+        if is_wiki_path(path):
+            saw_wiki = True
+            continue
+        text = normalize(path)
+        if text in WIKI_ACCOMPANY:
+            continue
+        if is_code_path(path):
+            return False
+    return saw_wiki
+
+
 def code_changed(paths: list[str]) -> bool:
-    """Return True when any path is code."""
+    """Return True when any path needs the full test matrix."""
+    if wiki_only(paths):
+        return False
     return any(is_code_path(path) for path in paths)
 
 

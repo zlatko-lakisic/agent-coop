@@ -44,6 +44,38 @@ class CiChangesTests(unittest.TestCase):
         self.assertTrue(ci_changes.code_changed(paths))
         self.assertEqual(ci_changes.output_line(paths), "code=true")
 
+    def test_wiki_pull_request_is_not_code(self) -> None:
+        paths = [
+            "scripts/gen_wiki.py",
+            "scripts/check_wiki_links.py",
+            "scripts/check_wiki_note.py",
+            "tests/test_wiki_scripts.py",
+            "src/agentcoop/data/phrases.json",
+            ".github/workflows/wiki.yml",
+            ".github/workflows/test.yml",
+            ".cursor/skills/wiki/SKILL.md",
+            "README.md",
+            "AGENTS.md",
+            "scripts/ci_changes.py",
+            "tests/test_ci_changes.py",
+        ]
+        self.assertTrue(ci_changes.wiki_only(paths))
+        self.assertFalse(ci_changes.code_changed(paths))
+        self.assertEqual(ci_changes.output_line(paths), "code=false")
+
+    def test_wiki_plus_program_code_is_code(self) -> None:
+        paths = ["scripts/gen_wiki.py", "src/agentcoop/cli.py"]
+        self.assertFalse(ci_changes.wiki_only(paths))
+        self.assertTrue(ci_changes.code_changed(paths))
+
+    def test_classifier_alone_is_code(self) -> None:
+        self.assertFalse(ci_changes.wiki_only(["scripts/ci_changes.py"]))
+        self.assertTrue(ci_changes.code_changed(["scripts/ci_changes.py"]))
+
+    def test_test_workflow_alone_is_code(self) -> None:
+        self.assertFalse(ci_changes.wiki_only([".github/workflows/test.yml"]))
+        self.assertTrue(ci_changes.code_changed([".github/workflows/test.yml"]))
+
     def test_empty_list_is_not_code(self) -> None:
         self.assertFalse(ci_changes.code_changed([]))
         self.assertEqual(ci_changes.output_line([]), "code=false")
