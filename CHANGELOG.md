@@ -15,6 +15,13 @@
 - A project stop hook wakes Cursor when the loop is gone. It waits until 5 seconds before a 30 second timeout, and it does not send a follow-up when there is no mail.
 - When the Cursor chat is not watching, messages wait until you say Start working. Other tools still run in the background. `agentcoop idle background` and `agentcoop idle wait` switch that.
 - A tag release must point at a commit that is on main. The GitHub release page target is main.
+- A file sent with a message is copied into `projects/<name>/files/shared/`, with a record of the name, size, type, checksum, and description. The old `attachments` list still holds absolute paths, now of those copies.
+- `agentcoop share` copies a file ahead of a message. `agentcoop files list`, `pin`, `unpin`, and `prune` manage the copies.
+- The Claude desktop app may put files in `outbox/claude_desktop/<answer>.files/`, with an optional `files.json`. A refused file is explained, and the answer still posts.
+- An agent may say what it accepts (`image/*`, `application/pdf`, `*/*`). A file that does not match is still sent, with one note. Another form of the same file can be marked `alt_of` that file's checksum.
+- Files up to `share_max_mb` (default 200) are copied. A bigger file, or a program or script, waits for the person to allow that one file. `share_hard_max_mb` (default 4096) is refused even then. Private files stay blocked.
+- Shared files are removed `share_keep_days` days (default 30) after their conversation is archived, unless pinned. `share_warn_total_gb` (default 10) warns and does not delete early.
+- The viewer shows images, and plays video and audio with the browser. STATUS.md lists the last few shared files and any file waiting for approval.
 
 ## 0.2.6 - 2026-10-22
 
