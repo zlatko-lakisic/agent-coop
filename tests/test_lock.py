@@ -5,15 +5,24 @@ from __future__ import annotations
 import io
 import json
 import multiprocessing
+import os
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
+from unittest.mock import patch
 
 import support
 
 from agentcoop.cli import main
 from agentcoop.errors import CoopError
-from agentcoop.projects import add_helper, add_project, connect_agent_record, init_board_files, load_projects
+from agentcoop.projects import (
+    add_helper,
+    add_project,
+    atomic_write_bytes,
+    connect_agent_record,
+    init_board_files,
+    load_projects,
+)
 
 
 def _worker(board: str, project: str, agent: str, error_path: str) -> None:
@@ -27,6 +36,23 @@ def _worker(board: str, project: str, agent: str, error_path: str) -> None:
 
 
 class LockTests(unittest.TestCase):
+    def test_replace_retries_when_the_file_is_busy(self) -> None:
+        with support.TempEnv() as env:
+            target = env.board / "projects.json"
+            calls = {"n": 0}
+            real = os.replace
+
+            def flaky(src: str, dst: str) -> None:
+                calls["n"] += 1
+                if calls["n"] < 3:
+                    raise PermissionError("busy")
+                real(src, dst)
+
+            with patch("agentcoop.projects.os.replace", flaky), patch("agentcoop.projects.time.sleep"):
+                atomic_write_bytes(target, b'{"ok": true}\n')
+            self.assertGreaterEqual(calls["n"], 3)
+            self.assertEqual(target.read_text(encoding="utf-8"), '{"ok": true}\n')
+
     def test_concurrent_helpers_are_all_kept(self) -> None:
         with support.TempEnv() as env:
             init_board_files(env.board)

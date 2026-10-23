@@ -85,7 +85,20 @@ def atomic_write_bytes(path: Path, data: bytes) -> None:
         os.write(fd, data)
     finally:
         os.close(fd)
-    os.replace(tmp, path)
+    delay = 0.05
+    for attempt in range(6):
+        try:
+            os.replace(tmp, path)
+            return
+        except PermissionError:
+            if attempt == 5:
+                try:
+                    tmp.unlink()
+                except OSError:
+                    pass
+                raise
+            time.sleep(delay)
+            delay = min(delay * 2, 0.4)
 
 
 def dump_json(data: dict) -> bytes:
