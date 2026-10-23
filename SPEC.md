@@ -51,6 +51,7 @@ The board MUST use this layout:
         ├── sent/<agent>/
         ├── files/<agent>/
         ├── progress/
+        ├── progress/helpers/<agent>/
         ├── context/
         └── archive/<agent>/
 ```
@@ -77,9 +78,12 @@ Each path has one writer. A second writer MUST NOT update that path.
 | `archive/<agent>/` | `<agent>` (or the human through `agentcoop archive`) |
 | the project folder itself | that project's driver |
 | `progress/` | that project's driver, through `agentcoop progress write` |
+| `progress/helpers/<agent>/` | that helper, for an open request from the driver |
 | `context/` | that project's driver, through `agentcoop context write` |
 
 A file in `context/` is written once and MUST NOT be edited. `agentcoop archive` MAY delete old versions. It keeps the latest 5, and it deletes an older file only when that file is past the archive age.
+
+A progress file MAY start with `Status` (`working`, `blocked`, `waiting`, or `done`), `Step` (such as `3 of 7`), `Percent` (a whole number from 0 to 100), `Now` (one sentence), and `For` (a message id). `Percent` is present only when it was counted. A helper writes `progress/helpers/<agent>/<stamp>_<message id>.md`. Older programs ignore that folder. A Claude desktop progress note is `outbox/<agent>/<message id>.progress.md`. It is not an answer. The answer is still `<message id>.md`.
 
 ## 4. Agent and project names
 
@@ -249,4 +253,4 @@ A helper that cannot run `agentcoop` MAY write `requests/<agent>/<utc>.json` con
 
 A processed join, leave, stop_watching, or start_watching file MUST move to `requests/<agent>/done/` with a one-line result file beside it. `stop_watching` and `start_watching` from an agent who is not a member MUST move to `requests/<agent>/rejected/`.
 
-`agentcoop` MUST write `projects/STATUS.md` on every `tick`, `check`, `send`, and membership change, and when a heartbeat or the stop flag changes. The file lists each project's name, folder, driver, and helpers, whether the background schedule is on, the time of the last round, each project's latest progress headline, whether checking is on or stopped, and whether each agent is watching.
+`agentcoop` MUST write `projects/STATUS.md` on every `tick`, `check`, `send`, and membership change, and when a heartbeat or the stop flag changes. The file lists each project's name, folder, driver, and helpers, whether the background schedule is on, the time of the last round, each project's latest progress headline, one short line for the driver task and each helper task in progress, whether checking is on or stopped, and whether each agent is watching.

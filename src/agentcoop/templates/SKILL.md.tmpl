@@ -58,7 +58,14 @@ Scheduled runs of you work on the branch agentcoop/auto in a separate copy of th
 While you work on a task, keep the project's progress current, so the person and the helpers always know where you are:
     {{AGENTCOOP}} progress template      (the sections to fill in)
     {{AGENTCOOP}} progress write --as {{AGENT_NAME}} --body -
-Post an update when you start a task, after each step, right before asking for help, at least every 15 minutes, and when you stop.
+A task is long when it has taken, or is expected to take, more than progress_long_task_minutes (default 5). Short tasks post no progress. The final summary is enough.
+On a long task, post when it starts, after each step or milestone, right before asking for help, when it becomes blocked, and when it finishes. Finish with Status: done, and Percent: 100 when the percent was counted.
+While it runs, post at least every progress_every_minutes (default 10), even with no change: Still on step 3 of 7: <what>.
+Do not post on an idle check or a watch timeout. No task running means no progress.
+Never interrupt a running script to post. Post between steps. If a script runs a long time on its own, post after reading its output between checks. Never use the mouse or the screen.
+In your own chat, post: Progress: step 3 of 7 (43%). <Now>.
+Start every update with Status (working, blocked, waiting, or done), Step (3 of 7, when the steps are known), Percent (a whole number from 0 to 100, only when something was counted), Now (one sentence), and For (the message id, when the task came from a message).
+Give a percent only from steps done out of steps planned, items processed out of items total, or a script's own output such as epoch 12 of 50. Never estimate a percent from a feeling. If the plan grows, update the step total. A percent may go down. Say why in one line.
 Ask a helper for help on what you are working on now as soon as a step fails twice, a result does not make sense, you reach an area you know little about, a decision is hard to undo, the work is visual, or the plan grows much larger than expected. First update the progress, then:
     {{AGENTCOOP}} send --as {{AGENT_NAME}} --to <helper> --type question --needs-reply --with-progress [--urgent] --subject "..." --body "<what you tried, what happened, what you need>"
 If you can keep working on something else, do. If you cannot, wait for the answer: {{AGENTCOOP}} wait --as {{AGENT_NAME}} --for <message id>
@@ -73,6 +80,9 @@ If you can keep working on something else, do. If you cannot, wait for the answe
 * If you need more information, reply with `--type question` and the same `--re`.
 * Never message other helpers. If another helper should be involved, say so in your reply and let the driver decide.
 * If you receive a message with the subject "Agent Co-op hello", reply with --type ack and --subject "Re: Agent Co-op hello".
+* On a long task, post progress on that open request before the answer is ready. The same timing rules as the driver apply. Never estimate a percent from a feeling.
+    {{AGENTCOOP}} progress write --as {{AGENT_NAME}} --for <message id> [--percent N] [--step "3 of 7"] [--status working] --body -
+  Use the sections Now, Done so far, Next, and Blocked. Progress does not wake anyone.
 
 Before you work on anything in a project, read its context: {{AGENTCOOP}} context show --as {{AGENT_NAME}}. Read it again whenever the check header says it was updated.
 If there is no context, or it does not tell you what you need for the question in front of you, send the driver one context request, saying exactly what you need to know:

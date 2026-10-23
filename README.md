@@ -192,6 +192,8 @@ Project context: a new helper reads the context document first, and if there is 
 
 Progress and help: while the driver works, it keeps a progress update current and asks helpers as soon as it gets stuck. See [docs/progress.md](docs/progress.md).
 
+On a long task, the driver and the helpers post progress on their own. Each update starts with a status, and with a step or a percent when those can be counted. Helpers keep that note in `progress/helpers/`, so it does not wake anyone. STATUS.md and `agentcoop status` show one short line per task, including when an update has gone quiet.
+
 Background checks run every 5 minutes. An agent starts only when it has mail. Ask any agent to "start the co-op", "stop the co-op", or "check the board now". See [docs/schedule.md](docs/schedule.md).
 
 Scheduled driver runs work in a separate copy on the branch `agentcoop/auto`. They cannot push or switch branches. You review and merge with `git diff <your branch>...agentcoop/auto`. `agentcoop status` shows waiting commits.

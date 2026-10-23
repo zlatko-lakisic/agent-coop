@@ -74,6 +74,10 @@ def render_status(board: Path, now: datetime | None = None) -> str:
         lines.append("Driver: " + str(project.get("driver") or ""))
         lines.append("Helpers: " + helper_text)
         lines.append("Progress: " + progress_headline(board, name))
+        from agentcoop.progress import task_lines
+
+        for task_line in task_lines(board, name, now=moment):
+            lines.append(task_line)
         lines.extend(_watching_lines(board, name, project, moment))
         lines.append("")
     return "\n".join(lines).rstrip() + "\n"

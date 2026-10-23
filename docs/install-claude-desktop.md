@@ -48,3 +48,5 @@ If the person says "Update Agent Co-op":
 3. If the skill is older than the installed version, offer to save the skill from the installed tag, not from main: `https://github.com/zlatko-lakisic/agent-coop/blob/v<installed>/skills/agent-coop/SKILL.md`.
 
 At each check, if STATUS.md shows a newer installed version than this skill, say once: My Agent Co-op skill is older than the installed version. Say: Update Agent Co-op.
+
+On a long task, the desktop app writes `outbox/claude_desktop/<message id>.progress.md` before the answer is ready. That file is progress, not the answer. The answer is still `<message id>.md`. The next check moves the progress file into `progress/helpers/claude_desktop/`.

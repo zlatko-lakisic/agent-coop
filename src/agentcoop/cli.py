@@ -15,7 +15,6 @@ from agentcoop.core import (
     file_id,
     log_messages,
     mark_done,
-    new_messages,
     projects_for_check,
     render_check,
     send,
@@ -274,6 +273,11 @@ def build_parser() -> argparse.ArgumentParser:
     _add_project(progress_write)
     progress_write.add_argument("--body")
     progress_write.add_argument("--body-file")
+    progress_write.add_argument("--for", dest="for_id", default="")
+    progress_write.add_argument("--percent", default="")
+    progress_write.add_argument("--step", default="")
+    progress_write.add_argument("--status", default="")
+    progress_write.add_argument("--now", default="")
     progress_write.add_argument("--allow-secret", action="store_true")
     progress_write.set_defaults(func=cmd_progress_write)
     progress_show = progress_sub.add_parser("show", help="Show a progress update")
@@ -282,6 +286,8 @@ def build_parser() -> argparse.ArgumentParser:
     progress_show.add_argument("--version", dest="version_name")
     progress_show.set_defaults(func=cmd_progress_show)
     progress_template = progress_sub.add_parser("template", help="Print the progress template")
+    _add_as(progress_template)
+    _add_project(progress_template)
     progress_template.set_defaults(func=cmd_progress_template)
     progress_list = progress_sub.add_parser("list", help="List progress versions")
     _add_as(progress_list)
@@ -714,15 +720,43 @@ def cmd_archive(args: argparse.Namespace) -> int:
 
 
 def cmd_progress_write(args: argparse.Namespace) -> int:
-    from agentcoop.progress import section_text, write_progress
+    from agentcoop.progress import section_text, write_helper_progress, write_progress
+    from agentcoop.progressmeta import format_fields, one_line, parse_fields
 
     agent = _agent(args)
     board = _board()
     project = resolve_project(board, explicit=args.project, cwd=Path.cwd(), agent=agent)
     body = _read_body(args)
+    for_id = getattr(args, "for_id", "") or ""
+    status = getattr(args, "status", "") or ""
+    step = getattr(args, "step", "") or ""
+    percent = getattr(args, "percent", "") or ""
+    now = getattr(args, "now", "") or ""
+    if for_id:
+        name = write_helper_progress(
+            board,
+            project,
+            agent,
+            for_id,
+            body,
+            status=status or "working",
+            step=step,
+            percent=percent,
+            now=now,
+            allow_secret=bool(args.allow_secret),
+        )
+        print(name)
+        fields = parse_fields(format_fields(status=status or "working", step=step, percent=percent, now=now, for_id=for_id, rest=body))
+        _print_sent("the project", "Progress", one_line(fields))
+        return 0
+    if status or step or percent or now:
+        body = format_fields(status=status or "working", step=step, percent=percent, now=now, rest=body)
     print(write_progress(board, project, agent, body, allow_secret=bool(args.allow_secret)))
-    working = section_text(body, "Working on now")
-    _print_sent("the project", "Progress", working or body)
+    working = now or section_text(body, "Working on now") or section_text(body, "Now")
+    if status or step or percent or now:
+        _print_sent("the project", "Progress", one_line(parse_fields(body)))
+    else:
+        _print_sent("the project", "Progress", working or body)
     return 0
 
 
@@ -739,7 +773,14 @@ def cmd_progress_show(args: argparse.Namespace) -> int:
 def cmd_progress_template(args: argparse.Namespace) -> int:
     from agentcoop.progress import progress_template_text
 
-    print(progress_template_text(), end="")
+    helper = False
+    if getattr(args, "as_name", None):
+        agent = _agent(args)
+        board = _board()
+        project_name = resolve_project(board, explicit=args.project, cwd=Path.cwd(), agent=agent)
+        project = (load_projects(board).get("projects") or {}).get(project_name) or {}
+        helper = role_of(project, agent) == "helper"
+    print(progress_template_text(helper=helper), end="")
     return 0
 
 
@@ -755,7 +796,7 @@ def cmd_progress_list(args: argparse.Namespace) -> int:
 
 def cmd_wait(args: argparse.Namespace) -> int:
     """Block until a reply arrives or the timeout passes."""
-    import time
+    from agentcoop.progress import wait_for_reply
 
     agent = _agent(args)
     board = _board()
@@ -763,23 +804,7 @@ def cmd_wait(args: argparse.Namespace) -> int:
     minutes = int(args.timeout)
     if minutes < 1 or minutes > 30:
         raise CoopError("The wait must be between 1 and 30 minutes.", code=2)
-    deadline = time.monotonic() + minutes * 60
-    while True:
-        messages, _issues = new_messages(board, project, agent)
-        for item in messages:
-            if item.re == args.for_id:
-                print(file_id(item) + "  " + item.subject)
-                return 0
-        if time.monotonic() >= deadline:
-            print(
-                "No reply to "
-                + args.for_id
-                + " after "
-                + str(minutes)
-                + " minutes. Keep working on something else, or post a progress update saying you are blocked."
-            )
-            return 3
-        time.sleep(5)
+    return wait_for_reply(board, project, agent, args.for_id, minutes)
 
 
 def cmd_watch(args: argparse.Namespace) -> int:

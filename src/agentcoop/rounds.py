@@ -202,6 +202,14 @@ def format_status(board: Path) -> str:
         lines.append("Last round: " + last.read_text(encoding="utf-8").strip())
     else:
         lines.append("Last round: none yet.")
+    config = load_config(board)
+    lines.append(
+        "Progress: long task "
+        + str(config.get("progress_long_task_minutes") or 5)
+        + " minutes, post every "
+        + str(config.get("progress_every_minutes") or 10)
+        + " minutes."
+    )
     for project_name, project in (load_projects(board).get("projects") or {}).items():
         for notice in project.get("notices") or []:
             if isinstance(notice, str) and notice:
@@ -268,6 +276,9 @@ def format_status(board: Path) -> str:
         from agentcoop.progress import status_lines
 
         lines.extend(status_lines(board, project))
+        from agentcoop.progress import task_lines
+
+        lines.extend(task_lines(board, project))
         if not dest.exists():
             if item.get("driver") and not inside_git(folder):
                 driver = str(item.get("driver"))

@@ -170,6 +170,7 @@ class ViewerHandler(BaseHTTPRequestHandler):
                     "messages": messages,
                     "context": context,
                     "progress": _progress_row(board, name),
+                    "tasks": _task_rows(board, name),
                 }
             )
         agent_rows = []
@@ -198,6 +199,28 @@ class ViewerHandler(BaseHTTPRequestHandler):
             "note": "This page is for you. Agents do not connect to it.",
             "banner": banner,
         }
+
+
+def _task_rows(board: Path, project: str) -> list[dict]:
+    """Return short progress lines for the viewer, with a percent when one was counted."""
+    from agentcoop.progress import helper_tasks, latest_progress, task_lines
+    from agentcoop.progressmeta import parse_fields
+
+    rows = []
+    lines = task_lines(board, project)
+    percents: list[str] = []
+    latest = latest_progress(board, project)
+    if latest is not None:
+        try:
+            percents.append(str(parse_fields(latest.read_text(encoding="utf-8")).get("Percent") or ""))
+        except Exception:
+            percents.append("")
+    for task in helper_tasks(board, project):
+        percents.append(str(task.get("percent") or ""))
+    for index, line in enumerate(lines):
+        percent = percents[index] if index < len(percents) else ""
+        rows.append({"line": line, "percent": percent})
+    return rows
 
 
 def _progress_row(board: Path, project: str) -> dict | None:

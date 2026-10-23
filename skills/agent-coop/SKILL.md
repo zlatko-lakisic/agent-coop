@@ -96,6 +96,18 @@ If they ask who is in this project, or what's the status, read STATUS.md and sum
 
 Changing the driver, adding or removing someone else, removing a project, or uninstalling needs a chat with an agent that can run Agent Co-op, such as Cursor, or the Agent Co-op page.
 
+## Progress
+
+On a long task (more than progress_long_task_minutes, default 5), post progress without being asked. Short tasks post no progress. The answer is enough.
+Write `outbox/claude_desktop/<message id>.progress.md`. A progress file is not the answer. The answer is still `<message id>.md`.
+Start with Status (working, blocked, waiting, or done), Step (3 of 7, when the steps are known), Percent (a whole number from 0 to 100, only when something was counted), Now (one sentence), and For (the message id).
+Then use Now, Done so far, Next, and Blocked.
+Post when it starts, after each step, right before you need something, when you are blocked, and when you finish. Finish with Status: done, and Percent: 100 when the percent was counted.
+While it runs, post at least every progress_every_minutes (default 10), even with no change: Still on step 3 of 7: <what>.
+Do not post on an idle check. Never interrupt a running script to post. Post between steps. If a script runs a long time, post after reading its output. Never use the mouse or the screen.
+In this chat, post: Progress: step 3 of 7 (43%). <Now>.
+Give a percent only from steps done out of steps planned, items processed out of items total, or a script's own output such as epoch 12 of 50. Never estimate a percent from a feeling. If the plan grows, update the step total. A percent may go down. Say why in one line.
+
 ## Rules
 
 * Write only to `outbox/claude_desktop/` and `requests/claude_desktop/` inside project folders.

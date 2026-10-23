@@ -179,6 +179,7 @@ def process_outbox(
     box = outbox_dir(board, project, agent)
     processing = outbox_processing_dir(board, project, agent)
     candidates = _markdown_files(processing) + _markdown_files(box)
+    candidates.sort(key=lambda item: (0 if item.name.endswith(".progress.md") else 1, item.name))
     for path in candidates:
         if path.parent.resolve() == box.resolve() and _is_young(path, now):
             continue
@@ -186,7 +187,10 @@ def process_outbox(
         if claimed is None or lock_path is None:
             continue
         try:
-            _post_claimed(board, project, agent, driver, claimed, now)
+            if claimed.name.endswith(".progress.md"):
+                _post_progress(board, project, agent, driver, claimed)
+            else:
+                _post_claimed(board, project, agent, driver, claimed, now)
         finally:
             if lock_path.is_file():
                 try:
@@ -337,6 +341,49 @@ def _claim(
             return dest, lock_path
     except CoopError:
         return None, None
+
+
+def _post_progress(board: Path, project: str, agent: str, driver: str, path: Path) -> None:
+    """Move a helper progress note into the progress folder. It is not an answer."""
+    from agentcoop.progress import write_helper_progress
+    from agentcoop.progressmeta import parse_fields
+
+    mid = path.name[: -len(".progress.md")]
+    msg_path = inbox_msgs(board, project, agent) / (mid + ".json")
+    if not ID_RE.fullmatch(mid) or not msg_path.is_file():
+        _reject(board, project, agent, path, mid + " is not an open request from the driver to " + agent + ".")
+        return
+    original = load_message(msg_path)
+    if original is None or original.sender != driver or (inbox_done(board, project, agent) / mid).is_file():
+        _reject(board, project, agent, path, mid + " is not an open request from the driver to " + agent + ".")
+        return
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError:
+        _reject(board, project, agent, path, "Could not read the progress file.")
+        return
+    try:
+        fields = parse_fields(text)
+    except CoopError as exc:
+        _reject(board, project, agent, path, str(exc))
+        return
+    try:
+        write_helper_progress(
+            board,
+            project,
+            agent,
+            mid,
+            fields.get("rest") or "",
+            status=str(fields.get("Status") or "working"),
+            step=str(fields.get("Step") or ""),
+            percent=str(fields.get("Percent") or ""),
+            now=str(fields.get("Now") or ""),
+            allow_secret=True,
+        )
+    except CoopError as exc:
+        _reject(board, project, agent, path, str(exc))
+        return
+    _finish(path, outbox_sent_dir(board, project, agent))
 
 
 def _post_claimed(

@@ -40,7 +40,8 @@ _EMPTY_CONFIG = {
     "run_timeout_minutes": 15,
     "auto_branch": "agentcoop/auto",
     "progress_limit_bytes": 16384,
-    "progress_every_minutes": 15,
+    "progress_every_minutes": 10,
+    "progress_long_task_minutes": 5,
     "board_format": 1,
     "min_version": "0.2.0",
     "update_check": True,
@@ -84,7 +85,20 @@ def atomic_write_bytes(path: Path, data: bytes) -> None:
         os.write(fd, data)
     finally:
         os.close(fd)
-    os.replace(tmp, path)
+    delay = 0.05
+    for attempt in range(6):
+        try:
+            os.replace(tmp, path)
+            return
+        except PermissionError:
+            if attempt == 5:
+                try:
+                    tmp.unlink()
+                except OSError:
+                    pass
+                raise
+            time.sleep(delay)
+            delay = min(delay * 2, 0.4)
 
 
 def dump_json(data: dict) -> bytes:

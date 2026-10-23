@@ -163,6 +163,13 @@ function drawTalk() {
   html += "<p class='meta'>Driver: " + escapeHtml(project.driver) + "</p>";
   const helpers = Object.keys(project.helpers || {});
   html += "<p class='meta'>Helpers: " + (helpers.length ? helpers.map(escapeHtml).join(", ") : "none") + "</p>";
+  (project.tasks || []).forEach(function (task) {
+    html += "<p>" + escapeHtml(task.line) + "</p>";
+    var percent = parseInt(task.percent, 10);
+    if (!isNaN(percent) && percent >= 0 && percent <= 100) {
+      html += "<div style='background:#ddd;height:8px;margin:4px 0 12px'><div style='background:#333;height:8px;width:" + percent + "%'></div></div>";
+    }
+  });
   if (project.progress) {
     html += "<h2>Progress</h2>";
     html += "<p class='meta'>Updated " + escapeHtml(project.progress.time) + " by " + escapeHtml(project.progress.author) + "</p>";
