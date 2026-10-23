@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- On a long task, the driver and the helpers post progress on their own. Each update can carry a status, a step, and a counted percent.
+- A helper writes `progress/helpers/<agent>/`. The Claude desktop app writes `<message id>.progress.md`, which is not the answer.
+- Progress does not wake anyone. `wait --for` prints helper progress and keeps waiting while it is fresh, up to 60 minutes.
+- STATUS.md, `agentcoop status`, and the viewer show one short line per task, and say when an update has gone quiet.
+- New boards use `progress_long_task_minutes` 5 and `progress_every_minutes` 10.
+
 ## 0.2.5 - 2026-10-22
 
 - You can install, update, or downgrade to a published version. The same version or a newer one needs no confirmation. An older version asks you to type the version.

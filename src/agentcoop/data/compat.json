@@ -7,10 +7,10 @@
       "spec": "0.3",
       "board_format": 1,
       "oldest_reader": "0.2.0",
-      "board_changes": "None",
-      "settings_changes": "None",
-      "downgrade_loses": "Nothing",
-      "desktop_skill": "Same",
+      "board_changes": "progress/helpers/<agent>/ holds helper progress. Older programs ignore that folder.",
+      "settings_changes": "New boards set progress_long_task_minutes to 5 and progress_every_minutes to 10. A saved config keeps its old value.",
+      "downgrade_loses": "Helper progress stays on disk, but older programs do not show it. Wait no longer extends while a helper is working.",
+      "desktop_skill": "Changed",
       "upgrade_from": "0.2.0"
     },
     {

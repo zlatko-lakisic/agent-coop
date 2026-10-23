@@ -141,6 +141,61 @@ def _watch_smoke(command: Path, env: dict, root: Path) -> int:
     if "Read from cursor: Ping. Hello from smoke." not in output:
         sys.stderr.write(output + errors)
         return 1
+    message_id = sent.stdout.strip().split()[0]
+    helper_progress = subprocess.run(
+        [
+            str(command),
+            "progress",
+            "write",
+            "--as",
+            "claude_code",
+            "--project",
+            "smoke",
+            "--for",
+            message_id,
+            "--percent",
+            "40",
+            "--step",
+            "1 of 2",
+            "--now",
+            "Reading the smoke log.",
+            "--body",
+            "Done so far: the ping.",
+        ],
+        env=env,
+        cwd=str(demo),
+        capture_output=True,
+        text=True,
+    )
+    if helper_progress.returncode != 0 or "40" not in (helper_progress.stdout + helper_progress.stderr):
+        sys.stderr.write(helper_progress.stdout + helper_progress.stderr)
+        return helper_progress.returncode or 1
+    driver_progress = subprocess.run(
+        [
+            str(command),
+            "progress",
+            "write",
+            "--as",
+            "cursor",
+            "--project",
+            "smoke",
+            "--percent",
+            "50",
+            "--step",
+            "1 of 2",
+            "--now",
+            "Running the smoke test.",
+            "--body",
+            "Working.",
+        ],
+        env=env,
+        cwd=str(demo),
+        capture_output=True,
+        text=True,
+    )
+    if driver_progress.returncode != 0 or "50" not in (driver_progress.stdout + driver_progress.stderr):
+        sys.stderr.write(driver_progress.stdout + driver_progress.stderr)
+        return driver_progress.returncode or 1
     return 0
 
 
