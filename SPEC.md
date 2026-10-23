@@ -203,7 +203,7 @@ Both modes MUST use the same files. A reader MUST accept either.
 
 ## 12. Versioning
 
-The message field `v` is the message format version. Spec 0.3 still uses `1`. A context request uses the same fields as any other message. The change is in the role rules, not in the file format, so `v` did not change. Readers MUST ignore unknown fields. `agentcoop version` prints the tool version and this spec version (`0.3`).
+The message field `v` is the message format version. Spec 0.3 still uses `1`. The version table is [COMPATIBILITY.md](COMPATIBILITY.md). A context request uses the same fields as any other message. The change is in the role rules, not in the file format, so `v` did not change. Readers MUST ignore unknown fields. `agentcoop version` prints the tool version and this spec version (`0.3`).
 
 ## 13. Known limitations
 
