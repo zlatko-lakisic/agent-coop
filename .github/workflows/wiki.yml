@@ -1,0 +1,66 @@
+name: Wiki drift
+
+on:
+  schedule:
+    - cron: "17 13 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.12"
+      - name: Clone the wiki
+        run: git clone --depth 1 https://github.com/zlatko-lakisic/agent-coop.wiki.git ../agent-coop.wiki
+      - name: Check generated pages and links
+        id: check
+        run: |
+          set +e
+          python3 scripts/gen_wiki.py --check --wiki ../agent-coop.wiki > /tmp/gen.txt 2>&1
+          gen=$?
+          python3 scripts/check_wiki_links.py ../agent-coop.wiki > /tmp/links.txt 2>&1
+          links=$?
+          {
+            echo "gen=$gen"
+            echo "links=$links"
+            if [ "$gen" -ne 0 ]; then
+              echo "Generated pages:"
+              cat /tmp/gen.txt
+            fi
+            if [ "$links" -ne 0 ]; then
+              echo "Links:"
+              cat /tmp/links.txt
+            fi
+          } > /tmp/wiki-report.txt
+          if [ "$gen" -ne 0 ] || [ "$links" -ne 0 ]; then
+            echo "ok=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ok=true" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Open or close the issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          OK: ${{ steps.check.outputs.ok }}
+        run: |
+          set -euo pipefail
+          number="$(gh issue list --state open --search 'Wiki is out of date in:title' --json number,title --jq '.[] | select(.title == "Wiki is out of date") | .number' | head -n 1)"
+          if [ "$OK" = "true" ]; then
+            if [ -n "$number" ]; then
+              gh issue close "$number" --comment "The wiki check passed."
+            fi
+            exit 0
+          fi
+          body="$(cat /tmp/wiki-report.txt)"
+          if [ -n "$number" ]; then
+            gh issue comment "$number" --body "$body"
+          else
+            gh issue create --title "Wiki is out of date" --body "$body"
+          fi

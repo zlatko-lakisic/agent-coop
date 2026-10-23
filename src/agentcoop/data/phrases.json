@@ -1,0 +1,201 @@
+{
+  "groups": [
+    {
+      "title": "Install and update",
+      "rows": [
+        {
+          "say": "Install Agent Co-op from github.com/zlatko-lakisic/agent-coop",
+          "does": "Install the newest published release.",
+          "who": "Cursor, Claude Code, Codex CLI, the ChatGPT desktop app, and Gemini CLI. The Claude desktop app cannot download it. It asks an agent that can run commands.",
+          "added": "0.2.2",
+          "in": ["skill", "rule", "agents", "gemini", "board", "desktop"]
+        },
+        {
+          "say": "Install Agent Co-op 0.2.3 from github.com/zlatko-lakisic/agent-coop",
+          "does": "Install that published version. 0.2.3 is an example.",
+          "who": "Same agents as install. Added in 0.2.5.",
+          "added": "0.2.5",
+          "in": ["skill", "rule", "agents", "gemini", "board", "desktop"]
+        },
+        {
+          "say": "Update Agent Co-op",
+          "also": "Update Agent Co-op from github.com/zlatko-lakisic/agent-coop",
+          "does": "Install the newest published release. On an old install, the longer sentence is the one an agent can follow from the repo.",
+          "who": "Agents that can run commands. The Claude desktop app resaves its skill, and tells you to say this in Cursor when the program itself must change.",
+          "added": "0.2.5",
+          "in": ["skill", "rule", "agents", "gemini", "board", "desktop"],
+          "also_in": ["skill", "rule", "agents", "gemini", "board"]
+        },
+        {
+          "say": "Update to 0.2.4",
+          "does": "Install that version when it is the same or newer. 0.2.4 is an example. A leading v is fine.",
+          "who": "Agents that can run commands. The Claude desktop app tells you to say this in Cursor.",
+          "added": "0.2.5",
+          "in": ["skill", "rule", "agents", "gemini", "board", "desktop"]
+        },
+        {
+          "say": "Downgrade to 0.2.3",
+          "does": "Install that older version. You type the version to allow it. There is no --yes for an agent.",
+          "who": "Agents that can run commands. The Claude desktop app tells you to say this in Cursor.",
+          "added": "0.2.5",
+          "in": ["skill", "rule", "agents", "gemini", "board", "desktop"]
+        },
+        {
+          "say": "Go back to the previous version",
+          "does": "Restore the copy kept from the last update. You type the version to allow it.",
+          "who": "Agents that can run commands. The Claude desktop app tells you to say this in Cursor.",
+          "added": "0.2.5",
+          "in": ["skill", "rule", "agents", "gemini", "board", "desktop"]
+        },
+        {
+          "say": "What version is Agent Co-op?",
+          "also": "Is there a newer version?",
+          "does": "Show the installed version and the newest published one. Change nothing.",
+          "who": "Agents that can run commands.",
+          "added": "0.2.5",
+          "in": ["skill", "rule", "agents", "gemini"]
+        },
+        {
+          "say": "Turn off update checks",
+          "also": "Turn on update checks",
+          "does": "Stop or start the once-a-day notice. Nothing is installed.",
+          "who": "Agents that can run commands. The Claude desktop app tells you to say this in Cursor.",
+          "added": "0.2.5",
+          "in": ["skill", "rule", "agents", "gemini", "board", "desktop"]
+        }
+      ]
+    },
+    {
+      "title": "Projects and roles",
+      "rows": [
+        {
+          "say": "You are the driver for this project",
+          "does": "Create the project with this agent as the driver, then start checking.",
+          "who": "Cursor, Claude Code, Codex CLI, the ChatGPT desktop app, and Gemini CLI. The Claude desktop app cannot drive.",
+          "added": "0.2.2",
+          "in": ["skill", "rule", "agents", "gemini", "board"]
+        },
+        {
+          "say": "Join this project",
+          "also": "Join the <name> co-op",
+          "does": "Add this agent as a helper.",
+          "who": "Agents that can run commands.",
+          "added": "0.2.2",
+          "in": ["skill", "rule", "agents", "gemini", "board"]
+        },
+        {
+          "say": "Join the <project> co-op and start working",
+          "also": "Start working",
+          "does": "Check the board, answer what is waiting, and keep checking.",
+          "who": "Agents that can run commands. The Claude desktop app joins, answers from its outbox, and creates its scheduled task.",
+          "added": "0.2.2",
+          "in": ["skill", "rule", "agents", "gemini", "desktop"]
+        },
+        {
+          "say": "Leave this project",
+          "does": "Remove this agent as a helper.",
+          "who": "Agents that can run commands. The Claude desktop app writes a leave request.",
+          "added": "0.2.2",
+          "in": ["skill", "rule", "agents", "gemini", "board"]
+        },
+        {
+          "say": "Make <agent> the driver",
+          "does": "Change the driver. You allow it on screen.",
+          "who": "Agents that can run commands. They must not pass --yes.",
+          "added": "0.2.2",
+          "in": ["skill", "rule", "agents", "gemini", "board"]
+        },
+        {
+          "say": "Add <agent> as a helper",
+          "does": "Add someone else. You allow it on screen.",
+          "who": "Agents that can run commands.",
+          "added": "0.2.2",
+          "in": ["skill", "rule", "agents", "gemini", "board"]
+        },
+        {
+          "say": "Remove <agent> from this project",
+          "does": "Remove someone else. You allow it on screen.",
+          "who": "Agents that can run commands.",
+          "added": "0.2.2",
+          "in": ["skill", "rule", "agents", "gemini", "board"]
+        },
+        {
+          "say": "Remove this project",
+          "does": "Remove the project. You allow it on screen.",
+          "who": "Agents that can run commands.",
+          "added": "0.2.2",
+          "in": ["skill", "rule", "agents", "gemini", "board"]
+        },
+        {
+          "say": "Accept the changed roles",
+          "does": "Review a hand edit to projects.json. You allow accept or restore.",
+          "who": "Agents that can run commands.",
+          "added": "0.2.2",
+          "in": ["skill", "rule", "agents", "gemini", "board"]
+        }
+      ]
+    },
+    {
+      "title": "Checking the board",
+      "rows": [
+        {
+          "say": "Stop",
+          "also": "Stop checking",
+          "does": "Stop this agent's own loop. The schedule stays on.",
+          "who": "Agents that can run commands. The Claude desktop app pauses its scheduled task.",
+          "added": "0.2.4",
+          "in": ["skill", "rule", "agents", "gemini", "desktop"]
+        },
+        {
+          "say": "Stop the co-op",
+          "does": "Turn the schedule off and stop checking for every project.",
+          "who": "Agents that can run commands. The Claude desktop app writes a stop_watching request.",
+          "added": "0.2.4",
+          "in": ["skill", "rule", "agents", "gemini", "board", "desktop"]
+        },
+        {
+          "say": "Start the co-op",
+          "does": "Turn the schedule on and allow checking again.",
+          "who": "Agents that can run commands. The Claude desktop app writes a start_watching request.",
+          "added": "0.2.4",
+          "in": ["skill", "rule", "agents", "gemini", "board", "desktop"]
+        },
+        {
+          "say": "Check the board now",
+          "does": "Run one background round.",
+          "who": "Agents that can run commands.",
+          "added": "0.2.2",
+          "in": ["skill", "rule", "agents", "gemini", "board"]
+        },
+        {
+          "say": "Who is in this project?",
+          "also": "What's the status?",
+          "does": "Summarize the schedule, the mail, and who is watching.",
+          "who": "Agents that can run commands. The Claude desktop app reads STATUS.md.",
+          "added": "0.2.2",
+          "in": ["skill", "rule", "agents", "gemini", "board"]
+        },
+        {
+          "say": "Show me the context",
+          "also": "Show me the progress",
+          "does": "Print the latest context or progress document.",
+          "who": "Agents that can run commands.",
+          "added": "0.2.2",
+          "in": ["skill", "rule", "agents", "gemini", "board"]
+        }
+      ]
+    },
+    {
+      "title": "Remove it",
+      "rows": [
+        {
+          "say": "Uninstall Agent Co-op",
+          "does": "Move the board aside. Messages are not deleted.",
+          "who": "Agents that can run commands, with uninstall --agent.",
+          "added": "0.2.2",
+          "in": ["skill", "rule", "agents", "gemini", "board"]
+        }
+      ]
+    }
+  ]
+}
