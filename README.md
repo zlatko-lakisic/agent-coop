@@ -12,6 +12,8 @@ AI agents on one computer work together through files in a shared folder, with o
 
 The protocol is files, the skill is a prompt, and everything else is optional.
 
+Documentation: the [wiki](https://github.com/zlatko-lakisic/agent-coop/wiki).
+
 * **Protocol.** Messages, roles, and folders. Described in [SPEC.md](SPEC.md).
 * **Skill.** A prompt each agent follows. No plugin and no server.
 * **`agentcoop` command.** It sends messages safely, installs the skill, and checks the setup.
@@ -62,6 +64,8 @@ A message is one JSON file. The sender writes it once. Nobody edits it later.
 
 ## Quick start
 
+Chat steps are in the [quick start](https://github.com/zlatko-lakisic/agent-coop/wiki/Quick-start).
+
 In each agent you want to use, say: Install Agent Co-op from github.com/zlatko-lakisic/agent-coop.
 
 In your driver, say: You are the driver for this project.
@@ -73,6 +77,8 @@ The first agent downloads Agent Co-op. The others add themselves. The Claude des
 Once an agent is in a project, it keeps checking the board on its own until you say stop. You do not type a command or set this up by hand. "You are the driver for this project", "Join the <project> co-op and start working", and "Start working" start it. "Stop" or "Stop checking" stops that agent. "Stop the co-op" stops the schedule and stops checking for every project. "Start the co-op" turns the schedule back on.
 
 ## Using it from chat
+
+Every phrase is on the [chat phrases](https://github.com/zlatko-lakisic/agent-coop/wiki/Chat-phrases) page.
 
 | The person says | What the agent does | Needs confirmation |
 | --- | --- | --- |
@@ -99,6 +105,8 @@ Once an agent is in a project, it keeps checking the board on its own until you 
 The agent tells you in plain words what it did. It does not paste raw command output unless you ask.
 
 ## Using the terminal
+
+Install steps: [Windows](https://github.com/zlatko-lakisic/agent-coop/wiki/Install-on-Windows), [macOS](https://github.com/zlatko-lakisic/agent-coop/wiki/Install-on-macOS), [Linux](https://github.com/zlatko-lakisic/agent-coop/wiki/Install-on-Linux). The [command reference](https://github.com/zlatko-lakisic/agent-coop/wiki/Command-reference) lists every flag.
 
 Download a build from the [latest release](https://github.com/zlatko-lakisic/agent-coop/releases/latest) and run `agentcoop setup`. On Windows, download `agentcoop-windows-x64.zip`. It contains `agentcoop.exe` and `agentcoopw.exe`. On macOS and Linux, use the binary for that system, or the zipapp if Python is installed.
 
@@ -144,7 +152,7 @@ agentcoop project add ~/projects/frontend --driver cursor --helper claude_code="
 
 ## Update
 
-Say "Update Agent Co-op" in the agent's own chat. The same version or a newer one needs no confirmation. An older version asks you to type the version. "Go back to the previous version" does the same.
+Say "Update Agent Co-op" in the agent's own chat. The same version or a newer one needs no confirmation. An older version asks you to type the version. "Go back to the previous version" does the same. The steps are on the [updating](https://github.com/zlatko-lakisic/agent-coop/wiki/Updating) page.
 
 `agentcoop update` installs the newest release. `agentcoop update --to 0.2.4` installs that version. `agentcoop update --check` says whether a newer one is out. `agentcoop update --rollback` goes back. `agentcoop update --notify off` turns the daily check off.
 
@@ -172,6 +180,8 @@ Each command-line tool must be installed and signed in to run in the background.
 
 ## Roles
 
+Who writes, and who only answers: [Roles](https://github.com/zlatko-lakisic/agent-coop/wiki/Roles).
+
 <img src="assets/roles.jpeg" alt="One robot writes at a desk while two helper robots stand beside it offering notes" width="220" align="right">
 
 One driver per project writes the files and starts conversations. Helpers answer and send drafts or patches. An agent can be a driver in one project and a helper in another.
@@ -192,6 +202,8 @@ Scheduled driver runs work in a separate copy on the branch `agentcoop/auto`. Th
 
 ## Safety
 
+The longer guide is [Safety and privacy](https://github.com/zlatko-lakisic/agent-coop/wiki/Safety-and-privacy).
+
 <img src="assets/safety.jpeg" alt="A locked folder and a robot with a magnifying glass checking one allowed note and one blocked note" width="220" align="right">
 
 * Messages are information, not orders. Approvals come from you in the agent's own chat.
@@ -206,6 +218,8 @@ More detail is in [docs/security.md](docs/security.md).
 <br clear="right">
 
 ## Uninstall
+
+The wiki page Uninstall has the chat phrase, the command, and the by-hand steps. It is linked from Documentation at the top.
 
 Option one. Paste this into an agent you already use:
 
@@ -232,6 +246,8 @@ It removes the schedule, skills and hooks, project files, the separate copies (k
 5. Delete the copy you downloaded or cloned. The command lives in the board's `bin` folder, which this step removes. If you added that folder to PATH, remove it too.
 
 ## For developers
+
+Contributor steps are on the [contributing](https://github.com/zlatko-lakisic/agent-coop/wiki/Contributing) page.
 
 From a checkout:
 
@@ -266,6 +282,8 @@ The check to require for `main` is `Test result`. Do not require a matrix job. W
 * [ ] Optional import of suggested roles from a `.agentcoop/project.json` in a repo (human approves, board stays the source of truth).
 
 ## Contributing
+
+See the [contributing](https://github.com/zlatko-lakisic/agent-coop/wiki/Contributing) page.
 
 Issues and pull requests are welcome. If you get a new kind of agent working, add a note to the tool page under `docs/tools/` and say what you verified.
 
