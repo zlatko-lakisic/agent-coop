@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
 import urllib.error
 import urllib.request
@@ -48,14 +49,19 @@ class Release:
 
 
 def http_get(url: str, timeout: float = 30) -> bytes:
-    """GET a URL. urllib uses the system proxy settings."""
-    request = urllib.request.Request(
-        url,
-        headers={
-            "Accept": "application/vnd.github+json",
-            "User-Agent": USER_AGENT,
-        },
-    )
+    """GET a URL. urllib uses the system proxy settings.
+
+    AGENTCOOP_GITHUB_TOKEN is optional. The upgrade job sets it so GitHub's
+    shared runner limit does not stop the test. A normal install does not.
+    """
+    headers = {
+        "Accept": "application/vnd.github+json",
+        "User-Agent": USER_AGENT,
+    }
+    token = os.environ.get("AGENTCOOP_GITHUB_TOKEN") or ""
+    if token:
+        headers["Authorization"] = "Bearer " + token
+    request = urllib.request.Request(url, headers=headers)
     try:
         with urllib.request.urlopen(request, timeout=timeout) as response:
             return response.read()

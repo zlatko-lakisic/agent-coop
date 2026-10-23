@@ -124,6 +124,7 @@ jobs:
       - name: Upgrade every published release
         env:
           GITHUB_TOKEN: ${{ github.token }}
+          AGENTCOOP_GITHUB_TOKEN: ${{ github.token }}
         run: python3 scripts/upgrade_matrix.py
 
   result:
