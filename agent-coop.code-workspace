@@ -3,6 +3,9 @@
 		{
 			"path": ".",
 			"name": "agent-coop"
+		},
+		{
+			"path": "../agent-coop.wiki"
 		}
 	],
 	"settings": {}
