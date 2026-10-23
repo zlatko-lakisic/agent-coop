@@ -41,6 +41,9 @@ _EMPTY_CONFIG = {
     "auto_branch": "agentcoop/auto",
     "progress_limit_bytes": 16384,
     "progress_every_minutes": 15,
+    "board_format": 1,
+    "min_version": "0.2.0",
+    "update_check": True,
 }
 
 

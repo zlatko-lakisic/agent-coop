@@ -107,9 +107,32 @@ def spawn_round(board: Path) -> None:
     subprocess.Popen(argv, **kwargs)
 
 
+def refresh_schedule_command(board: Path) -> None:
+    """Rewrite the schedule entry when its command line changed. Leave it off when it is off."""
+    record = load_schedule(board)
+    if not record:
+        return
+    command = _quiet_windows(_command_list(board) + ["tick"])
+    current = record.get("command")
+    if isinstance(current, list) and list(current) == command:
+        return
+    minutes = int(record.get("interval") or 5)
+    path_value = str(record.get("path") or os.environ.get("PATH", ""))
+    files, calls, alternative = _plan(board, minutes, command, path_value)
+    failed = _run_install_calls(calls, subprocess.run, alternative)
+    if failed is not None:
+        raise CoopError("The schedule was not updated.", code=1)
+    record["command"] = command
+    record["files"] = [str(path) for path in files]
+    _write_json(schedule_path(board), record)
+
+
 def tick(board: Path) -> int:
     """Run one round in the foreground. Exit 0 when another round holds the lock."""
     require_board(board)
+    from agentcoop.updatecheck import quiet_update_check
+
+    quiet_update_check(board)
     lock = _try_lock(board / ".state" / "tick.lock")
     if lock is None:
         return 0

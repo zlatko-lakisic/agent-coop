@@ -36,6 +36,7 @@ class TempEnv:
             "USERPROFILE": str(self.home),
             "AGENTCOOP_BOARD": str(self.board),
             "PATH": str(self.fakes) + os.pathsep + os.environ.get("PATH", ""),
+            "AGENTCOOP_TEST_OFFLINE": "1",
         }.items():
             self._old[key] = os.environ.get(key)
             os.environ[key] = value

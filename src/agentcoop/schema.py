@@ -154,4 +154,15 @@ def check_config(data: object) -> list[str]:
             not isinstance(item, str) for item in path_changes
         ):
             problems.append("path_changes must be a list of strings")
+    board_format = data.get("board_format")
+    if board_format is not None and (
+        isinstance(board_format, bool) or not isinstance(board_format, int) or board_format < 1
+    ):
+        problems.append("board_format must be a positive integer")
+    min_version = data.get("min_version")
+    if min_version is not None and not isinstance(min_version, str):
+        problems.append("min_version must be text")
+    update_check = data.get("update_check")
+    if update_check is not None and not isinstance(update_check, bool):
+        problems.append("update_check must be true or false")
     return problems

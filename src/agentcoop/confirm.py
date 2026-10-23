@@ -54,6 +54,8 @@ def _confirm_terminal(summary: str, expected: str, kind: str) -> None:
     prompt = "Type the agent name to confirm: " if kind == "agent" else "Type the project name to confirm: "
     if kind == "review":
         prompt = "Type review to confirm: "
+    elif kind == "downgrade":
+        prompt = "Type the version to confirm: "
     answer = input(prompt)
     if answer.strip() != expected:
         raise CoopError("Cancelled.", code=1)
