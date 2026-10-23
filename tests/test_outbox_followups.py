@@ -264,7 +264,8 @@ class FollowUpTests(unittest.TestCase):
                 require_board_path(long)
         self.assertIn("Nothing was written.", str(caught.exception))
         self.assertIn("260", str(caught.exception))
-        require_board_path(long)
+        with patch("agentcoop.paths.os.name", "posix"):
+            require_board_path(long)
 
 
 class DeliveryTests(unittest.TestCase):
