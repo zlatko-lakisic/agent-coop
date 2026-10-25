@@ -558,13 +558,22 @@ def place_file(
         if message_id and (current in ("", "catalog") or current.startswith("outbox-")):
             existing["message"] = message_id
             existing["recipient"] = recipient
-            if description:
-                existing["description"] = description
             save_index(board, project, index)
+        media = media_type or str(existing.get("media_type") or "") or sniff_media(real)
         info = dict(existing)
-        info["description"] = description or str(existing.get("description") or "")
-        info["alt_of"] = alt_of or str(existing.get("alt_of") or "")
+        info["name"] = real.name
+        if description:
+            info["description"] = description
+        if kind:
+            info["kind"] = kind.strip()
+        if media:
+            info["media_type"] = media
+        info["sender"] = sender
+        info["recipient"] = recipient
+        info["message"] = message_id
         info["source_path"] = str(real)
+        if alt_of:
+            info["alt_of"] = alt_of
         return _public_info(info)
     if reason == "large" and not over_limit and not ask:
         raise CoopError(_ask_sentence(real, size, cap))

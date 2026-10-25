@@ -105,6 +105,34 @@ class FollowUpTests(unittest.TestCase):
             self.assertTrue(text[0].endswith(".json"))
             self.assertEqual(text[1], "cursor")
 
+    def test_same_second_files_follow_write_time(self) -> None:
+        with support.TempEnv() as env:
+            _ready(env)
+            mid = _ask(env)
+            box = outbox_dir(env.board, "demo", "claude_desktop")
+            correction = box / (mid + ".20261023T120000Z.2.md")
+            original = box / (mid + ".20261023T120000Z.md")
+            correction.write_text("correction\n", encoding="utf-8")
+            original.write_text("original\n", encoding="utf-8")
+            _age(correction, 12)
+            _age(original, 40)
+            process_outbox(env.board, "demo", "claude_desktop")
+            from agentcoop.core import new_messages
+
+            messages, _issues = new_messages(env.board, "demo", "cursor")
+            answers = [item for item in messages if item.type == "answer"]
+            self.assertEqual([item.body.strip() for item in answers], ["original", "correction"])
+            self.assertLess(answers[0].seq or 0, answers[1].seq or 0)
+            text = render_check(check_inbox(env.board, "demo", "cursor"))
+            lines = [line for line in text.splitlines() if line.startswith("Read from")]
+            self.assertEqual(
+                lines,
+                [
+                    "Read from claude_desktop: Re: Need help. original.",
+                    "Read from claude_desktop: Re: Need help (follow-up 2). correction.",
+                ],
+            )
+
     def test_exact_copy_is_not_posted_twice(self) -> None:
         with support.TempEnv() as env:
             _ready(env)

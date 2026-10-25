@@ -105,6 +105,7 @@ Each message MUST be one UTF-8 JSON file named `<id>.json`.
 | `v` | Integer message format version. Spec 0.3 uses `1`. A missing value MUST be treated as 1. Unknown fields MUST be ignored. |
 | `id` | SHOULD be `<UTC YYYYMMDDTHHMMSSZ>_<sender>_<4 lowercase hex>`. Readers MUST accept any unique string matching `^[A-Za-z0-9_.-]{1,96}$`. |
 | `ts` | UTC time, ISO 8601, second precision, ending in `Z`. |
+| `seq` | Optional positive integer. The order the message was sent on this board. Readers that do not know this field MUST ignore it. Listing order is `ts`, then `seq`, then `id`. |
 | `project` | Project name. |
 | `sender`, `recipient` | Agent names. |
 | `type` | SHOULD be `question`, `answer`, `task`, `status`, `ack`, `patch`, `context_request`, or `nudge`. Unknown types MUST be tolerated. |
@@ -112,7 +113,7 @@ Each message MUST be one UTF-8 JSON file named `<id>.json`.
 | `subject` | At most 120 characters. |
 | `body` | At most 16 KB of UTF-8 unless config raises the limit. Longer text SHOULD be a file under `files/<sender>/`, attached by path. |
 | `attachments` | Absolute paths. MAY be empty. After a normal send these paths are the shared copies. |
-| `attachment_info` | Optional. One object per attachment, in the same order. Readers that do not know this field MUST ignore it. |
+| `attachment_info` | Optional. One object per attachment, in the same order. A later message that sends the same bytes MUST keep its own name, description, and kind, and MUST point at the stored copy. Readers that do not know this field MUST ignore it. |
 | `needs_reply` | Boolean. |
 
 Readers MUST ignore file names that start with a dot.

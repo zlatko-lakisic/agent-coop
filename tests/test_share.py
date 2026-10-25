@@ -115,6 +115,36 @@ class ShareCopyTests(unittest.TestCase):
             older.pop("attachment_info")
             self.assertTrue(Path(older["attachments"][0]).is_file())
 
+    def test_same_bytes_keep_each_senders_own_details(self) -> None:
+        with support.TempEnv() as env:
+            folder = _ready(env)
+            source = folder / "shot.png"
+            source.write_bytes(PNG)
+            first = _send(env, source, describes=["first look"], kinds=["screenshot"])
+            second = send(
+                env.board,
+                project="frontend",
+                sender="cursor",
+                recipient="claude_desktop",
+                subject="Again",
+                body="A different note.",
+                attachments=[str(source)],
+                describes=["second look"],
+                kinds=["diagram"],
+            )
+            first_message = load_message(inbox_msgs(env.board, "frontend", "claude_code") / (first + ".json"))
+            second_message = load_message(inbox_msgs(env.board, "frontend", "claude_desktop") / (second + ".json"))
+            assert first_message is not None and second_message is not None
+            first_info = first_message.attachment_info[0]
+            second_info = second_message.attachment_info[0]
+            self.assertEqual(first_info["description"], "first look")
+            self.assertEqual(first_info["kind"], "screenshot")
+            self.assertEqual(second_info["name"], "shot.png")
+            self.assertEqual(second_info["description"], "second look")
+            self.assertEqual(second_info["kind"], "diagram")
+            self.assertEqual(second_info["sha256"], first_info["sha256"])
+            self.assertEqual(second_info["path"], first_info["path"])
+
     def test_size_change_is_refused(self) -> None:
         with support.TempEnv() as env:
             folder = _ready(env)
