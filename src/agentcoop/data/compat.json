@@ -8,8 +8,8 @@
       "board_format": 1,
       "oldest_reader": "0.2.0",
       "board_changes": "projects/<name>/approvals.json holds standing approvals. logs/trace.jsonl holds command traces. Older programs ignore both. .cursor/permissions.json in a project may list agentcoop. Older programs do not write it. Messages may include seq, a positive integer. .state/message.seq holds the counter. Older programs ignore both.",
-      "downgrade_loses": "A downgrade does not show standing approvals or a waiting line at the top of STATUS.md. Trace files stay on disk and older programs do not write them. Until you connect Cursor again, the project rule still tells the driver to start cursor-loop itself. After a downgrade and connect, that rule again asks you to say Start working when a turn ends. Messages sent in the same second can show up in the wrong order. A later share of the same bytes can show the first sender's name, description, and kind.",
-      "settings_changes": "config.json may contain trace. It is optional. A missing key means tracing is off. AGENTCOOP_TRACE=1 still traces for that command.",
+      "settings_changes": "config.json may contain trace. It is optional. A missing key means tracing is off. AGENTCOOP_TRACE=1 still traces for that command. config.json may contain cursor_hook_timeout_seconds, a whole number from 30 to 3600. A missing key means 600.",
+      "downgrade_loses": "A downgrade does not show standing approvals or a waiting line at the top of STATUS.md. Trace files stay on disk and older programs do not write them. Until you connect Cursor again, the project rule still tells the driver to start cursor-loop itself. After a downgrade and connect, that rule again asks you to say Start working when a turn ends. The stop hook goes back to waiting about 25 seconds and then sending nothing, so a helper answer that arrives later does not wake the chat. Messages sent in the same second can show up in the wrong order. A later share of the same bytes can show the first sender's name, description, and kind.",
       "desktop_skill": "Same",
       "upgrade_from": "0.2.0"
     },

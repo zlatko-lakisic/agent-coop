@@ -1,7 +1,7 @@
 The installed Cursor hook is built by agentcoop, not from this file.
 It is .cursor/hooks.json in the project, with a stop hook:
 {{AGENTCOOP}} hook cursor-stop --as {{AGENT_NAME}}
-Timeout is 30 seconds. loop_limit is unlimited.
-The hook waits until 5 seconds are left, then returns nothing when there is no mail.
+The default timeout is 600 seconds. loop_limit is unlimited.
+The hook waits until 5 seconds are left. No mail sends only: End your turn.
 sessionStart cannot start a command, so the rule starts cursor-loop.
 Board: {{BOARD}}
