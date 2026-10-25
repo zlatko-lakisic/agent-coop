@@ -111,17 +111,28 @@ def dump_json(data: dict) -> bytes:
 
 
 def read_json(path: Path) -> dict:
-    """Load a JSON object or raise a plain error."""
-    try:
-        raw = path.read_text(encoding="utf-8")
-        data = json.loads(raw)
-    except FileNotFoundError as exc:
-        raise CoopError("Agent Co-op is not set up yet. Run: agentcoop setup", code=3) from exc
-    except (OSError, json.JSONDecodeError) as exc:
-        raise CoopError(str(path) + " could not be read. Run: agentcoop doctor") from exc
-    if not isinstance(data, dict):
-        raise CoopError(str(path) + " is not a JSON object. Run: agentcoop doctor")
-    return data
+    """Load a JSON object or raise a plain error.
+
+    A save replaces the file. On Windows a reader can hit that for a moment,
+    so a busy or half-written file is tried again.
+    """
+    delay = 0.05
+    last: Exception | None = None
+    for _attempt in range(8):
+        try:
+            raw = path.read_text(encoding="utf-8")
+            data = json.loads(raw)
+        except FileNotFoundError as exc:
+            raise CoopError("Agent Co-op is not set up yet. Run: agentcoop setup", code=3) from exc
+        except (OSError, json.JSONDecodeError) as exc:
+            last = exc
+            time.sleep(delay)
+            delay = min(delay * 2, 0.4)
+            continue
+        if not isinstance(data, dict):
+            raise CoopError(str(path) + " is not a JSON object. Run: agentcoop doctor")
+        return data
+    raise CoopError(str(path) + " could not be read. Run: agentcoop doctor") from last
 
 
 def board_is_ready(board: Path) -> bool:

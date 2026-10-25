@@ -7,7 +7,7 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
-from agentcoop.projects import atomic_write_bytes, board_is_ready, board_lock, load_projects
+from agentcoop.projects import atomic_write_bytes, board_is_ready, load_projects
 
 
 def status_path(board: Path) -> Path:
@@ -142,9 +142,8 @@ def refresh_status(board: Path, now: datetime | None = None) -> None:
         return
     path = status_path(board)
     payload = render_status(board, now=now).encode("utf-8")
-    with board_lock(board):
-        path.parent.mkdir(parents=True, exist_ok=True)
-        _replace_status(path, payload)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    _replace_status(path, payload)
 
 
 def _replace_status(path: Path, payload: bytes) -> None:
