@@ -254,6 +254,16 @@ def _task_now(board: Path, project: str) -> tuple[str, str]:
     return str(fields.get("Status") or "").strip(), str(fields.get("Now") or "").strip()
 
 
+def _keep_task(status: str, now_line: str) -> bool:
+    """Return True when an open task should keep waking the chat.
+
+    A missing Status still counts when Now names the work. done and waiting do not.
+    """
+    if not now_line:
+        return False
+    return status in ("working", "blocked", "")
+
+
 def assert_single_loop(board: Path, project: str, agent: str, now: datetime | None = None) -> None:
     """Refuse a second loop while this agent's heartbeat is still fresh."""
     if heartbeat_fresh(board, project, agent, now=now):
@@ -314,7 +324,7 @@ def run_cursor_loop(
             status, now_line = _task_now(board, project)
             every = loop_interval_minutes(board)
             due = last_keep is None or (current - last_keep).total_seconds() >= every * 60
-            if status in ("working", "blocked") and due and now_line:
+            if _keep_task(status, now_line) and due:
                 last_keep = current
                 _tick(stream, "Check the Agent Co-op board and continue your current task: " + now_line)
         pause(POLL_SECONDS)
@@ -366,7 +376,12 @@ def cursor_stop_followup(
         for name in active:
             prompt, _ids = _mail_prompt(board, name, agent)
             if prompt:
-                chunks.append(prompt.replace("then continue.", "then end your turn."))
+                chunks.append(
+                    prompt.replace(
+                        "then continue.",
+                        "then start cursor-loop again if it is not running, and end your turn.",
+                    )
+                )
         if chunks:
             return {"followup_message": "\n".join(chunks)}
         current = _aware(clock())

@@ -160,6 +160,42 @@ class LoopTests(unittest.TestCase):
             self.assertEqual(out.getvalue().count("continue your current task"), 1)
             self.assertIn("Fix the wake", out.getvalue())
 
+    def test_missing_status_still_ticks_and_waiting_does_not(self) -> None:
+        with support.TempEnv() as env:
+            _ready(env)
+            folder = progress_dir(env.board, "demo")
+            folder.mkdir(parents=True, exist_ok=True)
+            (folder / "20261023T120000Z.md").write_text("Now: Run the game script.\n", encoding="utf-8")
+            clock = _Clock()
+            out = io.StringIO()
+            code = run_cursor_loop(
+                env.board,
+                "demo",
+                "cursor",
+                now=clock,
+                sleep=lambda seconds: clock.advance(seconds),
+                out=out,
+                max_passes=1,
+            )
+            self.assertEqual(code, 0)
+            self.assertIn("continue your current task", out.getvalue())
+            (folder / "20261023T120100Z.md").write_text(
+                "Status: waiting\nNow: Need a decision on the restart.\n",
+                encoding="utf-8",
+            )
+            out = io.StringIO()
+            code = run_cursor_loop(
+                env.board,
+                "demo",
+                "cursor",
+                now=clock,
+                sleep=lambda seconds: clock.advance(seconds),
+                out=out,
+                max_passes=1,
+            )
+            self.assertEqual(code, 0)
+            self.assertNotIn("continue your current task", out.getvalue())
+
     def test_no_task_and_no_mail_prints_nothing(self) -> None:
         with support.TempEnv() as env:
             _ready(env)
@@ -276,6 +312,7 @@ class HookTests(unittest.TestCase):
             )
             self.assertIn("Need a look", result["followup_message"])
             self.assertIn("end your turn", result["followup_message"])
+            self.assertIn("start cursor-loop again", result["followup_message"])
             self.assertNotIn("no messages", result["followup_message"].lower())
             self.assertTrue(hook_fresh(env.board, "demo", "cursor", now=clock()))
 

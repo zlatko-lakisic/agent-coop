@@ -1,0 +1,11 @@
+{
+  "id": "s4",
+  "title": "A risky suggestion with nobody present",
+  "events": [
+    {
+      "at": 0,
+      "kind": "answer",
+      "text": "Restart the game now, then run the spy tests."
+    }
+  ]
+}

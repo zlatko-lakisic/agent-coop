@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
+import io
 import json
 import os
 import sys
+import time
 from pathlib import Path
 
 from agentcoop import SPEC_VERSION, __version__
@@ -62,13 +65,27 @@ def main(argv: list[str] | None = None) -> int:
     """Run one agentcoop command and return an exit code."""
     parser = build_parser()
     args = parser.parse_args(argv)
+    started = time.perf_counter()
+    command = str(getattr(args, "command", "") or "")
+    captured = io.StringIO()
+    capture = command in ("check", "watch", "wait", "cursor-loop")
+    code = 1
     try:
         _cleanup_replaced_binaries()
-        return int(args.func(args))
+        if capture:
+            from agentcoop.trace import Tee
+
+            with contextlib.redirect_stdout(Tee(sys.stdout, captured)):
+                code = int(args.func(args))
+        else:
+            code = int(args.func(args))
+        return code
     except CoopError as exc:
         print(str(exc), file=sys.stderr)
-        return exc.code
+        code = exc.code
+        return code
     except KeyboardInterrupt:
+        code = 0
         return 0
     except Exception as exc:
         if os.environ.get("AGENTCOOP_DEBUG") == "1":
@@ -82,7 +99,29 @@ def main(argv: list[str] | None = None) -> int:
             + "and report it at https://github.com/zlatko-lakisic/agent-coop/issues",
             file=sys.stderr,
         )
-        return 1
+        code = 1
+        return code
+    finally:
+        _trace_command(argv, command, code, started, captured.getvalue())
+
+
+def _trace_command(argv: list[str] | None, command: str, code: int, started: float, printed: str) -> None:
+    """Write a trace line when tracing is on. Never change the command result."""
+    try:
+        from agentcoop.trace import agent_from_args, note_command
+
+        used = list(sys.argv[1:] if argv is None else argv)
+        note_command(
+            board_root(),
+            used,
+            agent=agent_from_args(used),
+            command=command,
+            code=code,
+            started=started,
+            printed=printed,
+        )
+    except Exception:
+        return
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -337,6 +376,17 @@ def build_parser() -> argparse.ArgumentParser:
     idle_cmd = sub.add_parser("idle", help="Choose what happens when Cursor is not watching")
     idle_cmd.add_argument("idle_mode", choices=("wait", "background"))
     idle_cmd.set_defaults(func=cmd_idle)
+
+    trace_cmd = sub.add_parser("trace", help="Turn command tracing on or off")
+    trace_cmd.add_argument("trace_action", choices=("on", "off"))
+    trace_cmd.set_defaults(func=cmd_trace)
+
+    allow_cmd = sub.add_parser("allow", help="Record what the driver may do while you are away")
+    _add_as(allow_cmd)
+    _add_project(allow_cmd)
+    allow_cmd.add_argument("allow_action", nargs="?", default="add", choices=("add", "show", "clear"))
+    allow_cmd.add_argument("--text", default="")
+    allow_cmd.set_defaults(func=cmd_allow)
 
     start_cmd = sub.add_parser("start", help="Turn on background checks")
     start_cmd.add_argument("--every", type=int, default=5)
@@ -1094,6 +1144,46 @@ def cmd_idle(args: argparse.Namespace) -> int:
 
     mode = "wait_for_chat" if args.idle_mode == "wait" else "background_run"
     print(set_idle_mode(_board(), mode), flush=True)
+    return 0
+
+
+def cmd_trace(args: argparse.Namespace) -> int:
+    """Turn the board trace on or off."""
+    from agentcoop.projects import mutate_config
+
+    enabled = args.trace_action == "on"
+
+    def change(data: dict) -> None:
+        data["trace"] = enabled
+
+    mutate_config(_board(), change)
+    if enabled:
+        print("Tracing is on. Each command appends one line to logs/trace.jsonl.", flush=True)
+    else:
+        print("Tracing is off.", flush=True)
+    return 0
+
+
+def cmd_allow(args: argparse.Namespace) -> int:
+    """Record, show, or clear standing approvals for the driver."""
+    from agentcoop.approvals import add_approval, clear_approvals, load_approvals
+
+    agent = _agent(args)
+    board = _board()
+    project = resolve_project(board, explicit=args.project, cwd=Path.cwd(), agent=agent)
+    action = args.allow_action or "add"
+    if action == "show":
+        items = load_approvals(board, project)
+        if not items:
+            print("No standing approvals.", flush=True)
+            return 0
+        for item in items:
+            print(str(item.get("text") or ""), flush=True)
+        return 0
+    if action == "clear":
+        print(clear_approvals(board, project, agent), flush=True)
+        return 0
+    print(add_approval(board, project, agent, args.text), flush=True)
     return 0
 
 

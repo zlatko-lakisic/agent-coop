@@ -200,4 +200,7 @@ def check_config(data: object) -> list[str]:
     notify = data.get("notify_when_idle")
     if notify is not None and not isinstance(notify, bool):
         problems.append("notify_when_idle must be true or false")
+    trace = data.get("trace")
+    if trace is not None and not isinstance(trace, bool):
+        problems.append("trace must be true or false")
     return problems
