@@ -154,6 +154,7 @@ def build_parser() -> argparse.ArgumentParser:
     send_cmd.add_argument("--alt-of", action="append", dest="alt_of", default=[])
     send_cmd.add_argument("--over-limit", action="store_true")
     send_cmd.add_argument("--needs-reply", action="store_true")
+    send_cmd.add_argument("--about", default="", help="Message id this ping is about")
     send_cmd.add_argument("--allow-secret", action="store_true")
     send_cmd.set_defaults(func=cmd_send)
 
@@ -453,6 +454,9 @@ def build_parser() -> argparse.ArgumentParser:
     _add_project(join_cmd)
     join_cmd.add_argument("--note", default="")
     join_cmd.add_argument("--accepts", default="")
+    join_cmd.add_argument("--tags", default="")
+    join_cmd.add_argument("--can", default="")
+    join_cmd.add_argument("--cost", default="")
     join_cmd.add_argument("words", nargs="*")
     join_cmd.set_defaults(func=cmd_join)
     leave_cmd = sub.add_parser("leave", help="Leave a project you help with")
@@ -460,6 +464,70 @@ def build_parser() -> argparse.ArgumentParser:
     _add_project(leave_cmd)
     leave_cmd.add_argument("words", nargs="*")
     leave_cmd.set_defaults(func=cmd_leave)
+
+    profile_cmd = sub.add_parser("profile", help="Set what a helper is good at")
+    _add_as(profile_cmd)
+    _add_project(profile_cmd)
+    profile_cmd.add_argument("helper", nargs="?")
+    profile_cmd.add_argument("--tags", default=None)
+    profile_cmd.add_argument("--can", default=None)
+    profile_cmd.add_argument("--cost", default="")
+    profile_cmd.add_argument("--note", default=None)
+    profile_cmd.set_defaults(func=cmd_profile)
+
+    helpers_cmd = sub.add_parser("helpers", help="Show what each helper is good at, and their grades")
+    _add_as(helpers_cmd)
+    _add_project(helpers_cmd)
+    helpers_cmd.add_argument("--for", dest="for_tag", default="", help="Rank helpers for this tag")
+    helpers_cmd.set_defaults(func=cmd_helpers)
+
+    grade_cmd = sub.add_parser("grade", help="Grade a helper answer")
+    _add_as(grade_cmd)
+    _add_project(grade_cmd)
+    grade_cmd.add_argument("answer", nargs="*", help="Answer message id, or remove and that id")
+    grade_cmd.add_argument("--score", type=int, default=None)
+    grade_cmd.add_argument("--outcome", default="")
+    grade_cmd.add_argument("--correct", type=int, default=None)
+    grade_cmd.add_argument("--useful", type=int, default=None)
+    grade_cmd.add_argument("--followed-ask", dest="followed_ask", type=int, default=None)
+    grade_cmd.add_argument("--tags", default="")
+    grade_cmd.add_argument("--note", default="")
+    grade_cmd.add_argument("--remove", action="store_true")
+    grade_cmd.set_defaults(func=cmd_grade)
+
+    heartbeat_cmd = sub.add_parser("heartbeat", help="Answer a ping")
+    _add_as(heartbeat_cmd)
+    _add_project(heartbeat_cmd)
+    heartbeat_cmd.add_argument("--re", dest="re_id", required=True)
+    heartbeat_cmd.add_argument("--status", required=True)
+    heartbeat_cmd.add_argument("--on", default="")
+    heartbeat_cmd.add_argument("--percent", type=int, default=None)
+    heartbeat_cmd.add_argument("--step", default="")
+    heartbeat_cmd.add_argument("--next", dest="next_text", default="")
+    heartbeat_cmd.add_argument("--eta", dest="eta_minutes", type=int, default=None)
+    heartbeat_cmd.set_defaults(func=cmd_heartbeat)
+
+    decline_cmd = sub.add_parser("decline", help="Decline a request")
+    _add_as(decline_cmd)
+    _add_project(decline_cmd)
+    decline_cmd.add_argument("message", help="Request message id")
+    decline_cmd.add_argument("--reason", required=True)
+    decline_cmd.set_defaults(func=cmd_decline)
+
+    cancel_cmd = sub.add_parser("cancel", help="Cancel a request you sent")
+    _add_as(cancel_cmd)
+    _add_project(cancel_cmd)
+    cancel_cmd.add_argument("message", help="Request message id")
+    cancel_cmd.add_argument("--reason", default="")
+    cancel_cmd.set_defaults(func=cmd_cancel)
+
+    move_cmd = sub.add_parser("move", help="Move a request to another helper")
+    _add_as(move_cmd)
+    _add_project(move_cmd)
+    move_cmd.add_argument("message", help="Request message id")
+    move_cmd.add_argument("--to", required=True)
+    move_cmd.add_argument("--reason", default="")
+    move_cmd.set_defaults(func=cmd_move)
 
     skill_cmd = sub.add_parser("skill", help="Export a helper skill zip")
     skill_sub = skill_cmd.add_subparsers(dest="skill_cmd", required=True)
@@ -716,10 +784,18 @@ def cmd_send(args: argparse.Namespace) -> int:
     body = _read_body(args)
     subject = args.subject
     if not subject:
-        if args.type == "nudge":
+        if args.type in ("nudge", "ping"):
             subject = "Attention"
         else:
             raise CoopError("Add a subject with --subject.", code=2)
+    if len(recipients) > 3:
+        raise CoopError("A second opinion can go to at most 3 helpers.")
+    group = ""
+    if len(recipients) > 1:
+        import secrets
+
+        group = "g" + secrets.token_hex(4)
+        body = body + "\n\nOthers were asked the same question. Answer on your own."
     count = len(attachments)
     describes = _aligned("--describe", list(args.describe or []), count)
     kinds = _aligned("--kind", list(args.kind or []), count)
@@ -744,6 +820,8 @@ def cmd_send(args: argparse.Namespace) -> int:
             media_types=media_types,
             alt_ofs=alt_ofs,
             over_limit=bool(args.over_limit),
+            group=group or None,
+            about=getattr(args, "about", None) or None,
         )
         ids.append(mid)
         infos = _sent_files(board, project, agent, mid)
@@ -1713,6 +1791,200 @@ def _desktop_project(args: argparse.Namespace) -> str:
     return name
 
 
+def _profile_list(text: str | None, *, kind: str) -> list[str] | None:
+    """Return a parsed list, or None when the flag was left off."""
+    if text is None or text == "":
+        return None
+    from agentcoop.profiles import parse_list
+
+    return parse_list(text, kind="can" if kind == "can" else "tags")
+
+
+def _profile_cost(text: str | None) -> str | None:
+    if not text:
+        return None
+    from agentcoop.profiles import parse_cost
+
+    return parse_cost(text)
+
+
+def cmd_heartbeat(args: argparse.Namespace) -> int:
+    """Answer a ping with what you are doing."""
+    from agentcoop.core import load_message, send
+    from agentcoop.paths import inbox_msgs
+
+    agent = _agent(args)
+    board = _board()
+    project = _project(args, agent)
+    status = str(args.status or "").strip().lower()
+    if status not in ("working", "idle", "blocked", "waiting"):
+        raise CoopError("Status must be working, idle, blocked, or waiting.", code=2)
+    if not args.next_text:
+        raise CoopError("Say what is next in one sentence. Add --next.", code=2)
+    ping = load_message(inbox_msgs(board, project, agent) / (args.re_id + ".json"))
+    if ping is None or ping.type not in ("ping", "nudge"):
+        raise CoopError("A heartbeat answers a ping. " + args.re_id + " is not one.")
+    mid = send(
+        board,
+        project=project,
+        sender=agent,
+        recipient=ping.sender,
+        subject="Heartbeat",
+        body=args.next_text,
+        type="heartbeat",
+        re=args.re_id,
+        status=status,
+        on=args.on or None,
+        percent=args.percent,
+        step=args.step or None,
+        next_text=args.next_text,
+        eta_minutes=args.eta_minutes,
+    )
+    print(mid)
+    return 0
+
+
+def cmd_decline(args: argparse.Namespace) -> int:
+    """Decline one request."""
+    from agentcoop.tasks import decline_request
+
+    agent = _agent(args)
+    project = _project(args, agent)
+    print(decline_request(_board(), project, agent, args.message, args.reason))
+    return 0
+
+
+def cmd_cancel(args: argparse.Namespace) -> int:
+    """Cancel one request."""
+    from agentcoop.tasks import cancel_request
+
+    agent = _agent(args)
+    project = _project(args, agent)
+    print(cancel_request(_board(), project, agent, args.message, args.reason))
+    return 0
+
+
+def cmd_move(args: argparse.Namespace) -> int:
+    """Move one request to another helper."""
+    from agentcoop.tasks import move_request
+
+    agent = _agent(args)
+    project = _project(args, agent)
+    print(move_request(_board(), project, agent, args.message, args.to, args.reason))
+    return 0
+
+
+def cmd_helpers(args: argparse.Namespace) -> int:
+    """List helpers ranked for a tag, with grade, availability, and cost."""
+    from agentcoop.choice import choice_lines
+    from agentcoop.projects import load_projects
+
+    actor = _actor_name(args) or None
+    project = _project(args, actor)
+    record = (load_projects(_board()).get("projects") or {}).get(project) or {}
+    if not (record.get("helpers") or {}):
+        print("This project has no helpers.")
+        return 0
+    for line in choice_lines(_board(), project, args.for_tag or ""):
+        print(line)
+    return 0
+
+
+def cmd_grade(args: argparse.Namespace) -> int:
+    """Grade one helper answer, or remove a grade after the person allows it."""
+    from agentcoop.grades import remove_grade, write_grade
+    from agentcoop.profiles import parse_list
+
+    parts = list(args.answer or [])
+    removing = bool(args.remove) or (bool(parts) and parts[0] == "remove")
+    if removing and parts and parts[0] == "remove":
+        parts = parts[1:]
+    if len(parts) != 1:
+        raise CoopError(
+            "Name the answer. Example: agentcoop grade --as cursor MESSAGE --score 4 --outcome used --note \"It helped.\"",
+            code=2,
+        )
+    answer_id = parts[0]
+    actor = _actor_name(args)
+    if not actor:
+        raise CoopError("Agent Co-op does not know which agent you are. Add --as NAME.", code=2)
+    project = _project(args, actor)
+    if removing:
+        _require_person(
+            answer_id,
+            "This will remove the grade on " + answer_id + ".",
+            kind="grade",
+            actor=actor,
+            target="grade",
+        )
+        dest = remove_grade(_board(), project, answer_id)
+        print("Moved the grade to " + str(dest) + ".")
+        return 0
+    if args.score is None or not args.outcome:
+        raise CoopError("A grade needs --score and --outcome.", code=2)
+    tags = parse_list(args.tags, kind="tags") if args.tags else []
+    payload = write_grade(
+        _board(),
+        project,
+        actor,
+        answer_id,
+        score=args.score,
+        outcome=args.outcome,
+        note=args.note,
+        correct=args.correct,
+        useful=args.useful,
+        followed_ask=args.followed_ask,
+        tags=tags,
+    )
+    print("Graded " + answer_id + " " + str(payload["score"]) + " " + payload["outcome"] + ".")
+    return 0
+
+
+def cmd_profile(args: argparse.Namespace) -> int:
+    """Set a helper profile. Changing someone else asks the person to allow it."""
+    from agentcoop.confirm import confirm_person
+    from agentcoop.profiles import set_profile
+    from agentcoop.watch import assert_member
+
+    actor = _agent(args)
+    board = _board()
+    project = resolve_project(board, explicit=args.project, cwd=Path.cwd(), agent=actor)
+    if not args.helper:
+        from agentcoop.profiles import describe, profile_of
+        from agentcoop.projects import load_projects
+
+        record = (load_projects(board).get("projects") or {}).get(project) or {}
+        helpers = record.get("helpers") or {}
+        if not helpers:
+            print("This project has no helpers.", flush=True)
+            return 0
+        for name in helpers:
+            print(name + ": " + describe(profile_of(record, name)), flush=True)
+        return 0
+    helper = args.helper
+    assert_member(board, project, helper)
+    if actor != helper:
+        confirm_person(
+            "This will change " + helper + "'s profile on " + project + ".",
+            expected=helper,
+            kind="agent",
+            asked_by=actor,
+        )
+    print(
+        set_profile(
+            board,
+            project,
+            helper,
+            tags=_profile_list(args.tags, kind="tags"),
+            can=_profile_list(args.can, kind="can"),
+            cost=_profile_cost(args.cost),
+            note=args.note,
+        ),
+        flush=True,
+    )
+    return 0
+
+
 def cmd_join(args: argparse.Namespace) -> int:
     """Join a project as the agent that is asking."""
     from agentcoop.membership import join_self
@@ -1724,6 +1996,9 @@ def cmd_join(args: argparse.Namespace) -> int:
         cwd=Path.cwd(),
         words=" ".join(args.words or []),
         note=args.note or None,
+        tags=_profile_list(args.tags, kind="tags"),
+        can=_profile_list(args.can, kind="can"),
+        cost=_profile_cost(args.cost),
     )
     print(text)
     if args.accepts:

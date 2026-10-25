@@ -215,6 +215,7 @@ class ViewerHandler(BaseHTTPRequestHandler):
                     "progress": _progress_row(board, name),
                     "tasks": _task_rows(board, name),
                     "files": _shared_rows(board, name, self.server.token),
+                    "grades": _grade_rows(board, name),
                 }
             )
         agent_rows = []
@@ -283,6 +284,13 @@ def _shared_rows(board: Path, project: str, token: str) -> list[dict]:
             }
         )
     return rows
+
+
+def _grade_rows(board: Path, project: str) -> list[dict]:
+    """Return each helper's grade line and the last 20 notes."""
+    from agentcoop.grades import viewer_rows
+
+    return viewer_rows(board, project)
 
 
 def _task_rows(board: Path, project: str) -> list[dict]:

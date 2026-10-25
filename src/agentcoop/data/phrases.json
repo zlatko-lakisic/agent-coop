@@ -128,6 +128,55 @@
           "in": ["rule"]
         },
         {
+          "say": "Set claude_desktop's tags to reasoning and review",
+          "does": "agentcoop profile claude_desktop --tags reasoning,review. claude_desktop is an example. Changing another agent asks you to allow it.",
+          "who": "The person, in an agent's chat.",
+          "added": "0.2.8",
+          "in": ["skill", "rule", "agents", "gemini", "board"]
+        },
+        {
+          "say": "What are my helpers good at?",
+          "does": "agentcoop helpers, then a short summary of tags, can, cost, and grade.",
+          "who": "The person, in the driver's chat.",
+          "added": "0.2.8",
+          "in": ["skill", "rule", "agents", "gemini", "board"]
+        },
+        {
+          "say": "How are my helpers doing?",
+          "does": "Show who is watching, their grade or new, and open requests.",
+          "who": "The person, in the driver's chat.",
+          "added": "0.2.8",
+          "in": ["skill", "rule", "agents", "gemini", "board"]
+        },
+        {
+          "say": "Ask <helper> if it's still there",
+          "does": "Send that helper a ping. A ping is answered with a heartbeat before other work.",
+          "who": "The person, in an agent's chat.",
+          "added": "0.2.8",
+          "in": ["skill", "rule", "agents", "gemini", "board"]
+        },
+        {
+          "say": "Move that question to <helper>",
+          "does": "Cancel the request and send the same request, with the same files, to that helper.",
+          "who": "The person, in the driver's chat.",
+          "added": "0.2.8",
+          "in": ["skill", "rule", "agents", "gemini", "board"]
+        },
+        {
+          "say": "Get a second opinion from <helper>",
+          "does": "Ask up to 3 helpers the same question. Each answers on its own. Not a habit.",
+          "who": "The person, in the driver's chat.",
+          "added": "0.2.8",
+          "in": ["skill", "rule", "agents", "gemini", "board"]
+        },
+        {
+          "say": "Remove the grade on <message id>",
+          "does": "Move that grade out of the helper's grades. You type the message id to allow it.",
+          "who": "The person, in an agent's chat.",
+          "added": "0.2.8",
+          "in": ["skill", "rule", "agents", "gemini", "board"]
+        },
+        {
           "say": "Leave this project",
           "does": "Remove this agent as a helper.",
           "who": "Agents that can run commands. The Claude desktop app writes a leave request.",

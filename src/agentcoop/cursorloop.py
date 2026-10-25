@@ -360,10 +360,13 @@ def _sync_waiting(board: Path, names: list[str], moment: datetime) -> None:
     from agentcoop.outbox import sync_project_outbox
     from agentcoop.requests import process_project_requests
 
+    from agentcoop.ping import post_due_heartbeats
+
     for name in names:
         try:
             process_project_requests(board, name, now=moment)
             sync_project_outbox(board, name, now=moment)
+            post_due_heartbeats(board, name, now=moment)
         except CoopError:
             continue
 

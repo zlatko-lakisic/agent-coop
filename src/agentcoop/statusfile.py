@@ -7,7 +7,7 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
-from agentcoop.projects import atomic_write_bytes, board_is_ready, board_lock, load_projects
+from agentcoop.projects import atomic_write_bytes, board_is_ready, load_projects
 
 
 def status_path(board: Path) -> Path:
@@ -79,6 +79,14 @@ def render_status(board: Path, now: datetime | None = None) -> str:
         lines.append("Folder: " + str(project.get("path") or ""))
         lines.append("Driver: " + str(project.get("driver") or ""))
         lines.append("Helpers: " + helper_text)
+        from agentcoop.grades import status_lines as grade_status_lines
+
+        lines.extend(grade_status_lines(board, name))
+        from agentcoop.ping import not_answering_lines
+        from agentcoop.tasks import recent_event_lines
+
+        lines.extend(not_answering_lines(board, name))
+        lines.extend(recent_event_lines(board, name, now=moment))
         lines.append("Progress: " + progress_headline(board, name))
         from agentcoop.progress import task_lines
 
@@ -134,9 +142,8 @@ def refresh_status(board: Path, now: datetime | None = None) -> None:
         return
     path = status_path(board)
     payload = render_status(board, now=now).encode("utf-8")
-    with board_lock(board):
-        path.parent.mkdir(parents=True, exist_ok=True)
-        _replace_status(path, payload)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    _replace_status(path, payload)
 
 
 def _replace_status(path: Path, payload: bytes) -> None:

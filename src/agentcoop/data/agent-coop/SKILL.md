@@ -26,7 +26,7 @@ If they say "Install Agent Co-op 0.2.3 from github.com/zlatko-lakisic/agent-coop
 
 ## Update
 
-Skill version: 0.2.7
+Skill version: 0.2.8
 
 If the person says "Update Agent Co-op":
 
@@ -47,7 +47,7 @@ Match the Claude project name, or the chat name, to a folder under `<board>/proj
 
 To join or leave, write `<board>/projects/<project>/requests/claude_desktop/<UTC timestamp>.json`.
 
-Join: `{"action": "join"}`. Leave: `{"action": "leave"}`. You may add `"note"`.
+Join: `{"action": "join"}`. Leave: `{"action": "leave"}`. You may add `"note"`, `"tags"`, `"can"` (`read`, `run`, `vision`, `web`), and `"cost"` (`low`, `medium`, or `high`).
 
 Say: I asked to join <project>. It takes effect at the next check by any agent or the next background round.
 
@@ -117,7 +117,13 @@ You may say what you accept when you join, in the join request, as `"accepts": [
 
 ## Ask for attention
 
-Write `outbox/claude_desktop/nudge.<UTC timestamp>.md` when a correction or a time-sensitive note has had no reply for the progress interval, or the driver's progress says it is waiting on the person or stopped and you have new information. The file text is the message, at most 500 characters. Never nudge just to chat. One open nudge at a time, and at most one every 30 minutes.
+Write `outbox/claude_desktop/nudge.<UTC timestamp>.md` when a correction or a time-sensitive note has had no reply for the progress interval, or the driver's progress says it is waiting on the person or stopped and you have new information. The file text is the message, at most 500 characters. Never nudge just to chat. One open nudge at a time, and at most one every 30 minutes. `nudge` is the name from 0.2.7. A ping is the same kind of note. You may also write `outbox/claude_desktop/ping.<UTC timestamp>.md`.
+
+Answer a ping before anything else. Write `outbox/claude_desktop/<ping id>.md`. The first lines are `status:`, `on:`, `percent:`, `step:`, `next:`, and optionally `eta_minutes:`. Status is working, idle, blocked, or waiting.
+
+To decline a request, write `outbox/claude_desktop/<message id>.md` whose first line is `DECLINE:` and the reason. Stop when a message is type cancel. Do not answer it.
+
+Your grades are in NEW.md. They are only yours.
 
 ## Rules
 

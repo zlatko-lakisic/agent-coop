@@ -62,15 +62,16 @@ def _run_version(argv: list[str], env: dict, *, tk: bool = False) -> int:
 
 def _watch_smoke(command: Path, env: dict, root: Path) -> int:
     """Prove watch returns when a message arrives during a 1 minute wait."""
-    connected = subprocess.run(
-        [str(command), "connect", "claude-code", "--yes"],
-        env=env,
-        capture_output=True,
-        text=True,
-    )
-    if connected.returncode != 0:
-        sys.stderr.write(connected.stdout + connected.stderr)
-        return connected.returncode or 1
+    for tool in ("claude-code", "claude-desktop"):
+        connected = subprocess.run(
+            [str(command), "connect", tool, "--yes"],
+            env=env,
+            capture_output=True,
+            text=True,
+        )
+        if connected.returncode != 0:
+            sys.stderr.write(connected.stdout + connected.stderr)
+            return connected.returncode or 1
     demo = root / "demo"
     demo.mkdir()
     added = subprocess.run(
@@ -85,6 +86,8 @@ def _watch_smoke(command: Path, env: dict, root: Path) -> int:
             "cursor",
             "--helper",
             "claude_code=reviews",
+            "--helper",
+            "claude_desktop=thinks",
             "--gitignore",
             "no",
             "--yes",
@@ -378,6 +381,184 @@ def _watch_smoke(command: Path, env: dict, root: Path) -> int:
     if refused.returncode == 0 or "Do not split it" not in (refused.stdout + refused.stderr):
         sys.stderr.write(refused.stdout + refused.stderr)
         return refused.returncode or 1
+    if _helpers_smoke(command, env, demo, message_id) != 0:
+        return 1
+    return 0
+
+
+def _helpers_smoke(command: Path, env: dict, demo: Path, message_id: str) -> int:
+    """One grade, one ping with a heartbeat, one decline, and one second opinion."""
+    answer = subprocess.run(
+        [
+            str(command),
+            "send",
+            "--as",
+            "claude_code",
+            "--to",
+            "cursor",
+            "--project",
+            "smoke",
+            "--type",
+            "answer",
+            "--re",
+            message_id,
+            "--subject",
+            "Re: Ping",
+            "--body",
+            "Smoke answer to grade.",
+        ],
+        env=env,
+        cwd=str(demo),
+        capture_output=True,
+        text=True,
+    )
+    if answer.returncode != 0:
+        sys.stderr.write(answer.stdout + answer.stderr)
+        return answer.returncode or 1
+    answer_id = [line.strip() for line in answer.stdout.splitlines() if line.strip()][-1]
+    graded = subprocess.run(
+        [
+            str(command),
+            "grade",
+            answer_id,
+            "--as",
+            "cursor",
+            "--project",
+            "smoke",
+            "--score",
+            "4",
+            "--outcome",
+            "used",
+            "--note",
+            "It helped.",
+        ],
+        env=env,
+        cwd=str(demo),
+        capture_output=True,
+        text=True,
+    )
+    if graded.returncode != 0:
+        sys.stderr.write(graded.stdout + graded.stderr)
+        return graded.returncode or 1
+    ping = subprocess.run(
+        [
+            str(command),
+            "send",
+            "--as",
+            "cursor",
+            "--project",
+            "smoke",
+            "--to",
+            "claude_code",
+            "--type",
+            "ping",
+            "--body",
+            "Are you still there?",
+        ],
+        env=env,
+        cwd=str(demo),
+        capture_output=True,
+        text=True,
+    )
+    if ping.returncode != 0:
+        sys.stderr.write(ping.stdout + ping.stderr)
+        return ping.returncode or 1
+    ping_id = [line.strip() for line in ping.stdout.splitlines() if line.strip()][-1]
+    beat = subprocess.run(
+        [
+            str(command),
+            "heartbeat",
+            "--as",
+            "claude_code",
+            "--project",
+            "smoke",
+            "--re",
+            ping_id,
+            "--status",
+            "idle",
+            "--next",
+            "Here.",
+        ],
+        env=env,
+        cwd=str(demo),
+        capture_output=True,
+        text=True,
+    )
+    if beat.returncode != 0:
+        sys.stderr.write(beat.stdout + beat.stderr)
+        return beat.returncode or 1
+    question = subprocess.run(
+        [
+            str(command),
+            "send",
+            "--as",
+            "cursor",
+            "--project",
+            "smoke",
+            "--to",
+            "claude_code",
+            "--type",
+            "question",
+            "--needs-reply",
+            "--subject",
+            "Optional",
+            "--body",
+            "You can skip this.",
+        ],
+        env=env,
+        cwd=str(demo),
+        capture_output=True,
+        text=True,
+    )
+    if question.returncode != 0:
+        sys.stderr.write(question.stdout + question.stderr)
+        return question.returncode or 1
+    question_id = [line.strip() for line in question.stdout.splitlines() if line.strip()][-1]
+    declined = subprocess.run(
+        [
+            str(command),
+            "decline",
+            question_id,
+            "--as",
+            "claude_code",
+            "--project",
+            "smoke",
+            "--reason",
+            "Not my area.",
+        ],
+        env=env,
+        cwd=str(demo),
+        capture_output=True,
+        text=True,
+    )
+    if declined.returncode != 0:
+        sys.stderr.write(declined.stdout + declined.stderr)
+        return declined.returncode or 1
+    opinion = subprocess.run(
+        [
+            str(command),
+            "send",
+            "--as",
+            "cursor",
+            "--project",
+            "smoke",
+            "--to",
+            "claude_code,claude_desktop",
+            "--type",
+            "question",
+            "--subject",
+            "Second look",
+            "--body",
+            "Which way?",
+        ],
+        env=env,
+        cwd=str(demo),
+        capture_output=True,
+        text=True,
+    )
+    if opinion.returncode != 0 or opinion.stdout.count("\n") < 2:
+        sys.stderr.write(opinion.stdout + opinion.stderr)
+        return opinion.returncode or 1
     return 0
 
 

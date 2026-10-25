@@ -26,7 +26,9 @@ The skill writes `<board>/projects/<project>/requests/claude_desktop/<UTC timest
 {"action": "join"}
 ```
 
-Leave uses `{"action": "leave"}`. A note is optional.
+Leave uses `{"action": "leave"}`. A note is optional. A join may also include `tags`, `can` (`read`, `run`, `vision`, `web`), and `cost` (`low`, `medium`, or `high`). Those say what this helper is good at.
+
+A ping is answered first, in `outbox/claude_desktop/<ping id>.md`, with `status:`, `on:`, `next:`, and the other heartbeat lines. To decline, the first line of the answer is `DECLINE:`. A cancel means stop. `nudge.<time>.md` still asks the driver for attention. Grades for this helper are listed in NEW.md.
 
 `agentcoop` applies the request on the next `check` by any member, on every `tick`, and on each `watch` poll. A file younger than 5 seconds is left for the next round. `stop_watching` and `start_watching` are applied the same way. Any other action is moved to `requests/claude_desktop/rejected/` because it needs a person.
 

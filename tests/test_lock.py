@@ -31,7 +31,7 @@ def _worker(board: str, project: str, agent: str, error_path: str) -> None:
         try:
             add_helper(Path(board), project, agent, "round-" + str(index))
         except CoopError as exc:
-            codes.append(str(exc.code))
+            codes.append(str(exc.code) + " " + str(exc))
     Path(error_path).write_text("\n".join(codes), encoding="utf-8")
 
 

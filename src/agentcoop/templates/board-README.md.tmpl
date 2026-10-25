@@ -30,6 +30,13 @@ Rules:
 * "Start the co-op", "Stop the co-op", "Check the board now": start, stop, or now.
 * "Show me the context" or "Show me the progress": context show or progress show.
 * "Make <agent> the driver", "Add <agent> as a helper", "Remove <agent> from this project", "Remove this project", "Accept the changed roles": the person allows it on screen.
+* "What are my helpers good at?": `{{AGENTCOOP}} helpers`
+* "How are my helpers doing?": `{{AGENTCOOP}} helpers` and `{{AGENTCOOP}} status`
+* "Ask <helper> if it's still there": `{{AGENTCOOP}} send --to <helper> --type ping --body "Are you still there?"`
+* "Move that question to <helper>": `{{AGENTCOOP}} move <message id> --to <helper>`
+* "Get a second opinion from <helper>": `{{AGENTCOOP}} send --to helper-one,helper-two`. At most 3.
+* "Remove the grade on <message id>": `{{AGENTCOOP}} grade remove <message id>`. The person types the message id.
+* "Set claude_desktop's tags to reasoning and review": `{{AGENTCOOP}} profile claude_desktop --tags reasoning,review`. The person allows a change to someone else.
 * When a command says it needs the person to allow a change, tell the person that message and the link in plain words, then wait for the result.
 * "Uninstall Agent Co-op": `{{AGENTCOOP}} uninstall --agent`. The board is moved, not deleted.
 * Run agentcoop uninstall --agent only when the person asks you to uninstall in your own chat.

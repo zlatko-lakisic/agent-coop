@@ -201,7 +201,15 @@ def add_self_driver(agent: str, start: Path, name: str | None = None) -> str:
     return line + "\nFolder: " + str(folder)
 
 
-def join_named(agent: str, project: str, note: str | None = None) -> str:
+def join_named(
+    agent: str,
+    project: str,
+    note: str | None = None,
+    *,
+    tags: list[str] | None = None,
+    can: list[str] | None = None,
+    cost: str | None = None,
+) -> str:
     """Add this agent as a helper. The caller already chose the project."""
     from agentcoop.wizard import helper_add
 
@@ -215,10 +223,19 @@ def join_named(agent: str, project: str, note: str | None = None) -> str:
             "You are the driver for " + project + ", so you cannot join it as a helper."
         )
     if agent in (record.get("helpers") or {}):
+        if tags is not None or can is not None or cost is not None or note is not None:
+            from agentcoop.profiles import set_profile
+
+            set_profile(board, project, agent, tags=tags, can=can, cost=cost, note=note)
+            return "You are already a helper on " + project + ". Your profile was updated."
         return "You are already a helper on " + project + ". Nothing was changed."
     _ensure_known(board, agent)
     used = note if note else _default_note(board, agent)
     helper_add(project, agent, used)
+    if tags is not None or can is not None or cost is not None:
+        from agentcoop.profiles import set_profile
+
+        set_profile(board, project, agent, tags=tags, can=can, cost=cost)
     _prepare_outbox(board, project, agent)
     return "You joined " + project + " as a helper."
 
@@ -230,12 +247,15 @@ def join_self(
     cwd: Path,
     words: str,
     note: str | None,
+    tags: list[str] | None = None,
+    can: list[str] | None = None,
+    cost: str | None = None,
 ) -> str:
     """Join the project this folder, flag, or wording points at."""
     board = board_root()
     require_board(board)
     chosen = choose_project(board, explicit=project, cwd=cwd, words=words)
-    return join_named(agent, chosen, note=note)
+    return join_named(agent, chosen, note=note, tags=tags, can=can, cost=cost)
 
 
 def leave_named(agent: str, project: str) -> str:

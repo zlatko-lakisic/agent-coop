@@ -144,6 +144,10 @@ def tick(board: Path) -> int:
 
         process_board_requests(board)
         sync_board_outboxes(board)
+        from agentcoop.ping import post_due_heartbeats
+
+        for project_name in load_projects(board).get("projects") or {}:
+            post_due_heartbeats(board, project_name)
         from agentcoop.share import prune_due
 
         prune_due(board)
@@ -286,6 +290,9 @@ def format_status(board: Path) -> str:
         from agentcoop.progress import task_lines
 
         lines.extend(task_lines(board, project))
+        from agentcoop.grades import status_lines as grade_status_lines
+
+        lines.extend(grade_status_lines(board, project))
         if not dest.exists():
             if item.get("driver") and not inside_git(folder):
                 driver = str(item.get("driver"))
