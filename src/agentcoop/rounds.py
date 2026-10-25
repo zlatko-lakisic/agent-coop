@@ -286,6 +286,9 @@ def format_status(board: Path) -> str:
         from agentcoop.progress import task_lines
 
         lines.extend(task_lines(board, project))
+        from agentcoop.grades import status_lines as grade_status_lines
+
+        lines.extend(grade_status_lines(board, project))
         if not dest.exists():
             if item.get("driver") and not inside_git(folder):
                 driver = str(item.get("driver"))

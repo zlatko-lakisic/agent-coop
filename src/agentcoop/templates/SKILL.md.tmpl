@@ -136,7 +136,9 @@ Tell them in plain words what you did and what changed. Do not paste raw command
 * "Leave this project": `{{AGENTCOOP}} leave --as {{AGENT_NAME}}`
 * "Who is in this project?" or "What's the status?": `{{AGENTCOOP}} status` and summarize it
 * "Set claude_desktop's tags to reasoning and review": `{{AGENTCOOP}} profile --as {{AGENT_NAME}} claude_desktop --tags reasoning,review`. Use their helper and their tags. Changing another agent asks the person to allow it.
-* "What are my helpers good at?": `{{AGENTCOOP}} profile --as {{AGENT_NAME}}` and summarize the lines.
+* "What are my helpers good at?": `{{AGENTCOOP}} helpers --as {{AGENT_NAME}}` and summarize the lines.
+* After you act on a helper's answer, grade it before you mark it done: `{{AGENTCOOP}} grade <answer id> --as {{AGENT_NAME}} --score 4 --outcome used --note "one sentence"`. Grade on the result: was it right, did it help, did it answer what you asked. Never grade a helper down for disagreeing with you, for being brief, or for saying it does not know. A correct "I don't know" is useful. Grading is one command and one sentence. Do not spend more than that on it.
+* "Remove the grade on <message id>": `{{AGENTCOOP}} grade remove <message id> --as {{AGENT_NAME}}`. The person types the message id.
 * "Start the co-op": `{{AGENTCOOP}} start`
 * "Stop the co-op": `{{AGENTCOOP}} stop`
 * "Check the board now": `{{AGENTCOOP}} now`

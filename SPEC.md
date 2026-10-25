@@ -172,6 +172,8 @@ Only the driver writes files in the project folder. Helpers send patches or draf
 
 A project MAY include `profiles`, a map of agent name to an object. That object MAY include `accepts`, `tags` (short labels), `can` (`read`, `run`, `vision`, `web`), and `cost` (`low`, `medium`, `high`). A missing field means unknown. Older readers MUST ignore fields they do not use. The helper note stays in `helpers`.
 
+`projects/<project>/grades/<helper>/` holds one grade file per answer, written once and never edited. The file name is `<UTC stamp>_<answer id>.json`. Only the driver at that time, from `roles_history`, may write there. A grade has `score` (1 to 5), `outcome` (`used`, `partly_used`, `not_used`, `wrong`), optional `correct`, `useful`, and `followed_ask` (each 1 to 5), `tags`, and `note`. Agent Co-op fills `reply_minutes`, `progress_updates`, `late`, `declined`, and `second_opinion_group`. Totals are computed when read. Removing a grade moves the file to `grades/removed/`. Older readers MUST ignore the folder.
+
 `agents.json` lists connected agents. Each agent has `tool`, `display`, `connected`, and `installed`. Runner agents also have a `runner` object with `api`, `host`, and `model`.
 
 No two projects MAY use the same path or nested paths. Paths MUST be compared after resolution, and case-insensitively on macOS and Windows.

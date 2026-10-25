@@ -136,8 +136,15 @@
         },
         {
           "say": "What are my helpers good at?",
-          "does": "agentcoop profile, then a short summary of tags, can, and cost.",
+          "does": "agentcoop helpers, then a short summary of tags, can, cost, and grade.",
           "who": "The person, in the driver's chat.",
+          "added": "0.2.8",
+          "in": ["skill", "rule", "agents", "gemini", "board"]
+        },
+        {
+          "say": "Remove the grade on <message id>",
+          "does": "Move that grade out of the helper's grades. You type the message id to allow it.",
+          "who": "The person, in an agent's chat.",
           "added": "0.2.8",
           "in": ["skill", "rule", "agents", "gemini", "board"]
         },

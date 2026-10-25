@@ -126,6 +126,9 @@ def write_new_md(
         "Latest context: " + ctx_text,
         "Latest progress: " + prog_text,
     ]
+    from agentcoop.grades import new_md_lines
+
+    lines.extend(new_md_lines(board, project, agent))
     config = load_config(board)
     roots = list(config.get("allowed_roots") or [])
     project_path = Path(record["path"])

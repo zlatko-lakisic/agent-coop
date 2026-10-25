@@ -961,6 +961,10 @@ def render_check(report: InboxReport, *, summary: bool = False) -> str:
         lines.append('Agent Co-op: you are the driver for "' + report.project + '".')
         lines.append("Helpers: " + helper_line + ".")
         if report.board_path:
+            from agentcoop.grades import header_lines as grade_header_lines
+
+            lines.extend(grade_header_lines(Path(report.board_path), report.project, report.agent, "driver"))
+        if report.board_path:
             from agentcoop.approvals import header_lines
 
             lines.extend(header_lines(Path(report.board_path), report.project))
@@ -994,6 +998,10 @@ def render_check(report: InboxReport, *, summary: bool = False) -> str:
             + "."
         )
         lines.append("Your files folder: " + report.files_path)
+        if report.board_path:
+            from agentcoop.grades import header_lines as grade_header_lines
+
+            lines.extend(grade_header_lines(Path(report.board_path), report.project, report.agent, report.role))
     if report.board_path:
         from agentcoop.share import limits as share_limits
 

@@ -63,6 +63,8 @@ def _confirm_terminal(summary: str, expected: str, kind: str) -> None:
         prompt = "Type review to confirm: "
     elif kind == "downgrade":
         prompt = "Type the version to confirm: "
+    elif kind == "grade":
+        prompt = "Type the message id to confirm: "
     answer = input(prompt)
     if answer.strip() != expected:
         raise CoopError("Cancelled.", code=1)

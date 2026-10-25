@@ -79,6 +79,9 @@ def render_status(board: Path, now: datetime | None = None) -> str:
         lines.append("Folder: " + str(project.get("path") or ""))
         lines.append("Driver: " + str(project.get("driver") or ""))
         lines.append("Helpers: " + helper_text)
+        from agentcoop.grades import status_lines as grade_status_lines
+
+        lines.extend(grade_status_lines(board, name))
         lines.append("Progress: " + progress_headline(board, name))
         from agentcoop.progress import task_lines
 

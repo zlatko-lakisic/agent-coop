@@ -474,6 +474,25 @@ def build_parser() -> argparse.ArgumentParser:
     profile_cmd.add_argument("--note", default=None)
     profile_cmd.set_defaults(func=cmd_profile)
 
+    helpers_cmd = sub.add_parser("helpers", help="Show what each helper is good at, and their grades")
+    _add_as(helpers_cmd)
+    _add_project(helpers_cmd)
+    helpers_cmd.set_defaults(func=cmd_helpers)
+
+    grade_cmd = sub.add_parser("grade", help="Grade a helper answer")
+    _add_as(grade_cmd)
+    _add_project(grade_cmd)
+    grade_cmd.add_argument("answer", nargs="*", help="Answer message id, or remove and that id")
+    grade_cmd.add_argument("--score", type=int, default=None)
+    grade_cmd.add_argument("--outcome", default="")
+    grade_cmd.add_argument("--correct", type=int, default=None)
+    grade_cmd.add_argument("--useful", type=int, default=None)
+    grade_cmd.add_argument("--followed-ask", dest="followed_ask", type=int, default=None)
+    grade_cmd.add_argument("--tags", default="")
+    grade_cmd.add_argument("--note", default="")
+    grade_cmd.add_argument("--remove", action="store_true")
+    grade_cmd.set_defaults(func=cmd_grade)
+
     skill_cmd = sub.add_parser("skill", help="Export a helper skill zip")
     skill_sub = skill_cmd.add_subparsers(dest="skill_cmd", required=True)
     skill_export = skill_sub.add_parser("export", help="Write a Claude desktop skill zip")
@@ -1741,6 +1760,77 @@ def _profile_cost(text: str | None) -> str | None:
     from agentcoop.profiles import parse_cost
 
     return parse_cost(text)
+
+
+def cmd_helpers(args: argparse.Namespace) -> int:
+    """List helpers with their profile and grade."""
+    from agentcoop.grades import display_summary, summarize_agent, summarize_project
+    from agentcoop.profiles import describe, profile_of
+    from agentcoop.projects import load_projects
+
+    actor = _actor_name(args) or None
+    project = _project(args, actor)
+    record = (load_projects(_board()).get("projects") or {}).get(project) or {}
+    helpers = record.get("helpers") or {}
+    if not helpers:
+        print("This project has no helpers.")
+        return 0
+    board = _board()
+    for name in sorted(helpers):
+        print(name + ": " + describe(profile_of(record, name)))
+        print("  grade: " + display_summary(summarize_project(board, project, name)))
+        print("  all projects: " + display_summary(summarize_agent(board, name)))
+    return 0
+
+
+def cmd_grade(args: argparse.Namespace) -> int:
+    """Grade one helper answer, or remove a grade after the person allows it."""
+    from agentcoop.grades import remove_grade, write_grade
+    from agentcoop.profiles import parse_list
+
+    parts = list(args.answer or [])
+    removing = bool(args.remove) or (bool(parts) and parts[0] == "remove")
+    if removing and parts and parts[0] == "remove":
+        parts = parts[1:]
+    if len(parts) != 1:
+        raise CoopError(
+            "Name the answer. Example: agentcoop grade --as cursor MESSAGE --score 4 --outcome used --note \"It helped.\"",
+            code=2,
+        )
+    answer_id = parts[0]
+    actor = _actor_name(args)
+    if not actor:
+        raise CoopError("Agent Co-op does not know which agent you are. Add --as NAME.", code=2)
+    project = _project(args, actor)
+    if removing:
+        _require_person(
+            answer_id,
+            "This will remove the grade on " + answer_id + ".",
+            kind="grade",
+            actor=actor,
+            target="grade",
+        )
+        dest = remove_grade(_board(), project, answer_id)
+        print("Moved the grade to " + str(dest) + ".")
+        return 0
+    if args.score is None or not args.outcome:
+        raise CoopError("A grade needs --score and --outcome.", code=2)
+    tags = parse_list(args.tags, kind="tags") if args.tags else []
+    payload = write_grade(
+        _board(),
+        project,
+        actor,
+        answer_id,
+        score=args.score,
+        outcome=args.outcome,
+        note=args.note,
+        correct=args.correct,
+        useful=args.useful,
+        followed_ask=args.followed_ask,
+        tags=tags,
+    )
+    print("Graded " + answer_id + " " + str(payload["score"]) + " " + payload["outcome"] + ".")
+    return 0
 
 
 def cmd_profile(args: argparse.Namespace) -> int:
