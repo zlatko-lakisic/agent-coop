@@ -273,7 +273,7 @@ class board_lock:
     The lock is not re-entrant. Take it only in the mutate and read helpers.
     """
 
-    def __init__(self, board: Path, *, shared: bool = False, timeout: float = 10.0) -> None:
+    def __init__(self, board: Path, *, shared: bool = False, timeout: float = 30.0) -> None:
         self.board = board
         self.shared = shared
         self.timeout = timeout

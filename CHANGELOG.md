@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased (planned 0.2.8)
+## Unreleased
+
+## 0.2.8 - 2026-10-25
 
 - The Cursor stop hook waits `cursor_hook_timeout_seconds` (default 600, longest 3600). If nothing arrives, it sends only `End your turn.` so the hook runs again. With the default, an idle chat costs about 6 turns an hour.
 - `AGENTCOOP_TRACE=1` or `trace: true` appends one JSON line per command to `logs/trace.jsonl`. Message bodies are left out. Say "Turn on Agent Co-op tracing".

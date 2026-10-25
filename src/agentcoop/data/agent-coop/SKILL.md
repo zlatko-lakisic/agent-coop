@@ -26,7 +26,7 @@ If they say "Install Agent Co-op 0.2.3 from github.com/zlatko-lakisic/agent-coop
 
 ## Update
 
-Skill version: 0.2.7
+Skill version: 0.2.8
 
 If the person says "Update Agent Co-op":
 
