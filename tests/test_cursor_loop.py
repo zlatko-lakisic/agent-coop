@@ -338,7 +338,9 @@ class HookTests(unittest.TestCase):
                 timeout_seconds=6,
                 reserve_seconds=5,
             )
-            self.assertEqual(result, {})
+            self.assertEqual(result, {"followup_message": "End your turn."})
+            self.assertNotIn("no messages", result["followup_message"].lower())
+            self.assertNotIn("Handle these", result["followup_message"])
             self.assertGreaterEqual((clock() - datetime(2026, 10, 23, 12, 0, tzinfo=timezone.utc)).total_seconds(), 1)
 
     def test_stopped_agent_gets_nothing(self) -> None:
@@ -351,6 +353,31 @@ class HookTests(unittest.TestCase):
             result = cursor_stop_followup(env.board, "cursor", "{}", now=_Clock(), sleep=lambda _seconds: None)
             self.assertEqual(result, {})
             self.assertFalse(hook_fresh(env.board, "demo", "cursor", now=_Clock()()))
+
+    def test_mail_that_arrives_during_the_wait_is_sent(self) -> None:
+        with support.TempEnv() as env:
+            _ready(env)
+            clock = _Clock()
+            start = clock()
+            sent = {"done": False}
+
+            def nap(seconds: float) -> None:
+                clock.advance(seconds)
+                if not sent["done"] and clock() >= start + timedelta(seconds=4):
+                    _mail(env)
+                    sent["done"] = True
+
+            result = cursor_stop_followup(
+                env.board,
+                "cursor",
+                "{}",
+                now=clock,
+                sleep=nap,
+                timeout_seconds=30,
+                reserve_seconds=5,
+            )
+            self.assertIn("Need a look", result["followup_message"])
+            self.assertNotEqual(result["followup_message"], "End your turn.")
 
 
 class IdleTests(unittest.TestCase):
@@ -419,7 +446,7 @@ class InstallTests(unittest.TestCase):
             self.assertEqual(data["version"], 1)
             command = data["hooks"]["stop"][0]["command"]
             self.assertIn("hook cursor-stop --as cursor", command)
-            self.assertEqual(data["hooks"]["stop"][0]["timeout"], 30)
+            self.assertEqual(data["hooks"]["stop"][0]["timeout"], 600)
             self.assertIsNone(data["hooks"]["stop"][0]["loop_limit"])
             ignore = (folder / ".gitignore").read_text(encoding="utf-8")
             self.assertIn(".cursor/hooks.json", ignore)

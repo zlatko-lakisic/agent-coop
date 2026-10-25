@@ -4,7 +4,37 @@ This page is the record of the 0.2.8 investigation. It uses a separate test boar
 
 ## What was tested
 
-Cursor's own docs, the agentcoop code, and a fake driver that follows the same commands. On this Windows PC, `agent` and `cursor-agent` were not on PATH, so the scripted CLI scenarios were not run. One app subagent answered the risky-restart question. It ran no shell command, so it did not sit on an approval prompt. The long timed scenarios (10 minutes, 30 minutes, many wake-ups) were not run, to keep the Cursor use small. The fake driver covered the board side of s3, s4, s10, and s12.
+The scripted CLI scenarios were not run. `agent` and `cursor-agent` are not installed on this PC, and installing them was not allowed. The fake driver still covers s3, s4, s10, and s12 in CI.
+
+A real Cursor app chat on this project ran a temporary stop hook. The command was Python, timeout 600, `loop_limit` null. It did not use the Comstar project or the real board.
+
+## Stop hook limits
+
+Measured in this app chat on 2026-10-25, and checked against the installed Cursor app.
+
+| Question | Result |
+| --- | --- |
+| Largest timeout Cursor accepts | Any positive number of seconds. The app warns above 3600 and does not reject it. If the field is omitted, the app uses 60. The kill timer is that many seconds. Docs: https://cursor.com/docs/hooks |
+| Did a 600 second timeout survive a 4 minute wait? | Yes. Mail written at 240 seconds was seen at 240.1 seconds, and the chat continued by itself. |
+| Is the chat or the input blocked while the hook waits? | The turn had already ended. The next line arrived as a new message after the wait. The installed app does not wait for the hook before it marks the turn finished, and the follow-up does not clear text already in the box. A person was not asked to type during the wait. |
+| Does `loop_limit: null` allow more than 5 follow-ups? | Yes. The hook sent 10 follow-ups (a 20 second wait, the 4 minute mail, then 8 more). The default cap is 5. The payload this app passed into the script did not include `loop_count` (it was empty), but the chain did not stop at 5. https://cursor.com/docs/hooks |
+
+With the default 600 second wait, an idle chat sends one `End your turn.` about every 10 minutes. That is about 6 turns an hour when the driver ends at once. A 3600 second wait would be about 1 turn an hour. 600 is the timeout that was seen working. 3600 is allowed by the setting and was not waited out live.
+
+## S6 in this app chat
+
+Test board: a temporary folder, not Comstar. The helper was a Python script that wrote an outbox file. It did not run agentcoop.
+
+| Wait | Result |
+| --- | --- |
+| 3 minutes | The chat continued by itself. The follow-up was `Read from claude_desktop: Re: Review the run. S6.` |
+| 20 minutes | The chat continued by itself. The follow-up was `Read from claude_desktop: Re: Review the run (follow-up 2). S6-TWENTY.` |
+
+The 20 minute run also sent `End your turn.` at about 10 minutes, which started the hook again. You typed "are you done?" while that hook was still running, and the hook process stayed alive, so the input box was not blocked. Extra `End your turn.` lines showed up because that message started another turn while the first hook was still waiting.
+
+## What was tested, earlier notes
+
+Cursor's own docs, the agentcoop code, and a fake driver. One app subagent answered the risky-restart question. It ran no shell command.
 
 Ways to run a test agent, from the docs:
 
@@ -38,6 +68,7 @@ Ways to run a test agent, from the docs:
 * Rule text for exit codes and for starting the loop again.
 * CLI allows for `agentcoop.exe`, `agentcoopw.exe`, and `agentcoop.cmd`.
 * A project `.cursor/permissions.json` allowlist written when Cursor is connected to a project.
+* The stop hook waits 600 seconds by default. No mail sends only `End your turn.` so the hook runs again. About 6 turns an hour.
 
 ## What to change on your PC
 

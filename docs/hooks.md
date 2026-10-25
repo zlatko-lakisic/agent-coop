@@ -22,7 +22,7 @@ Until that is confirmed, rely on the skill: the agent checks the board at the st
 
 ## Cursor
 
-Adding a Cursor member to a project merges a stop hook into `.cursor/hooks.json`. The command is `agentcoop hook cursor-stop --as <agent>`. The timeout is 30 seconds. `loop_limit` is unlimited. The hook waits until 5 seconds are left, then returns nothing when there is no mail. It sends a follow-up only when mail is waiting.
+Adding a Cursor member to a project merges a stop hook into `.cursor/hooks.json`. The command is `agentcoop hook cursor-stop --as <agent>`. The timeout is `cursor_hook_timeout_seconds` in config.json. A missing key means 600 seconds. The longest value is 3600. `loop_limit` is unlimited. The hook waits until 5 seconds are left. Mail sends a follow-up that names the mail. No mail sends only `End your turn.` so the hook can run again. That is about 6 turns an hour when nothing arrives and the driver ends at once.
 
 `sessionStart` cannot start a command. The Cursor rule starts `agentcoop cursor-loop`. That command prints `AGENT_LOOP_TICK_board` when mail arrives, or while a task is still working. The chat wakes only when it is watching that line.
 

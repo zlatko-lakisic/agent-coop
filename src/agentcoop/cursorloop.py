@@ -20,9 +20,34 @@ from agentcoop.watch import (
 )
 
 POLL_SECONDS = 2
-HOOK_TIMEOUT_SECONDS = 30
+HOOK_TIMEOUT_SECONDS = 600
+HOOK_TIMEOUT_MIN_SECONDS = 30
+HOOK_TIMEOUT_MAX_SECONDS = 3600
 HOOK_RESERVE_SECONDS = 5
+REARM_MESSAGE = "End your turn."
 TICK_PREFIX = "AGENT_LOOP_TICK_board "
+
+
+def hook_timeout_seconds(board: Path) -> int:
+    """Return how long the stop hook may run. The default is 600 seconds.
+
+    Cursor accepts any positive number and warns above 3600. A missing key uses 600.
+    """
+    try:
+        raw = load_config(board).get("cursor_hook_timeout_seconds")
+    except CoopError:
+        return HOOK_TIMEOUT_SECONDS
+    if raw is None:
+        return HOOK_TIMEOUT_SECONDS
+    try:
+        seconds = int(raw)
+    except (TypeError, ValueError):
+        return HOOK_TIMEOUT_SECONDS
+    if isinstance(raw, bool) or seconds < HOOK_TIMEOUT_MIN_SECONDS:
+        return HOOK_TIMEOUT_MIN_SECONDS
+    if seconds > HOOK_TIMEOUT_MAX_SECONDS:
+        return HOOK_TIMEOUT_MAX_SECONDS
+    return seconds
 
 
 def loop_interval_minutes(board: Path) -> int:
@@ -330,6 +355,19 @@ def run_cursor_loop(
         pause(POLL_SECONDS)
 
 
+def _sync_waiting(board: Path, names: list[str], moment: datetime) -> None:
+    """Post outbox answers so a helper file becomes mail while the hook waits."""
+    from agentcoop.outbox import sync_project_outbox
+    from agentcoop.requests import process_project_requests
+
+    for name in names:
+        try:
+            process_project_requests(board, name, now=moment)
+            sync_project_outbox(board, name, now=moment)
+        except CoopError:
+            continue
+
+
 def cursor_stop_followup(
     board: Path,
     agent: str,
@@ -337,7 +375,7 @@ def cursor_stop_followup(
     *,
     now=None,
     sleep=None,
-    timeout_seconds: float = HOOK_TIMEOUT_SECONDS,
+    timeout_seconds: float | None = None,
     reserve_seconds: float = HOOK_RESERVE_SECONDS,
 ) -> dict:
     """Return a Cursor stop-hook response. Empty means do not send a follow-up."""
@@ -360,6 +398,8 @@ def cursor_stop_followup(
         return {}
     clock = now or (lambda: datetime.now(timezone.utc))
     pause = sleep or time.sleep
+    if timeout_seconds is None:
+        timeout_seconds = hook_timeout_seconds(board)
     started = _aware(clock())
     active = [
         name
@@ -372,6 +412,8 @@ def cursor_stop_followup(
         note_hook(board, name, agent, now=started)
     deadline = started + timedelta(seconds=max(0, timeout_seconds - reserve_seconds))
     while True:
+        current = _aware(clock())
+        _sync_waiting(board, active, current)
         chunks = []
         for name in active:
             prompt, _ids = _mail_prompt(board, name, agent)
@@ -386,7 +428,7 @@ def cursor_stop_followup(
             return {"followup_message": "\n".join(chunks)}
         current = _aware(clock())
         if current >= deadline:
-            return {}
+            return {"followup_message": REARM_MESSAGE}
         remaining = (deadline - current).total_seconds()
         pause(min(POLL_SECONDS, remaining) if remaining > 0 else 0)
 
@@ -408,7 +450,7 @@ def cursor_hooks(board: Path, agent_name: str) -> dict:
             "stop": [
                 {
                     "command": command,
-                    "timeout": HOOK_TIMEOUT_SECONDS,
+                    "timeout": hook_timeout_seconds(board),
                     "loop_limit": None,
                 }
             ]
