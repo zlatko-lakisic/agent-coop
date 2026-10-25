@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.2.9 - 2026-10-25
+
 - An install uses a published release and the hash check. A checkout is for contributors. A board with `projects.json` or `agents.json` is already installed, even with no `bin/VERSION`. Check again right before installing, and connect yourself if another agent finished first.
 - The Claude desktop install sentence names the projects folder, so the app can request access. A short sentence asks the person to reply with the path.
 

@@ -9,6 +9,19 @@
       "oldest_reader": "0.2.0",
       "board_changes": "None",
       "settings_changes": "None",
+      "downgrade_loses": "Nothing",
+      "desktop_skill": "Same",
+      "upgrade_from": "0.2.0"
+    },
+    {
+      "version": "0.2.9",
+      "date": "2026-10-25",
+      "message_format": 1,
+      "spec": "0.3",
+      "board_format": 1,
+      "oldest_reader": "0.2.0",
+      "board_changes": "None",
+      "settings_changes": "None",
       "downgrade_loses": "A downgrade asks the Claude desktop app for the projects folder from the skill text. The app can refuse that request until the person names the folder in chat. The installed skill again looks only for bin/VERSION before it opens the update guide, so a 0.1 board can be treated as a new install.",
       "desktop_skill": "Changed",
       "upgrade_from": "0.2.0"
