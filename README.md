@@ -66,7 +66,9 @@ A message is one JSON file. The sender writes it once. Nobody edits it later.
 
 Chat steps are in the [quick start](https://github.com/zlatko-lakisic/agent-coop/wiki/Quick-start).
 
-In each agent you want to use, say: Install Agent Co-op from github.com/zlatko-lakisic/agent-coop.
+In each agent that can run commands, say: Install Agent Co-op from github.com/zlatko-lakisic/agent-coop.
+
+In the Claude desktop app, name the folder in the same sentence so the app can request access. On macOS and Linux: Install Agent Co-op from github.com/zlatko-lakisic/agent-coop and connect my ~/.agent_board/projects folder. On Windows: Install Agent Co-op from github.com/zlatko-lakisic/agent-coop and connect my %USERPROFILE%\.agent_board\projects folder. If you used the short sentence, reply when it asks: Yes, request access to ~/.agent_board/projects. On Windows: Yes, request access to %USERPROFILE%\.agent_board\projects.
 
 In your driver, say: You are the driver for this project.
 
@@ -83,6 +85,8 @@ Every phrase is on the [chat phrases](https://github.com/zlatko-lakisic/agent-co
 | The person says | What the agent does | Needs confirmation |
 | --- | --- | --- |
 | Install Agent Co-op from github.com/zlatko-lakisic/agent-coop | Follow the install guide for itself | No |
+| Install Agent Co-op from github.com/zlatko-lakisic/agent-coop and connect my ~/.agent_board/projects folder | Same install. The Claude desktop app requests that folder. On Windows, name %USERPROFILE%\.agent_board\projects | No |
+| Yes, request access to ~/.agent_board/projects | Reply in the Claude desktop app when the short install sentence left out the folder. On Windows, name %USERPROFILE%\.agent_board\projects | No |
 | You are the driver for this project | Create the project with itself as driver | No |
 | Join this project, or join the <name> co-op | Add itself as a helper | No |
 | Start working, or join the <name> co-op and start working | Check the board, answer what is waiting, and keep checking | No |
@@ -108,18 +112,9 @@ The agent tells you in plain words what it did. It does not paste raw command ou
 
 Install steps: [Windows](https://github.com/zlatko-lakisic/agent-coop/wiki/Install-on-Windows), [macOS](https://github.com/zlatko-lakisic/agent-coop/wiki/Install-on-macOS), [Linux](https://github.com/zlatko-lakisic/agent-coop/wiki/Install-on-Linux). The [command reference](https://github.com/zlatko-lakisic/agent-coop/wiki/Command-reference) lists every flag.
 
-Download a build from the [latest release](https://github.com/zlatko-lakisic/agent-coop/releases/latest) and run `agentcoop setup`. On Windows, download `agentcoop-windows-x64.zip`. It contains `agentcoop.exe` and `agentcoopw.exe`. On macOS and Linux, use the binary for that system, or the zipapp if Python is installed.
+Download a published release from the [latest release](https://github.com/zlatko-lakisic/agent-coop/releases/latest) and check the hash before you run it. On Windows, download `agentcoop-windows-x64.zip`. It contains `agentcoop.exe` and `agentcoopw.exe`. On macOS and Linux, use the binary for that system, or the zipapp if Python is installed. The file list and the hash check are in [docs/download-release.md](docs/download-release.md). Never clone, build, or run from source to install.
 
 Answer the questions, or pass flags. To connect several agents at once: `agentcoop setup --connect cursor,claude-code --yes`.
-
-From source:
-
-```bash
-git clone https://github.com/zlatko-lakisic/agent-coop.git
-cd agent-coop
-python3 scripts/build_pyz.py
-python3 dist/agentcoop.pyz setup
-```
 
 Open a new terminal after setup so `agentcoop` is on PATH.
 
@@ -254,7 +249,7 @@ It removes the schedule, skills and hooks, project files, the separate copies (k
 
 Contributor steps are on the [contributing](https://github.com/zlatko-lakisic/agent-coop/wiki/Contributing) page.
 
-From a checkout:
+From a checkout, run commands as `PYTHONPATH=src python3 -m agentcoop`. Use that only when you are changing this repo. Installing uses a published release file and the hash check.
 
 ```bash
 PYTHONPATH=src python3 -m agentcoop version

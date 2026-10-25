@@ -140,6 +140,19 @@ def board_is_ready(board: Path) -> bool:
     return all((board / name).is_file() for name in ("projects.json", "agents.json", "config.json"))
 
 
+def existing_install(board: Path) -> bool:
+    """Return True when this folder is already an Agent Co-op install.
+
+    bin/VERSION is written by 0.2.5 and newer. A 0.1 board has no VERSION
+    file. projects.json or agents.json is enough to count as installed.
+    Check again right before installing: a True result means another agent
+    finished, so connect yourself and do not install a second copy.
+    """
+    if (board / "bin" / "VERSION").is_file():
+        return True
+    return (board / "projects.json").is_file() or (board / "agents.json").is_file()
+
+
 def require_board(board: Path) -> None:
     """Raise exit code 3 when setup has not been run."""
     if not board_is_ready(board):

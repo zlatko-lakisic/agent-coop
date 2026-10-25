@@ -15,14 +15,16 @@ Read `<board>/projects/STATUS.md` before you describe a project. If you cannot s
 
 ## Install
 
-If the person says "Install Agent Co-op from github.com/zlatko-lakisic/agent-coop":
+On macOS and Linux the person says "Install Agent Co-op from github.com/zlatko-lakisic/agent-coop and connect my ~/.agent_board/projects folder". On Windows they say "Install Agent Co-op from github.com/zlatko-lakisic/agent-coop and connect my %USERPROFILE%\.agent_board\projects folder".
 
 1. If the board folder is missing, tell them to ask an agent that can run commands, such as Cursor, to install it first. Then stop.
 2. Where this app lets you propose a skill for one-click saving, offer this skill. Otherwise tell them to download the skill from the repo, put `SKILL.md` in a folder named `agent-coop`, zip that folder, and upload it: Customize > Skills, then +, then Create skill, then Upload a skill. Help: https://support.claude.com/en/articles/12512198-how-to-create-custom-skills
-3. Where this app lets you request folder access, request `<board>/projects` for read and write. Otherwise give them that path. The folder is hidden, so they should type it.
+3. Where this app lets you request folder access, request the folder they named, for read and write. The path has to be in their message. Do not take it from this skill.
 4. Tell them to say: Join the <project> co-op and start working.
 
-If they say "Install Agent Co-op 0.2.3 from github.com/zlatko-lakisic/agent-coop", the same steps apply for that version, in an agent that can run commands.
+If they said only "Install Agent Co-op from github.com/zlatko-lakisic/agent-coop", do not request the folder. Ask them to reply with one sentence. On macOS and Linux: Yes, request access to ~/.agent_board/projects. On Windows: Yes, request access to %USERPROFILE%\.agent_board\projects. After that reply, request the folder they named.
+
+If they say "Install Agent Co-op 0.2.3 from github.com/zlatko-lakisic/agent-coop", the program install is for an agent that can run commands. You still need the folder sentence before you request access.
 
 ## Update
 

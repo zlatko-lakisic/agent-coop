@@ -14,7 +14,7 @@ from pathlib import Path
 from agentcoop import __version__
 from agentcoop.errors import CoopError
 from agentcoop.migrate import apply_migrations, assert_downgrade_allowed
-from agentcoop.projects import board_is_ready, load_config, require_board
+from agentcoop.projects import board_is_ready, existing_install, init_board_files, load_config, require_board
 from agentcoop.releases import (
     RateLimitError,
     Release,
@@ -391,6 +391,8 @@ def install_this(board: Path | None = None, *, fail_after: str = "") -> int:
     from agentcoop.paths import board_root
 
     target = board or board_root()
+    if existing_install(target):
+        init_board_files(target)
     require_board(target)
     bindir = target / "bin"
     bindir.mkdir(parents=True, exist_ok=True)

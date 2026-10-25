@@ -5,10 +5,26 @@
       "rows": [
         {
           "say": "Install Agent Co-op from github.com/zlatko-lakisic/agent-coop",
-          "does": "Install the newest published release.",
+          "does": "Install the newest published release. In the Claude desktop app, use the sentence that names your projects folder.",
           "who": "Cursor, Claude Code, Codex CLI, the ChatGPT desktop app, and Gemini CLI. The Claude desktop app cannot download it. It asks an agent that can run commands.",
           "added": "0.2.2",
           "in": ["skill", "rule", "agents", "gemini", "board", "desktop"]
+        },
+        {
+          "say": "Install Agent Co-op from github.com/zlatko-lakisic/agent-coop and connect my ~/.agent_board/projects folder",
+          "also": "Install Agent Co-op from github.com/zlatko-lakisic/agent-coop and connect my %USERPROFILE%\\.agent_board\\projects folder",
+          "does": "Install, then let the Claude desktop app request that folder. The path has to be in your own words.",
+          "who": "The Claude desktop app. An agent that can run commands still uses the shorter install sentence.",
+          "added": "0.2.9",
+          "in": ["desktop"]
+        },
+        {
+          "say": "Yes, request access to ~/.agent_board/projects",
+          "also": "Yes, request access to %USERPROFILE%\\.agent_board\\projects",
+          "does": "Reply with this when you used the short install sentence. The Claude desktop app then requests that folder.",
+          "who": "You, in the Claude desktop app, after it asks.",
+          "added": "0.2.9",
+          "in": ["desktop"]
         },
         {
           "say": "Install Agent Co-op 0.2.3 from github.com/zlatko-lakisic/agent-coop",
