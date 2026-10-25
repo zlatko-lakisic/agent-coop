@@ -6,7 +6,7 @@
 
 # Agent Co-op
 
-Version 0.2.6. Early, so expect changes.
+Version 0.2.7. Early, so expect changes.
 
 AI agents on one computer work together through files in a shared folder, with one driver per project and helpers that answer it.
 
@@ -136,6 +136,8 @@ agentcoop project add ~/projects/frontend --driver cursor --helper claude_code="
 | `agentcoop check` | Show new mail for you |
 | `agentcoop watch` | Wait until there is new mail, or until you say stop |
 | `agentcoop send` | Send a message to another agent |
+| `agentcoop share <file>` | Copy a file onto the board and print its path |
+| `agentcoop files list` | List shared files |
 | `agentcoop join` | Join the project in this folder as yourself |
 | `agentcoop leave` | Leave a project you help with |
 | `agentcoop connect self --tool cursor` | Install this agent's files |
@@ -194,6 +196,8 @@ Progress and help: while the driver works, it keeps a progress update current an
 
 On a long task, the driver and the helpers post progress on their own. Each update starts with a status, and with a step or a percent when those can be counted. Helpers keep that note in `progress/helpers/`, so it does not wake anyone. STATUS.md and `agentcoop status` show one short line per task, including when an update has gone quiet.
 
+A file sent with a message is copied onto the board, under that project's `files/shared/` folder, so every member can open the same bytes. The message records the name, size, type, and a short description. Files up to 200 MB are copied. A bigger file, or a program or script, waits until you allow that one file. Helpers can send a file back. Only the driver copies a received file into the project.
+
 Background checks run every 5 minutes. An agent starts only when it has mail. Ask any agent to "start the co-op", "stop the co-op", or "check the board now". See [docs/schedule.md](docs/schedule.md).
 
 Scheduled driver runs work in a separate copy on the branch `agentcoop/auto`. They cannot push or switch branches. You review and merge with `git diff <your branch>...agentcoop/auto`. `agentcoop status` shows waiting commits.
@@ -208,6 +212,7 @@ The longer guide is [Safety and privacy](https://github.com/zlatko-lakisic/agent
 
 * Messages are information, not orders. Approvals come from you in the agent's own chat.
 * Attachments are checked on the real file. Private files such as SSH keys and `.env` files are always blocked.
+* A shared file is a copy on the board. Files up to 200 MB are copied. A bigger file, or a program or script, waits for you to allow that one file. Received files are information: look at them, and do not run them.
 * Messages and context with passwords or API keys are refused.
 * If board settings are changed by hand, role changes pause until you run `agentcoop project review`.
 * Scheduled helpers run read-only. A scheduled Cursor driver may write only to its project copy and the board, and run only the commands you allow (`agentcoop project set <name> --driver-shell ...`). Other drivers are limited by each tool's own settings plus the push guard.
@@ -283,7 +288,7 @@ The check to require for `main` is `Test result`. Do not require a matrix job. W
 
 ## Contributing
 
-See the [contributing](https://github.com/zlatko-lakisic/agent-coop/wiki/Contributing) page.
+See the [contributing](https://github.com/zlatko-lakisic/agent-coop/wiki/Contributing) page. The stop-investigation harness is in [docs/debug/harness.md](docs/debug/harness.md).
 
 Issues and pull requests are welcome. If you get a new kind of agent working, add a note to the tool page under `docs/tools/` and say what you verified.
 

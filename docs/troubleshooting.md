@@ -53,3 +53,11 @@ A second answer to the same message used to be dropped, and `sent/` still looked
 ## Cursor does not pick up messages until I type
 
 In Cursor, say Start working. That starts `agentcoop cursor-loop` in the background and watches for `AGENT_LOOP_TICK_board`. Do not leave a self-written sleep loop running. Stop stops that loop. If the chat is closed, messages wait on STATUS.md until you say Start working. A headless run starts only after you say: Run the driver in the background when the chat is idle.
+
+## Cursor stops working in the co-op
+
+A tick only reaches Cursor while that chat is still running and watching `AGENT_LOOP_TICK_board`. After the turn ends, the background shell can die. The driver should start `cursor-loop` again itself. Say Start working only when it cannot. If Cursor is waiting on a command approval, add `agentcoop`, `agentcoop.exe`, and `agentcoop.cmd` to the terminal allowlist. The project file is `.cursor/permissions.json`. The user file is `~/.cursor/permissions.json` (on Windows, `%USERPROFILE%\.cursor\permissions.json`). A full path does not match the short name, so copy the exact command from the prompt. Details and the cause table are in [debug/cursor-stops.md](debug/cursor-stops.md).
+
+If the driver is waiting on you, STATUS.md says so at the top. A standing approval covers only the words you gave: While I'm away you may restart the game and run the spy tests.
+
+To see what the driver ran, say Turn on Agent Co-op tracing. The file is `logs/trace.jsonl` on the board.

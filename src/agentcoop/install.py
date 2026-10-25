@@ -680,6 +680,10 @@ def install_project_files(
                 scope=project_name,
             )
             written.append(item["path"])
+        if tool.key == "cursor":
+            from agentcoop.cursorperm import merge_app_permissions
+
+            merge_app_permissions(root)
         if gitignore and written:
             _install_gitignore(root, written, manifest, agent_name, board, project_name)
 

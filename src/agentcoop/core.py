@@ -59,10 +59,12 @@ class Message:
     attachments: list[str]
     needs_reply: bool
     path: Path | None = None
+    attachment_info: list[dict] = field(default_factory=list)
+    seq: int | None = None
 
     def to_dict(self) -> dict:
         """Return the on-disk JSON object."""
-        return {
+        payload = {
             "v": self.v,
             "id": self.id,
             "ts": self.ts,
@@ -76,6 +78,11 @@ class Message:
             "attachments": list(self.attachments),
             "needs_reply": self.needs_reply,
         }
+        if self.attachment_info:
+            payload["attachment_info"] = list(self.attachment_info)
+        if self.seq is not None:
+            payload["seq"] = self.seq
+        return payload
 
 
 @dataclass
@@ -135,6 +142,41 @@ def utc_now(now: datetime | None = None) -> datetime:
 def format_ts(now: datetime) -> str:
     """Format a UTC timestamp the way message files store it."""
     return utc_now(now).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _seq_value(value: object) -> int | None:
+    if isinstance(value, bool) or not isinstance(value, int):
+        return None
+    if value < 1:
+        return None
+    return value
+
+
+def message_sort_key(message: Message) -> tuple:
+    """Order by time, then send sequence, then id.
+
+    A message with no seq is an older file. It stays in id order within that second.
+    """
+    if message.seq is None:
+        return (message.ts, 0, 0, message.id)
+    return (message.ts, 1, message.seq, message.id)
+
+
+def next_message_seq(board: Path) -> int:
+    """Return the next send sequence number for this board."""
+    from agentcoop.projects import atomic_write_bytes, board_lock
+
+    path = board / ".state" / "message.seq"
+    with board_lock(board):
+        current = 0
+        if path.is_file():
+            try:
+                current = int(path.read_text(encoding="ascii").strip() or "0")
+            except ValueError:
+                current = 0
+        nxt = current + 1
+        atomic_write_bytes(path, (str(nxt) + "\n").encode("ascii"))
+        return nxt
 
 
 def make_id(sender: str, now: datetime | None = None) -> str:
@@ -199,6 +241,10 @@ def _message_from_dict(data: dict, path: Path | None) -> Message:
         attachments=[str(item) for item in attachments],
         needs_reply=bool(data.get("needs_reply", False)),
         path=path,
+        attachment_info=[item for item in (data.get("attachment_info") or []) if isinstance(item, dict)]
+        if isinstance(data.get("attachment_info"), list)
+        else [],
+        seq=_seq_value(data.get("seq")),
     )
 
 
@@ -261,6 +307,7 @@ def new_messages(board: Path, project: str, agent: str, now: float | None = None
             issues.append(issue)
         elif message is not None:
             messages.append(message)
+    messages.sort(key=message_sort_key)
     return messages, issues
 
 
@@ -512,6 +559,11 @@ def send(
     needs_reply: bool = False,
     allow_secret: bool = False,
     now: datetime | None = None,
+    describes: list[str] | None = None,
+    kinds: list[str] | None = None,
+    media_types: list[str] | None = None,
+    alt_ofs: list[str] | None = None,
+    over_limit: bool = False,
 ) -> str:
     """Write a message and return its id."""
     require_board(board)
@@ -545,7 +597,8 @@ def send(
     project_record = assert_can_send(board, project, sender, recipient, re, msg_type=type, now=now)
     roots = list(config.get("allowed_roots") or [])
     project_path = Path(project_record["path"])
-    for attachment in attachments or []:
+    sources = list(attachments or [])
+    for attachment in sources:
         require_attachment(
             attachment,
             project_path=project_path,
@@ -556,23 +609,59 @@ def send(
     moment = utc_now(now)
     ensure_agent_dirs(board, project, sender)
     ensure_agent_dirs(board, project, recipient)
+    from agentcoop.share import mismatch_note, place_file
+
+    describe_list = list(describes or [])
+    kind_list = list(kinds or [])
+    media_list = list(media_types or [])
+    alt_list = list(alt_ofs or [])
     last_error: Exception | None = None
     for _attempt in range(8):
         mid = make_id(sender, moment)
+        shared_paths: list[str] = []
+        infos: list[dict] = []
+        for index, source in enumerate(sources):
+            info = place_file(
+                board,
+                project,
+                source,
+                sender=sender,
+                recipient=recipient,
+                message_id=mid,
+                description=describe_list[index] if index < len(describe_list) else "",
+                kind=kind_list[index] if index < len(kind_list) else "",
+                media_type=media_list[index] if index < len(media_list) else "",
+                alt_of=alt_list[index] if index < len(alt_list) else "",
+                over_limit=over_limit,
+                ask=over_limit,
+            )
+            note = mismatch_note(board, project, recipient, str(info.get("media_type") or ""))
+            if note:
+                info = dict(info)
+                info["mismatch"] = note
+            shared_paths.append(str(info["path"]))
+            infos.append(info)
+        sent_body = body
+        held = [str(info.get("name") or "file") for info in infos if info.get("held") == "program"]
+        if held:
+            sent_body = body + "\n\n" + " ".join(name + " was held until it was allowed." for name in held)
         payload = {
             "v": 1,
             "id": mid,
             "ts": format_ts(moment),
+            "seq": next_message_seq(board),
             "project": project,
             "sender": sender,
             "recipient": recipient,
             "type": type,
             "re": re,
             "subject": subject,
-            "body": body,
-            "attachments": list(attachments or []),
+            "body": sent_body,
+            "attachments": shared_paths,
             "needs_reply": bool(needs_reply),
         }
+        if infos:
+            payload["attachment_info"] = infos
         try:
             write_message_file(inbox_msgs(board, project, recipient), payload)
         except FileExistsError as exc:
@@ -663,8 +752,8 @@ def check_inbox(
                 else 1
                 if item.message.type == "context_request" and item.violation is None
                 else 2,
-                item.message.id,
             )
+            + message_sort_key(item.message)
         )
     return InboxReport(
         project=project,
@@ -732,7 +821,7 @@ def waiting(board: Path, project: str, agent: str) -> list[Message]:
             seen.add(file_id(message))
             if file_id(message) not in replies:
                 pending.append(message)
-    pending.sort(key=lambda item: item.id)
+    pending.sort(key=message_sort_key)
     return pending
 
 
@@ -798,7 +887,7 @@ def log_messages(board: Path, project: str) -> list[Message]:
                 message = load_message(path)
                 if message is not None and file_id(message) not in found:
                     found[file_id(message)] = message
-    return sorted(found.values(), key=lambda item: (item.ts, item.id))
+    return sorted(found.values(), key=message_sort_key)
 
 
 def _version_notice(report: InboxReport) -> str:
@@ -871,6 +960,10 @@ def render_check(report: InboxReport, *, summary: bool = False) -> str:
         helper_line = ", ".join(helper_bits) if helper_bits else "(none)"
         lines.append('Agent Co-op: you are the driver for "' + report.project + '".')
         lines.append("Helpers: " + helper_line + ".")
+        if report.board_path:
+            from agentcoop.approvals import header_lines
+
+            lines.extend(header_lines(Path(report.board_path), report.project))
         for item in visible:
             if item.violation or item.message.type != "nudge":
                 continue
@@ -901,6 +994,11 @@ def render_check(report: InboxReport, *, summary: bool = False) -> str:
             + "."
         )
         lines.append("Your files folder: " + report.files_path)
+    if report.board_path:
+        from agentcoop.share import limits as share_limits
+
+        cap = share_limits(Path(report.board_path))
+        lines.append("Shared files: up to " + str(cap["max_mb"]) + " MB each.")
     if report.board_path:
         from agentcoop.context import format_context_header
 
@@ -961,7 +1059,34 @@ def render_check(report: InboxReport, *, summary: bool = False) -> str:
             + re_text
         )
         lines.append("    subject: " + message.subject)
-        if item.attachments:
+        if message.attachment_info:
+            from agentcoop.share import group_lines, mismatch_note
+
+            notes = {}
+            for info in message.attachment_info:
+                path = str(info.get("path") or "")
+                blocked = next(
+                    (status for status in item.attachments if status.path == path and status.blocked),
+                    None,
+                )
+                note = str(info.get("mismatch") or "")
+                if report.board_path:
+                    live = mismatch_note(
+                        Path(report.board_path),
+                        report.project,
+                        message.recipient,
+                        str(info.get("media_type") or ""),
+                    )
+                    if live:
+                        note = live
+                if blocked is not None:
+                    note = (note + " " if note else "") + "BLOCKED: do not open"
+                if note:
+                    notes[path] = note
+            lines.append("    attachments:")
+            for line in group_lines(message.attachment_info, notes):
+                lines.append("      " + line)
+        elif item.attachments:
             lines.append("    attachments:")
             for attachment in item.attachments:
                 if attachment.blocked:

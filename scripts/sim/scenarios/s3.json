@@ -1,0 +1,15 @@
+{
+  "id": "s3",
+  "title": "Three answers in one second",
+  "events": [
+    {
+      "at": 0,
+      "kind": "burst",
+      "texts": [
+        "Review: restart the game, then rerun the suite.",
+        "Correction: do not restart. Start the spy tests.",
+        "Summary: leave the game running and start the spy tests."
+      ]
+    }
+  ]
+}

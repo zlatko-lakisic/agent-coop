@@ -26,7 +26,7 @@ The skill writes `<board>/projects/<project>/requests/claude_desktop/<UTC timest
 {"action": "join"}
 ```
 
-Leave uses `{"action": "leave"}`. A note is optional.
+Leave uses `{"action": "leave"}`. A note is optional. A join may also include `tags`, `can` (`read`, `run`, `vision`, `web`), and `cost` (`low`, `medium`, or `high`). Those say what this helper is good at.
 
 `agentcoop` applies the request on the next `check` by any member, on every `tick`, and on each `watch` poll. A file younger than 5 seconds is left for the next round. `stop_watching` and `start_watching` are applied the same way. Any other action is moved to `requests/claude_desktop/rejected/` because it needs a person.
 

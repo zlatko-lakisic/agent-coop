@@ -160,6 +160,42 @@ class LoopTests(unittest.TestCase):
             self.assertEqual(out.getvalue().count("continue your current task"), 1)
             self.assertIn("Fix the wake", out.getvalue())
 
+    def test_missing_status_still_ticks_and_waiting_does_not(self) -> None:
+        with support.TempEnv() as env:
+            _ready(env)
+            folder = progress_dir(env.board, "demo")
+            folder.mkdir(parents=True, exist_ok=True)
+            (folder / "20261023T120000Z.md").write_text("Now: Run the game script.\n", encoding="utf-8")
+            clock = _Clock()
+            out = io.StringIO()
+            code = run_cursor_loop(
+                env.board,
+                "demo",
+                "cursor",
+                now=clock,
+                sleep=lambda seconds: clock.advance(seconds),
+                out=out,
+                max_passes=1,
+            )
+            self.assertEqual(code, 0)
+            self.assertIn("continue your current task", out.getvalue())
+            (folder / "20261023T120100Z.md").write_text(
+                "Status: waiting\nNow: Need a decision on the restart.\n",
+                encoding="utf-8",
+            )
+            out = io.StringIO()
+            code = run_cursor_loop(
+                env.board,
+                "demo",
+                "cursor",
+                now=clock,
+                sleep=lambda seconds: clock.advance(seconds),
+                out=out,
+                max_passes=1,
+            )
+            self.assertEqual(code, 0)
+            self.assertNotIn("continue your current task", out.getvalue())
+
     def test_no_task_and_no_mail_prints_nothing(self) -> None:
         with support.TempEnv() as env:
             _ready(env)
@@ -276,6 +312,7 @@ class HookTests(unittest.TestCase):
             )
             self.assertIn("Need a look", result["followup_message"])
             self.assertIn("end your turn", result["followup_message"])
+            self.assertIn("start cursor-loop again", result["followup_message"])
             self.assertNotIn("no messages", result["followup_message"].lower())
             self.assertTrue(hook_fresh(env.board, "demo", "cursor", now=clock()))
 
@@ -301,7 +338,9 @@ class HookTests(unittest.TestCase):
                 timeout_seconds=6,
                 reserve_seconds=5,
             )
-            self.assertEqual(result, {})
+            self.assertEqual(result, {"followup_message": "End your turn."})
+            self.assertNotIn("no messages", result["followup_message"].lower())
+            self.assertNotIn("Handle these", result["followup_message"])
             self.assertGreaterEqual((clock() - datetime(2026, 10, 23, 12, 0, tzinfo=timezone.utc)).total_seconds(), 1)
 
     def test_stopped_agent_gets_nothing(self) -> None:
@@ -314,6 +353,31 @@ class HookTests(unittest.TestCase):
             result = cursor_stop_followup(env.board, "cursor", "{}", now=_Clock(), sleep=lambda _seconds: None)
             self.assertEqual(result, {})
             self.assertFalse(hook_fresh(env.board, "demo", "cursor", now=_Clock()()))
+
+    def test_mail_that_arrives_during_the_wait_is_sent(self) -> None:
+        with support.TempEnv() as env:
+            _ready(env)
+            clock = _Clock()
+            start = clock()
+            sent = {"done": False}
+
+            def nap(seconds: float) -> None:
+                clock.advance(seconds)
+                if not sent["done"] and clock() >= start + timedelta(seconds=4):
+                    _mail(env)
+                    sent["done"] = True
+
+            result = cursor_stop_followup(
+                env.board,
+                "cursor",
+                "{}",
+                now=clock,
+                sleep=nap,
+                timeout_seconds=30,
+                reserve_seconds=5,
+            )
+            self.assertIn("Need a look", result["followup_message"])
+            self.assertNotEqual(result["followup_message"], "End your turn.")
 
 
 class IdleTests(unittest.TestCase):
@@ -382,7 +446,7 @@ class InstallTests(unittest.TestCase):
             self.assertEqual(data["version"], 1)
             command = data["hooks"]["stop"][0]["command"]
             self.assertIn("hook cursor-stop --as cursor", command)
-            self.assertEqual(data["hooks"]["stop"][0]["timeout"], 30)
+            self.assertEqual(data["hooks"]["stop"][0]["timeout"], 600)
             self.assertIsNone(data["hooks"]["stop"][0]["loop_limit"])
             ignore = (folder / ".gitignore").read_text(encoding="utf-8")
             self.assertIn(".cursor/hooks.json", ignore)

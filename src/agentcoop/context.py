@@ -7,6 +7,7 @@ import re
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+from agentcoop.core import message_sort_key
 from agentcoop.errors import CoopError
 from agentcoop.paths import private_dir, project_dir
 from agentcoop.projects import (
@@ -356,7 +357,7 @@ def open_context_requests(board: Path, project: str, helper: str | None = None) 
         for item in requests_by_helper[name]:
             if file_id(item) not in replies:
                 open_ones.append(item)
-    open_ones.sort(key=lambda item: item.id)
+    open_ones.sort(key=message_sort_key)
     return open_ones
 
 

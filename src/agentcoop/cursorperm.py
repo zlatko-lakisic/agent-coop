@@ -15,6 +15,9 @@ def cursor_permissions(worktree: Path, board: Path, shell_allow: list[str]) -> d
         "Write(" + board_path + "/**)",
         "Shell(git)",
         "Shell(agentcoop)",
+        "Shell(agentcoop.exe)",
+        "Shell(agentcoopw.exe)",
+        "Shell(agentcoop.cmd)",
     ]
     for name in shell_allow:
         token = "Shell(" + name + ")"
@@ -49,6 +52,36 @@ def write_cursor_helper_cli(project_dir: Path) -> Path:
     folder.mkdir(parents=True, exist_ok=True)
     path = folder / "cli.json"
     path.write_text(json.dumps(cursor_helper_permissions(), indent=2) + "\n", encoding="utf-8")
+    return path
+
+
+APP_ALLOW = ("agentcoop", "agentcoop.exe", "agentcoopw.exe", "agentcoop.cmd")
+
+
+def merge_app_permissions(project: Path) -> Path | None:
+    """Add agentcoop to the project terminal allowlist without dropping other entries.
+
+    A file that is not plain JSON is left as it is, so comments are not stripped.
+    """
+    folder = project / ".cursor"
+    path = folder / "permissions.json"
+    data: dict = {}
+    if path.is_file():
+        try:
+            loaded = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return None
+        if not isinstance(loaded, dict):
+            return None
+        data = loaded
+    current = data.get("terminalAllowlist")
+    items = [item for item in current if isinstance(item, str)] if isinstance(current, list) else []
+    for name in APP_ALLOW:
+        if name not in items:
+            items.append(name)
+    data["terminalAllowlist"] = items
+    folder.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
     return path
 
 

@@ -84,6 +84,11 @@ def check_projects(data: object) -> list[str]:
                     if not isinstance(profile, dict):
                         problems.append(name + " profile for " + str(agent) + " must be an object")
                         continue
+                    accepts = profile.get("accepts")
+                    if accepts is not None and (
+                        not isinstance(accepts, list) or any(not isinstance(item, str) or not item for item in accepts)
+                    ):
+                        problems.append(name + " accepts must be a list of text")
                     for key in ("tags", "can"):
                         values = profile.get(key)
                         if values is not None and (
@@ -135,6 +140,11 @@ def check_agents(data: object) -> list[str]:
         cli_path = record.get("cli_path")
         if cli_path is not None and not isinstance(cli_path, str):
             problems.append(name + " cli_path must be text")
+        accepts = record.get("accepts")
+        if accepts is not None and (
+            not isinstance(accepts, list) or any(not isinstance(item, str) or not item for item in accepts)
+        ):
+            problems.append(name + " accepts must be a list of text")
     return problems
 
 
@@ -164,6 +174,10 @@ def check_config(data: object) -> list[str]:
         "progress_limit_bytes",
         "progress_every_minutes",
         "progress_long_task_minutes",
+        "share_max_mb",
+        "share_keep_days",
+        "share_hard_max_mb",
+        "share_warn_total_gb",
     ):
         value = data.get(key)
         if value is not None and (not isinstance(value, int) or isinstance(value, bool) or value <= 0):
@@ -197,4 +211,15 @@ def check_config(data: object) -> list[str]:
     notify = data.get("notify_when_idle")
     if notify is not None and not isinstance(notify, bool):
         problems.append("notify_when_idle must be true or false")
+    trace = data.get("trace")
+    if trace is not None and not isinstance(trace, bool):
+        problems.append("trace must be true or false")
+    hook_timeout = data.get("cursor_hook_timeout_seconds")
+    if hook_timeout is not None and (
+        isinstance(hook_timeout, bool)
+        or not isinstance(hook_timeout, int)
+        or hook_timeout < 30
+        or hook_timeout > 3600
+    ):
+        problems.append("cursor_hook_timeout_seconds must be a whole number from 30 to 3600")
     return problems

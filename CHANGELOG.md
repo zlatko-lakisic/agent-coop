@@ -1,6 +1,20 @@
 # Changelog
 
-## Unreleased (planned 0.2.7)
+## Unreleased (planned 0.2.8)
+
+- The Cursor stop hook waits `cursor_hook_timeout_seconds` (default 600, longest 3600). If nothing arrives, it sends only `End your turn.` so the hook runs again. With the default, an idle chat costs about 6 turns an hour.
+- `AGENTCOOP_TRACE=1` or `trace: true` appends one JSON line per command to `logs/trace.jsonl`. Message bodies are left out. Say "Turn on Agent Co-op tracing".
+- The person can say what the driver may do while they are away. That standing approval shows on the driver's check. A helper suggestion outside those words still waits. A board message cannot add one.
+- When progress says `Status: waiting`, STATUS.md says so at the top.
+- `cursor-loop` keeps waking a task whose progress names the work in Now even when Status is missing. `done` and `waiting` do not get those wake-ups.
+- The Cursor rule tells the driver to start `cursor-loop` again when a turn ends, and what exit 4 and exit 5 mean. A non-zero exit is not the task finishing.
+- Scheduled Cursor runs allow `agentcoop.exe`, `agentcoopw.exe`, and `agentcoop.cmd` as well as `agentcoop`. Connecting Cursor writes `.cursor/permissions.json` with those names.
+- A test harness under `scripts/sim/` plays a helper and a fake driver without Cursor.
+- Messages sent in the same second stay in the order they were sent. Each message may include `seq`. Older readers ignore it.
+- Sharing a file that is already on the board keeps that message's own name, description, and kind. The stored bytes are still the first copy.
+- A helper can describe itself on join with tags, what it can do, and a cost. The person can change a profile, and changing another agent asks them to allow it.
+
+## 0.2.7 - 2026-10-23
 
 - On a long task, the driver and the helpers post progress on their own. Each update can carry a status, a step, and a counted percent.
 - A helper writes `progress/helpers/<agent>/`. The Claude desktop app writes `<message id>.progress.md`, which is not the answer.
@@ -15,7 +29,13 @@
 - A project stop hook wakes Cursor when the loop is gone. It waits until 5 seconds before a 30 second timeout, and it does not send a follow-up when there is no mail.
 - When the Cursor chat is not watching, messages wait until you say Start working. Other tools still run in the background. `agentcoop idle background` and `agentcoop idle wait` switch that.
 - A tag release must point at a commit that is on main. The GitHub release page target is main.
-- A helper can describe itself on join with tags, what it can do, and a cost. The person can change a profile, and changing another agent asks them to allow it.
+- A file sent with a message is copied into `projects/<name>/files/shared/`, with a record of the name, size, type, checksum, and description. The old `attachments` list still holds absolute paths, now of those copies.
+- `agentcoop share` copies a file ahead of a message. `agentcoop files list`, `pin`, `unpin`, and `prune` manage the copies.
+- The Claude desktop app may put files in `outbox/claude_desktop/<answer>.files/`, with an optional `files.json`. A refused file is explained, and the answer still posts.
+- An agent may say what it accepts (`image/*`, `application/pdf`, `*/*`). A file that does not match is still sent, with one note. Another form of the same file can be marked `alt_of` that file's checksum.
+- Files up to `share_max_mb` (default 200) are copied. A bigger file, or a program or script, waits for the person to allow that one file. `share_hard_max_mb` (default 4096) is refused even then. Private files stay blocked.
+- Shared files are removed `share_keep_days` days (default 30) after their conversation is archived, unless pinned. `share_warn_total_gb` (default 10) warns and does not delete early.
+- The viewer shows images, and plays video and audio with the browser. STATUS.md lists the last few shared files and any file waiting for approval.
 
 ## 0.2.6 - 2026-10-22
 

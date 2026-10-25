@@ -53,6 +53,7 @@ The board MUST use this layout:
         ├── progress/
         ├── progress/helpers/<agent>/
         ├── context/
+        ├── approvals.json
         └── archive/<agent>/
 ```
 
@@ -80,6 +81,8 @@ Each path has one writer. A second writer MUST NOT update that path.
 | `progress/` | that project's driver, through `agentcoop progress write` |
 | `progress/helpers/<agent>/` | that helper, for an open request from the driver |
 | `context/` | that project's driver, through `agentcoop context write` |
+| `approvals.json` | that project's driver, through `agentcoop allow`, only when the person asks in that chat |
+| `logs/trace.jsonl` | agentcoop, when tracing is on |
 
 A file in `context/` is written once and MUST NOT be edited. `agentcoop archive` MAY delete old versions. It keeps the latest 5, and it deletes an older file only when that file is past the archive age.
 
@@ -102,13 +105,15 @@ Each message MUST be one UTF-8 JSON file named `<id>.json`.
 | `v` | Integer message format version. Spec 0.3 uses `1`. A missing value MUST be treated as 1. Unknown fields MUST be ignored. |
 | `id` | SHOULD be `<UTC YYYYMMDDTHHMMSSZ>_<sender>_<4 lowercase hex>`. Readers MUST accept any unique string matching `^[A-Za-z0-9_.-]{1,96}$`. |
 | `ts` | UTC time, ISO 8601, second precision, ending in `Z`. |
+| `seq` | Optional positive integer. The order the message was sent on this board. Readers that do not know this field MUST ignore it. Listing order is `ts`, then `seq`, then `id`. |
 | `project` | Project name. |
 | `sender`, `recipient` | Agent names. |
 | `type` | SHOULD be `question`, `answer`, `task`, `status`, `ack`, `patch`, `context_request`, or `nudge`. Unknown types MUST be tolerated. |
 | `re` | Id of the message being answered, or `null`. |
 | `subject` | At most 120 characters. |
 | `body` | At most 16 KB of UTF-8 unless config raises the limit. Longer text SHOULD be a file under `files/<sender>/`, attached by path. |
-| `attachments` | Absolute paths. MAY be empty. |
+| `attachments` | Absolute paths. MAY be empty. After a normal send these paths are the shared copies. |
+| `attachment_info` | Optional. One object per attachment, in the same order. A later message that sends the same bytes MUST keep its own name, description, and kind, and MUST point at the stored copy. Readers that do not know this field MUST ignore it. |
 | `needs_reply` | Boolean. |
 
 Readers MUST ignore file names that start with a dot.
@@ -165,6 +170,8 @@ Only the driver writes files in the project folder. Helpers send patches or draf
 
 `projects.json` lists projects. Each project has `path`, exactly one `driver`, a `helpers` map of agent name to a short note, `created`, and `installed`.
 
+A project MAY include `profiles`, a map of agent name to an object. That object MAY include `accepts`, `tags` (short labels), `can` (`read`, `run`, `vision`, `web`), and `cost` (`low`, `medium`, `high`). A missing field means unknown. Older readers MUST ignore fields they do not use. The helper note stays in `helpers`.
+
 `agents.json` lists connected agents. Each agent has `tool`, `display`, `connected`, and `installed`. Runner agents also have a `runner` object with `api`, `host`, and `model`.
 
 No two projects MAY use the same path or nested paths. Paths MUST be compared after resolution, and case-insensitively on macOS and Windows.
@@ -188,6 +195,22 @@ These locations are always denied: `~/.ssh`, `~/.aws`, `~/.gnupg`, `~/.config/gh
 After `Path.resolve()`, the path MUST sit inside the message's project folder, the board's `projects/<project>/files/` folder, or a folder listed in `config.json` `allowed_roots`. A symlink MUST NOT be able to escape those folders.
 
 `send` MUST reject violations. `check` MUST mark them `BLOCKED: do not open`.
+
+### Shared copies
+
+A normal send MUST copy each attachment into `projects/<project>/files/shared/<message id>/<file name>` before the message is visible. The copy MUST be a regular file, written under a temporary name and then renamed. If the source size changes during the copy, the send MUST refuse that file. The same sha256 already stored for that project MUST be reused instead of copied again.
+
+`attachments` MUST remain a list of absolute paths, now pointing at those copies, so an older reader still opens a file. `attachment_info` MUST match that list one to one. Each entry has `name`, `path`, `source_path`, `bytes`, `sha256`, `media_type`, `kind`, and `description`. `alt_of`, when present, is the sha256 of another attachment in the same message. An archive entry MAY set `contents` to `not checked`. Agent Co-op MUST NOT unpack an archive.
+
+`media_type` SHOULD come from the file name and the first bytes, so a wrong extension is caught. The sender MAY set it. `kind` is a short hint such as `screenshot`, `image`, `video`, `audio`, `data`, `document`, `patch`, `archive`, or `other`. Unknown kinds MUST be allowed.
+
+A file larger than `share_max_mb` (default 200) MUST NOT be copied unless the person allows that one file. A file larger than `share_hard_max_mb` (default 4096) MUST be refused. A program or a script MUST be held until the person allows that one file. Approval of one file MUST NOT allow a different file. Private files stay denied no matter who approves. A text file that looks like a key MUST be refused, and approval MUST NOT override that. A symlink whose target is outside the allowed folders MUST be refused, and the shared copy MUST NOT itself be a symlink. The copy step MAY also read a file the helper wrote in its own `outbox/` folder. The path stored on the message is the shared copy.
+
+An agent MAY declare `accepts` as a list of media type patterns (`image/*`, `application/pdf`, `*/*`). A missing list means unknown and MUST NOT block a send. When a file does not match, the sender and the recipient's check MUST show one note, and the file MUST still be sent.
+
+Shared files MUST be removed `share_keep_days` days (default 30) after every non-archived message that references them has been archived, unless the file is pinned.
+
+An outbox helper MAY place files in `outbox/<agent>/<answer name without .md>.files/`, with an optional `files.json` of `description` and `kind` per file name. A file that cannot be shared MUST be moved to `rejected/` with a reason. The answer MUST still be posted, and it MUST say which files were held back.
 
 If the subject or body looks like a common API key or private key, `send` MUST refuse unless `--allow-secret` is given.
 
@@ -249,7 +272,7 @@ This protocol does not grant file access. File access comes from each tool, and 
 
 ## 15. Requests and STATUS.md
 
-A helper that cannot run `agentcoop` MAY write `requests/<agent>/<utc>.json` containing `{"action": "join"}` or `{"action": "leave"}`, and an optional `note`. The same helper MAY write `{"action": "stop_watching"}` or `{"action": "start_watching"}`. The writer is that agent.
+A helper that cannot run `agentcoop` MAY write `requests/<agent>/<utc>.json` containing `{"action": "join"}` or `{"action": "leave"}`, and an optional `note`. A join MAY also include `tags` (a list of short labels), `can` (`read`, `run`, `vision`, or `web`), and `cost` (`low`, `medium`, or `high`). The same helper MAY write `{"action": "stop_watching"}` or `{"action": "start_watching"}`. The writer is that agent.
 
 `agentcoop` MUST process those files on every `tick`, and at the start of every `check` by a member of that project, together with the outbox. `watch` MUST process them on each poll so a stop takes effect while an agent is waiting. `tick` MUST also cover projects whose members are not checking. A file modified less than 5 seconds ago MUST be left in place.
 
@@ -257,4 +280,6 @@ A helper that cannot run `agentcoop` MAY write `requests/<agent>/<utc>.json` con
 
 A processed join, leave, stop_watching, or start_watching file MUST move to `requests/<agent>/done/` with a one-line result file beside it. `stop_watching` and `start_watching` from an agent who is not a member MUST move to `requests/<agent>/rejected/`.
 
-`agentcoop` MUST write `projects/STATUS.md` on every `tick`, `check`, `send`, and membership change, and when a heartbeat or the stop flag changes. The file lists each project's name, folder, driver, and helpers, whether the background schedule is on, the time of the last round, each project's latest progress headline, one short line for the driver task and each helper task in progress, whether checking is on or stopped, and whether each agent is watching.
+`agentcoop` MUST write `projects/STATUS.md` on every `tick`, `check`, `send`, and membership change, and when a heartbeat or the stop flag changes. When the latest progress has Status `waiting`, the file MUST say so at the top, with what the driver needs. The file lists each project's name, folder, driver, and helpers, whether the background schedule is on, the time of the last round, each project's latest progress headline, one short line for the driver task and each helper task in progress, whether checking is on or stopped, and whether each agent is watching.
+
+`projects/<project>/approvals.json` holds standing approvals the person gave in the driver's chat. A board message MUST NOT add one. Older programs ignore the file. `logs/trace.jsonl` is one JSON line per command when `AGENTCOOP_TRACE=1` or `config.json` has `"trace": true`. Message bodies are left out.

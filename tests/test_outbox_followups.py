@@ -105,6 +105,83 @@ class FollowUpTests(unittest.TestCase):
             self.assertTrue(text[0].endswith(".json"))
             self.assertEqual(text[1], "cursor")
 
+    def test_same_second_files_follow_write_time(self) -> None:
+        with support.TempEnv() as env:
+            _ready(env)
+            mid = _ask(env)
+            box = outbox_dir(env.board, "demo", "claude_desktop")
+            correction = box / (mid + ".20261023T120000Z.2.md")
+            original = box / (mid + ".20261023T120000Z.md")
+            correction.write_text("correction\n", encoding="utf-8")
+            original.write_text("original\n", encoding="utf-8")
+            _age(correction, 12)
+            _age(original, 40)
+            process_outbox(env.board, "demo", "claude_desktop")
+            from agentcoop.core import new_messages
+
+            messages, _issues = new_messages(env.board, "demo", "cursor")
+            answers = [item for item in messages if item.type == "answer"]
+            self.assertEqual([item.body.strip() for item in answers], ["original", "correction"])
+            self.assertLess(answers[0].seq or 0, answers[1].seq or 0)
+            text = render_check(check_inbox(env.board, "demo", "cursor"))
+            lines = [line for line in text.splitlines() if line.startswith("Read from")]
+            self.assertEqual(
+                lines,
+                [
+                    "Read from claude_desktop: Re: Need help. original.",
+                    "Read from claude_desktop: Re: Need help (follow-up 2). correction.",
+                ],
+            )
+
+    def test_check_keeps_send_order_when_ids_sort_the_other_way(self) -> None:
+        with support.TempEnv() as env:
+            _ready(env)
+            asked = send(
+                env.board,
+                project="demo",
+                sender="cursor",
+                recipient="claude_code",
+                subject="Need help",
+                body="Please look.",
+                type="question",
+                needs_reply=True,
+            )
+            moment = datetime(2026, 10, 25, 12, 0, tzinfo=timezone.utc)
+            suffixes = iter(["ffff", "0000"])
+            with patch("agentcoop.core.secrets.token_hex", lambda _count: next(suffixes)):
+                send(
+                    env.board,
+                    project="demo",
+                    sender="claude_code",
+                    recipient="cursor",
+                    subject="One",
+                    body="original",
+                    type="answer",
+                    re=asked,
+                    now=moment,
+                )
+                send(
+                    env.board,
+                    project="demo",
+                    sender="claude_code",
+                    recipient="cursor",
+                    subject="Two",
+                    body="correction",
+                    type="answer",
+                    re=asked,
+                    now=moment,
+                )
+            text = render_check(check_inbox(env.board, "demo", "cursor"))
+            lines = [line for line in text.splitlines() if line.startswith("Read from")]
+            self.assertEqual(
+                lines,
+                [
+                    "Read from claude_code: One. original.",
+                    "Read from claude_code: Two. correction.",
+                ],
+            )
+            self.assertLess(text.index("_ffff"), text.index("_0000"))
+
     def test_exact_copy_is_not_posted_twice(self) -> None:
         with support.TempEnv() as env:
             _ready(env)

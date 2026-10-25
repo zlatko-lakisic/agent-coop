@@ -24,12 +24,19 @@ class TkUnavailable(Exception):
     """tkinter or a display is not available."""
 
 
-def confirm_person(summary: str, *, expected: str, kind: str, asked_by: str = "") -> None:
+def confirm_person(
+    summary: str,
+    *,
+    expected: str,
+    kind: str,
+    asked_by: str = "",
+    on_url=None,
+) -> None:
     """Confirm a change. Raise when the person does not allow it."""
     if sys.stdin.isatty():
         _confirm_terminal(summary, expected, kind)
         return
-    outcome = ask_on_screen(summary, asked_by)
+    outcome = ask_on_screen(summary, asked_by, on_url=on_url)
     if outcome in ("allow", True):
         return
     if outcome == "timeout":
@@ -38,7 +45,7 @@ def confirm_person(summary: str, *, expected: str, kind: str, asked_by: str = ""
     raise CoopError(DENIED, code=1)
 
 
-def ask_on_screen(summary: str, asked_by: str) -> str:
+def ask_on_screen(summary: str, asked_by: str, on_url=None) -> str:
     """Show a window, or a browser page when a window is not available.
 
     Returns allow, cancel, or timeout.
@@ -46,7 +53,7 @@ def ask_on_screen(summary: str, asked_by: str) -> str:
     try:
         return _ask_tk(summary, asked_by)
     except TkUnavailable:
-        return _ask_page(summary, asked_by)
+        return _ask_page(summary, asked_by, on_url=on_url)
 
 
 def _confirm_terminal(summary: str, expected: str, kind: str) -> None:
@@ -120,7 +127,7 @@ class _ConfirmServer(ThreadingHTTPServer):
         self.server_port = self.server_address[1]
 
 
-def _ask_page(summary: str, asked_by: str) -> str:
+def _ask_page(summary: str, asked_by: str, on_url=None) -> str:
     token = secrets.token_urlsafe(16)
     result = {"ok": False}
     done = threading.Event()
@@ -164,6 +171,8 @@ def _ask_page(summary: str, asked_by: str) -> str:
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     url = "http://127.0.0.1:" + str(port) + "/confirm?t=" + token
+    if on_url is not None:
+        on_url(url)
     print("Agent Co-op needs you to allow this change: " + summary, flush=True)
     print("Open this page to allow or cancel it: " + url, flush=True)
     print("It waits for 2 minutes.", flush=True)

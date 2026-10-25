@@ -37,7 +37,13 @@ def read_line(sender: str, subject: str, body: str) -> str:
     return "Read from " + sender + ": " + _subject(subject) + ". " + sentence
 
 
-def sent_line(recipient: str, subject: str, body: str) -> str:
+def sent_line(recipient: str, subject: str, body: str, files: list | None = None) -> str:
     """Return the line an agent posts after it writes to the board."""
+    if files:
+        from agentcoop.share import file_clause
+
+        clause = file_clause(files)
+        if clause:
+            return "Sent to " + recipient + ": " + _subject(subject) + ". " + clause
     sentence = one_sentence(body) or "No further detail."
     return "Sent to " + recipient + ": " + _subject(subject) + ". " + sentence
