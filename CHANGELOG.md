@@ -15,6 +15,8 @@
 - A helper can describe itself on join with tags, what it can do, and a cost. The person can change a profile, and changing another agent asks them to allow it.
 - The driver grades a helper's answer once. The grade is a file, not a setting. `agentcoop helpers` shows the average of the last 20. A helper sees only its own grades. Removing a grade asks the person to type the message id.
 - `agentcoop helpers` ranks helpers by grade, then whether they are watching, then cost. Fewer than 3 grades shows as new.
+- The driver and a helper can ping each other. The answer is a heartbeat. If none comes in time, Agent Co-op posts one and says the agent did not answer. `nudge` still works as the helper ping from 0.2.7.
+- A helper can decline. The driver can cancel or move a request. An answer after that is delivered and labelled late. The same question can go to 2 or 3 helpers.
 
 ## 0.2.7 - 2026-10-23
 

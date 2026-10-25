@@ -36,7 +36,20 @@ from agentcoop.safety import check_attachment, require_attachment, secret_warnin
 
 ID_RE = re.compile(r"^[A-Za-z0-9_.-]{1,96}$")
 TS_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
-KNOWN_TYPES = {"question", "answer", "task", "status", "ack", "patch", "context_request", "nudge"}
+KNOWN_TYPES = {
+    "question",
+    "answer",
+    "task",
+    "status",
+    "ack",
+    "patch",
+    "context_request",
+    "nudge",
+    "ping",
+    "heartbeat",
+    "decline",
+    "cancel",
+}
 NUDGE_CHARS = 500
 NUDGE_MINUTES = 30
 YOUNG_SECONDS = 5
@@ -61,6 +74,16 @@ class Message:
     path: Path | None = None
     attachment_info: list[dict] = field(default_factory=list)
     seq: int | None = None
+    group: str | None = None
+    moved_from: str | None = None
+    auto: bool = False
+    about: str | None = None
+    status: str | None = None
+    on: str | None = None
+    percent: int | None = None
+    step: str | None = None
+    next_text: str | None = None
+    eta_minutes: int | None = None
 
     def to_dict(self) -> dict:
         """Return the on-disk JSON object."""
@@ -82,6 +105,26 @@ class Message:
             payload["attachment_info"] = list(self.attachment_info)
         if self.seq is not None:
             payload["seq"] = self.seq
+        if self.group:
+            payload["group"] = self.group
+        if self.moved_from:
+            payload["moved_from"] = self.moved_from
+        if self.auto:
+            payload["auto"] = True
+        if self.about:
+            payload["about"] = self.about
+        if self.status:
+            payload["status"] = self.status
+        if self.on:
+            payload["on"] = self.on
+        if self.percent is not None:
+            payload["percent"] = self.percent
+        if self.step:
+            payload["step"] = self.step
+        if self.next_text:
+            payload["next"] = self.next_text
+        if self.eta_minutes is not None:
+            payload["eta_minutes"] = self.eta_minutes
         return payload
 
 
@@ -245,6 +288,16 @@ def _message_from_dict(data: dict, path: Path | None) -> Message:
         if isinstance(data.get("attachment_info"), list)
         else [],
         seq=_seq_value(data.get("seq")),
+        group=data.get("group") if isinstance(data.get("group"), str) and data.get("group") else None,
+        moved_from=data.get("moved_from") if isinstance(data.get("moved_from"), str) and data.get("moved_from") else None,
+        auto=bool(data.get("auto")),
+        about=data.get("about") if isinstance(data.get("about"), str) and data.get("about") else None,
+        status=data.get("status") if isinstance(data.get("status"), str) and data.get("status") else None,
+        on=data.get("on") if isinstance(data.get("on"), str) and data.get("on") else None,
+        percent=data.get("percent") if isinstance(data.get("percent"), int) and not isinstance(data.get("percent"), bool) else None,
+        step=data.get("step") if isinstance(data.get("step"), str) and data.get("step") else None,
+        next_text=data.get("next") if isinstance(data.get("next"), str) and data.get("next") else None,
+        eta_minutes=data.get("eta_minutes") if isinstance(data.get("eta_minutes"), int) and not isinstance(data.get("eta_minutes"), bool) else None,
     )
 
 
@@ -436,14 +489,28 @@ def protocol_violation(project: dict, message: Message, board: Path, project_nam
     members = {driver, *helpers.keys()}
     if message.sender not in members or message.recipient not in members:
         return "The sender or recipient is not a member of this project."
+    if message.type == "heartbeat":
+        from agentcoop.ping import heartbeat_violation
+
+        return heartbeat_violation(board, project_name, message)
     if message.sender == driver:
         if message.type == "nudge":
             return "Only a helper can ask the driver for attention."
+        if message.type == "ping":
+            from agentcoop.ping import ping_violation
+
+            return ping_violation(board, project_name, message, driver, helpers)
+        if message.type == "cancel" and not message.re:
+            return "A cancel names the request it stops."
         if message.recipient not in helpers:
             return "The driver can only message helpers."
         return None
     if message.type == "nudge":
         return _nudge_violation(board, project_name, message, driver)
+    if message.type == "ping":
+        from agentcoop.ping import ping_violation
+
+        return ping_violation(board, project_name, message, driver, helpers)
     # Helper rules. One exception: a context_request to the driver with no re,
     # when the helper has no open context request in this project.
     if (
@@ -564,6 +631,16 @@ def send(
     media_types: list[str] | None = None,
     alt_ofs: list[str] | None = None,
     over_limit: bool = False,
+    group: str | None = None,
+    moved_from: str | None = None,
+    auto: bool = False,
+    about: str | None = None,
+    status: str | None = None,
+    on: str | None = None,
+    percent: int | None = None,
+    step: str | None = None,
+    next_text: str | None = None,
+    eta_minutes: int | None = None,
 ) -> str:
     """Write a message and return its id."""
     require_board(board)
@@ -579,6 +656,12 @@ def send(
         needs_reply = True
         if len(body) > NUDGE_CHARS:
             raise CoopError("A nudge can be at most 500 characters.")
+    if type == "ping":
+        needs_reply = True
+        if len(body) > NUDGE_CHARS:
+            raise CoopError("A ping can be at most 500 characters.")
+    if type in ("heartbeat", "decline", "cancel"):
+        needs_reply = False
     if len(subject) > 120:
         raise CoopError("The subject is too long. Keep it to 120 characters.")
     if not allow_secret and (secret_warning(subject) or secret_warning(body)):
@@ -660,6 +743,26 @@ def send(
             "attachments": shared_paths,
             "needs_reply": bool(needs_reply),
         }
+        if group:
+            payload["group"] = group
+        if moved_from:
+            payload["moved_from"] = moved_from
+        if auto:
+            payload["auto"] = True
+        if about:
+            payload["about"] = about
+        if status:
+            payload["status"] = status
+        if on:
+            payload["on"] = on
+        if percent is not None:
+            payload["percent"] = percent
+        if step:
+            payload["step"] = step
+        if next_text:
+            payload["next"] = next_text
+        if eta_minutes is not None:
+            payload["eta_minutes"] = eta_minutes
         if infos:
             payload["attachment_info"] = infos
         try:
@@ -722,6 +825,9 @@ def check_inbox(
     from agentcoop.outbox import sync_project_outbox
 
     sync_project_outbox(board, project, now=outbox_now)
+    from agentcoop.ping import post_due_heartbeats
+
+    post_due_heartbeats(board, project, now=outbox_now)
     messages, issues = new_messages(board, project, agent, now=now)
     config = load_config(board)
     roots = list(config.get("allowed_roots") or [])
@@ -962,8 +1068,12 @@ def render_check(report: InboxReport, *, summary: bool = False) -> str:
         lines.append("Helpers: " + helper_line + ".")
         if report.board_path:
             from agentcoop.choice import choice_lines
+            from agentcoop.ping import not_answering_lines
+            from agentcoop.tasks import request_lines
 
             lines.extend(choice_lines(Path(report.board_path), report.project, short=True))
+            lines.extend(not_answering_lines(Path(report.board_path), report.project))
+            lines.extend(request_lines(Path(report.board_path), report.project))
         if report.board_path:
             from agentcoop.approvals import header_lines
 
@@ -1029,6 +1139,11 @@ def render_check(report: InboxReport, *, summary: bool = False) -> str:
         if item.violation:
             continue
         lines.append(read_line(item.message.sender, item.message.subject, item.message.body))
+    if report.board_path and report.role == "driver":
+        from agentcoop.tasks import group_lines
+
+        for grouped in group_lines(Path(report.board_path), report.project, visible):
+            lines.append(grouped)
     if any(item.violation is None for item in visible):
         lines.append("")
     for index, item in enumerate(visible, start=1):
@@ -1066,6 +1181,11 @@ def render_check(report: InboxReport, *, summary: bool = False) -> str:
             + "   re: "
             + re_text
         )
+        if report.board_path:
+            from agentcoop.tasks import answer_is_late
+
+            if answer_is_late(Path(report.board_path), report.project, message):
+                lines.append("    late")
         lines.append("    subject: " + message.subject)
         if message.attachment_info:
             from agentcoop.share import group_lines, mismatch_note

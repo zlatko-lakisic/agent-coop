@@ -186,7 +186,7 @@ Who writes, and who only answers: [Roles](https://github.com/zlatko-lakisic/agen
 
 <img src="assets/roles.jpeg" alt="One robot writes at a desk while two helper robots stand beside it offering notes" width="220" align="right">
 
-One driver per project writes the files and starts conversations. Helpers answer and send drafts or patches. An agent can be a driver in one project and a helper in another.
+One driver per project writes the files and starts conversations. Helpers answer and send drafts or patches. The driver picks a helper, grades the answer, and can ping, decline, cancel, move, or ask up to three helpers the same question. An agent can be a driver in one project and a helper in another.
 
 An agent may create a project as itself, and may join or leave as itself, when you ask in its chat. Changing the driver, adding or removing someone else, and removing a project ask you to allow it, in a terminal or in a window.
 

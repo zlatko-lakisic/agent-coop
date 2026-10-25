@@ -117,7 +117,13 @@ You may say what you accept when you join, in the join request, as `"accepts": [
 
 ## Ask for attention
 
-Write `outbox/claude_desktop/nudge.<UTC timestamp>.md` when a correction or a time-sensitive note has had no reply for the progress interval, or the driver's progress says it is waiting on the person or stopped and you have new information. The file text is the message, at most 500 characters. Never nudge just to chat. One open nudge at a time, and at most one every 30 minutes.
+Write `outbox/claude_desktop/nudge.<UTC timestamp>.md` when a correction or a time-sensitive note has had no reply for the progress interval, or the driver's progress says it is waiting on the person or stopped and you have new information. The file text is the message, at most 500 characters. Never nudge just to chat. One open nudge at a time, and at most one every 30 minutes. `nudge` is the name from 0.2.7. A ping is the same kind of note. You may also write `outbox/claude_desktop/ping.<UTC timestamp>.md`.
+
+Answer a ping before anything else. Write `outbox/claude_desktop/<ping id>.md`. The first lines are `status:`, `on:`, `percent:`, `step:`, `next:`, and optionally `eta_minutes:`. Status is working, idle, blocked, or waiting.
+
+To decline a request, write `outbox/claude_desktop/<message id>.md` whose first line is `DECLINE:` and the reason. Stop when a message is type cancel. Do not answer it.
+
+Your grades are in NEW.md. They are only yours.
 
 ## Rules
 

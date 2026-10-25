@@ -93,8 +93,14 @@ def choice_rows(board: Path, project: str, tag: str = "", now: datetime | None =
     rows = []
     for name in record.get("helpers") or {}:
         profile = profile_of(record, name)
+        from agentcoop.ping import quiet_since
+
+        quiet = quiet_since(board, project, name)
         busy = _busy(board, project, name, moment)
-        if busy:
+        if quiet:
+            state = "offline"
+            state_text = "not answering since " + quiet
+        elif busy:
             state = "busy"
             state_text = "busy (" + busy + ")"
         elif _watching(board, project, name, moment):

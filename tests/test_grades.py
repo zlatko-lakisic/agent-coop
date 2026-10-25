@@ -309,8 +309,8 @@ class GradeTests(unittest.TestCase):
             self.assertIn("Desktop missed it.", page)
             self.assertNotIn("Code found it.", page)
             driver = render_check(check_inbox(env.board, "demo", "cursor"))
-            self.assertIn("claude_code: new", driver)
-            self.assertIn("claude_desktop: new", driver)
+            self.assertIn("claude_code: offline. new.", driver)
+            self.assertIn("claude_desktop: offline. new.", driver)
             status = render_status(env.board)
             self.assertIn("claude_code grade: new", status)
             with patch("agentcoop.confirm.confirm_person", side_effect=CoopError("Cancelled.", code=1)):

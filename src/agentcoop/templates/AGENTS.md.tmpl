@@ -98,6 +98,10 @@ Tell them in plain words what you did and what changed. Do not paste raw command
 * After you act on a helper's answer, grade it before you mark it done: `{{AGENTCOOP}} grade <answer id> --as {{AGENT_NAME}} --score 4 --outcome used --note "one sentence"`. Grade on the result: was it right, did it help, did it answer what you asked. Never grade a helper down for disagreeing with you, for being brief, or for saying it does not know. A correct "I don't know" is useful. Grading is one command and one sentence. Do not spend more than that on it.
 * "Remove the grade on <message id>": `{{AGENTCOOP}} grade remove <message id> --as {{AGENT_NAME}}`. The person types the message id.
 * Before you ask a helper, run `{{AGENTCOOP}} helpers --as {{AGENT_NAME}}` and pick the best match for the task's tags. Give weight to grade, then availability, then cost. Give a new helper some work so they can earn a grade. Write the reason in one short clause in the question, for example (asked you: best reasoning grade, watching).
+* "How are my helpers doing?": `{{AGENTCOOP}} helpers --as {{AGENT_NAME}}` and `{{AGENTCOOP}} status`.
+* "Ask <helper> if it's still there": `{{AGENTCOOP}} send --as {{AGENT_NAME}} --to <helper> --type ping --body "Are you still there?"`. Answer a ping before other mail with `{{AGENTCOOP}} heartbeat --re <ping id> --status working --next "one sentence"`.
+* "Move that question to <helper>": `{{AGENTCOOP}} move <message id> --to <helper> --as {{AGENT_NAME}}`.
+* "Get a second opinion from <helper>": `{{AGENTCOOP}} send --as {{AGENT_NAME}} --to helper-one,helper-two --type question --subject "..." --body "..."`. At most 3 helpers. Never as a habit. Only for a hard-to-undo decision, a result that does not make sense, or a visual check.
 * "Start the co-op": `{{AGENTCOOP}} start`
 * "Stop the co-op": `{{AGENTCOOP}} stop`
 * "Check the board now": `{{AGENTCOOP}} now`

@@ -108,13 +108,17 @@ Each message MUST be one UTF-8 JSON file named `<id>.json`.
 | `seq` | Optional positive integer. The order the message was sent on this board. Readers that do not know this field MUST ignore it. Listing order is `ts`, then `seq`, then `id`. |
 | `project` | Project name. |
 | `sender`, `recipient` | Agent names. |
-| `type` | SHOULD be `question`, `answer`, `task`, `status`, `ack`, `patch`, `context_request`, or `nudge`. Unknown types MUST be tolerated. |
+| `type` | SHOULD be `question`, `answer`, `task`, `status`, `ack`, `patch`, `context_request`, `nudge`, `ping`, `heartbeat`, `decline`, or `cancel`. Unknown types MUST be tolerated. Older readers mark `ping`, `heartbeat`, `decline`, and `cancel` out of protocol. |
 | `re` | Id of the message being answered, or `null`. |
 | `subject` | At most 120 characters. |
 | `body` | At most 16 KB of UTF-8 unless config raises the limit. Longer text SHOULD be a file under `files/<sender>/`, attached by path. |
 | `attachments` | Absolute paths. MAY be empty. After a normal send these paths are the shared copies. |
 | `attachment_info` | Optional. One object per attachment, in the same order. A later message that sends the same bytes MUST keep its own name, description, and kind, and MUST point at the stored copy. Readers that do not know this field MUST ignore it. |
 | `needs_reply` | Boolean. |
+| `group` | Optional. The same id on each copy of a second opinion. At most 3 helpers. |
+| `moved_from` | Optional. The request id this message replaces. |
+| `auto` | Optional boolean. True when Agent Co-op posted a heartbeat because the agent did not. |
+| `about` | Optional message id a ping is about. |
 
 Readers MUST ignore file names that start with a dot.
 
@@ -150,7 +154,15 @@ If the sender is a helper, the recipient MUST be the driver, `re` MUST be set, a
 
 One exception: a helper MAY send a `context_request` to the driver with `re` set to null, only when that helper has no open context request in that project.
 
-A second exception: a helper MAY send a `nudge` to the driver with `re` set to null. The body is at most 500 characters. The subject is `Attention`. `needs_reply` is true. A helper may have only one open nudge, and at most one nudge every 30 minutes. An open nudge stays open until the driver sends that helper any message after it. `agentcoop send` MUST refuse a nudge that breaks these rules and MUST say when the next one is allowed. The driver MUST NOT send a nudge. These two exceptions are the only cases in which a helper may speak first.
+A second exception: a helper MAY send a `nudge` to the driver with `re` set to null. The body is at most 500 characters. The subject is `Attention`. `needs_reply` is true. A helper may have only one open nudge, and at most one nudge every 30 minutes. An open nudge stays open until the driver sends that helper any message after it. `agentcoop send` MUST refuse a nudge that breaks these rules and MUST say when the next one is allowed. The driver MUST NOT send a nudge. `nudge` is the 0.2.7 name for a helper ping. A file that already has type `nudge` stays valid.
+
+A third exception: a helper MAY send a `ping` to the driver with `re` set to null, and the driver MAY send a `ping` to a helper. The body is at most 500 characters. One open ping per pair, and at most one per pair per `progress_every_minutes`. The answer is a `heartbeat` with `re` set to the ping. If none arrives in that time, Agent Co-op posts one with `auto` set to true and says the agent did not answer. Two automatic heartbeats in a row mark that agent not answering.
+
+A helper MAY `decline` a request. The driver MAY `cancel` one, or `move` it. A move sends `cancel` and a new request with `moved_from` set to the old id and the same attachments. An answer that arrives after a cancel or a move is still delivered and labelled late.
+
+The driver MAY send the same question to 2 or 3 helpers. More than 3 is refused. Each copy has the same `group`. The body says that others were asked and that the helper should answer on its own. Helpers MUST NOT see each other's answers.
+
+These exceptions are the only cases in which a helper may speak first.
 
 A request is open when it sits in the driver's `msgs/` folder, its type is `context_request`, its sender is that helper, its recipient is the driver, and `re` is null, until a message from the driver in the helper's `msgs/` folder has `re` equal to that request's id.
 
@@ -160,7 +172,7 @@ In bare mode, the earliest open request from that helper is accepted. Later ones
 
 `agentcoop send` MUST set `needs_reply` to true on a `context_request`.
 
-Helpers MUST NOT message each other. They MUST NOT start a thread, except the context request and the nudge above.
+Helpers MUST NOT message each other. They MUST NOT start a thread, except the context request, the nudge, and the ping above.
 
 Only the driver writes files in the project folder. Helpers send patches or drafts as attachments. The driver decides what to apply.
 

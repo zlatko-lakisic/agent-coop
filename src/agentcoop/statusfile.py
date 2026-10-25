@@ -82,6 +82,11 @@ def render_status(board: Path, now: datetime | None = None) -> str:
         from agentcoop.grades import status_lines as grade_status_lines
 
         lines.extend(grade_status_lines(board, name))
+        from agentcoop.ping import not_answering_lines
+        from agentcoop.tasks import recent_event_lines
+
+        lines.extend(not_answering_lines(board, name))
+        lines.extend(recent_event_lines(board, name, now=moment))
         lines.append("Progress: " + progress_headline(board, name))
         from agentcoop.progress import task_lines
 

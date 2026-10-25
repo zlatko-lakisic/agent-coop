@@ -144,6 +144,10 @@ def tick(board: Path) -> int:
 
         process_board_requests(board)
         sync_board_outboxes(board)
+        from agentcoop.ping import post_due_heartbeats
+
+        for project_name in load_projects(board).get("projects") or {}:
+            post_due_heartbeats(board, project_name)
         from agentcoop.share import prune_due
 
         prune_due(board)

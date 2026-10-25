@@ -154,6 +154,7 @@ def build_parser() -> argparse.ArgumentParser:
     send_cmd.add_argument("--alt-of", action="append", dest="alt_of", default=[])
     send_cmd.add_argument("--over-limit", action="store_true")
     send_cmd.add_argument("--needs-reply", action="store_true")
+    send_cmd.add_argument("--about", default="", help="Message id this ping is about")
     send_cmd.add_argument("--allow-secret", action="store_true")
     send_cmd.set_defaults(func=cmd_send)
 
@@ -494,6 +495,40 @@ def build_parser() -> argparse.ArgumentParser:
     grade_cmd.add_argument("--remove", action="store_true")
     grade_cmd.set_defaults(func=cmd_grade)
 
+    heartbeat_cmd = sub.add_parser("heartbeat", help="Answer a ping")
+    _add_as(heartbeat_cmd)
+    _add_project(heartbeat_cmd)
+    heartbeat_cmd.add_argument("--re", dest="re_id", required=True)
+    heartbeat_cmd.add_argument("--status", required=True)
+    heartbeat_cmd.add_argument("--on", default="")
+    heartbeat_cmd.add_argument("--percent", type=int, default=None)
+    heartbeat_cmd.add_argument("--step", default="")
+    heartbeat_cmd.add_argument("--next", dest="next_text", default="")
+    heartbeat_cmd.add_argument("--eta", dest="eta_minutes", type=int, default=None)
+    heartbeat_cmd.set_defaults(func=cmd_heartbeat)
+
+    decline_cmd = sub.add_parser("decline", help="Decline a request")
+    _add_as(decline_cmd)
+    _add_project(decline_cmd)
+    decline_cmd.add_argument("message", help="Request message id")
+    decline_cmd.add_argument("--reason", required=True)
+    decline_cmd.set_defaults(func=cmd_decline)
+
+    cancel_cmd = sub.add_parser("cancel", help="Cancel a request you sent")
+    _add_as(cancel_cmd)
+    _add_project(cancel_cmd)
+    cancel_cmd.add_argument("message", help="Request message id")
+    cancel_cmd.add_argument("--reason", default="")
+    cancel_cmd.set_defaults(func=cmd_cancel)
+
+    move_cmd = sub.add_parser("move", help="Move a request to another helper")
+    _add_as(move_cmd)
+    _add_project(move_cmd)
+    move_cmd.add_argument("message", help="Request message id")
+    move_cmd.add_argument("--to", required=True)
+    move_cmd.add_argument("--reason", default="")
+    move_cmd.set_defaults(func=cmd_move)
+
     skill_cmd = sub.add_parser("skill", help="Export a helper skill zip")
     skill_sub = skill_cmd.add_subparsers(dest="skill_cmd", required=True)
     skill_export = skill_sub.add_parser("export", help="Write a Claude desktop skill zip")
@@ -749,10 +784,18 @@ def cmd_send(args: argparse.Namespace) -> int:
     body = _read_body(args)
     subject = args.subject
     if not subject:
-        if args.type == "nudge":
+        if args.type in ("nudge", "ping"):
             subject = "Attention"
         else:
             raise CoopError("Add a subject with --subject.", code=2)
+    if len(recipients) > 3:
+        raise CoopError("A second opinion can go to at most 3 helpers.")
+    group = ""
+    if len(recipients) > 1:
+        import secrets
+
+        group = "g" + secrets.token_hex(4)
+        body = body + "\n\nOthers were asked the same question. Answer on your own."
     count = len(attachments)
     describes = _aligned("--describe", list(args.describe or []), count)
     kinds = _aligned("--kind", list(args.kind or []), count)
@@ -777,6 +820,8 @@ def cmd_send(args: argparse.Namespace) -> int:
             media_types=media_types,
             alt_ofs=alt_ofs,
             over_limit=bool(args.over_limit),
+            group=group or None,
+            about=getattr(args, "about", None) or None,
         )
         ids.append(mid)
         infos = _sent_files(board, project, agent, mid)
@@ -1761,6 +1806,72 @@ def _profile_cost(text: str | None) -> str | None:
     from agentcoop.profiles import parse_cost
 
     return parse_cost(text)
+
+
+def cmd_heartbeat(args: argparse.Namespace) -> int:
+    """Answer a ping with what you are doing."""
+    from agentcoop.core import load_message, send
+    from agentcoop.paths import inbox_msgs
+
+    agent = _agent(args)
+    board = _board()
+    project = _project(args, agent)
+    status = str(args.status or "").strip().lower()
+    if status not in ("working", "idle", "blocked", "waiting"):
+        raise CoopError("Status must be working, idle, blocked, or waiting.", code=2)
+    if not args.next_text:
+        raise CoopError("Say what is next in one sentence. Add --next.", code=2)
+    ping = load_message(inbox_msgs(board, project, agent) / (args.re_id + ".json"))
+    if ping is None or ping.type not in ("ping", "nudge"):
+        raise CoopError("A heartbeat answers a ping. " + args.re_id + " is not one.")
+    mid = send(
+        board,
+        project=project,
+        sender=agent,
+        recipient=ping.sender,
+        subject="Heartbeat",
+        body=args.next_text,
+        type="heartbeat",
+        re=args.re_id,
+        status=status,
+        on=args.on or None,
+        percent=args.percent,
+        step=args.step or None,
+        next_text=args.next_text,
+        eta_minutes=args.eta_minutes,
+    )
+    print(mid)
+    return 0
+
+
+def cmd_decline(args: argparse.Namespace) -> int:
+    """Decline one request."""
+    from agentcoop.tasks import decline_request
+
+    agent = _agent(args)
+    project = _project(args, agent)
+    print(decline_request(_board(), project, agent, args.message, args.reason))
+    return 0
+
+
+def cmd_cancel(args: argparse.Namespace) -> int:
+    """Cancel one request."""
+    from agentcoop.tasks import cancel_request
+
+    agent = _agent(args)
+    project = _project(args, agent)
+    print(cancel_request(_board(), project, agent, args.message, args.reason))
+    return 0
+
+
+def cmd_move(args: argparse.Namespace) -> int:
+    """Move one request to another helper."""
+    from agentcoop.tasks import move_request
+
+    agent = _agent(args)
+    project = _project(args, agent)
+    print(move_request(_board(), project, agent, args.message, args.to, args.reason))
+    return 0
 
 
 def cmd_helpers(args: argparse.Namespace) -> int:

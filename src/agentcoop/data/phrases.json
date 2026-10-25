@@ -142,6 +142,34 @@
           "in": ["skill", "rule", "agents", "gemini", "board"]
         },
         {
+          "say": "How are my helpers doing?",
+          "does": "Show who is watching, their grade or new, and open requests.",
+          "who": "The person, in the driver's chat.",
+          "added": "0.2.8",
+          "in": ["skill", "rule", "agents", "gemini", "board"]
+        },
+        {
+          "say": "Ask <helper> if it's still there",
+          "does": "Send that helper a ping. A ping is answered with a heartbeat before other work.",
+          "who": "The person, in an agent's chat.",
+          "added": "0.2.8",
+          "in": ["skill", "rule", "agents", "gemini", "board"]
+        },
+        {
+          "say": "Move that question to <helper>",
+          "does": "Cancel the request and send the same request, with the same files, to that helper.",
+          "who": "The person, in the driver's chat.",
+          "added": "0.2.8",
+          "in": ["skill", "rule", "agents", "gemini", "board"]
+        },
+        {
+          "say": "Get a second opinion from <helper>",
+          "does": "Ask up to 3 helpers the same question. Each answers on its own. Not a habit.",
+          "who": "The person, in the driver's chat.",
+          "added": "0.2.8",
+          "in": ["skill", "rule", "agents", "gemini", "board"]
+        },
+        {
           "say": "Remove the grade on <message id>",
           "does": "Move that grade out of the helper's grades. You type the message id to allow it.",
           "who": "The person, in an agent's chat.",

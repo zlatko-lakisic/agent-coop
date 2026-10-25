@@ -568,20 +568,33 @@ def wait_for_reply(
             helper = str(name)
             break
     from agentcoop.core import iter_project_messages
+    from agentcoop.tasks import opinion_ids
 
+    waiting_ids = opinion_ids(board, project, message_id)
     seen: set[str] = set()
     already = {
         file_id(item)
         for item in iter_project_messages(board, project, agent)
-        if item.re == message_id
+        if item.re in waiting_ids
     }
     first_mtime: float | None = None
     while True:
         messages, _issues = new_messages(board, project, agent)
-        for item in messages:
-            if item.re == message_id and file_id(item) not in already:
+        ready = []
+        for wanted in waiting_ids:
+            match = None
+            for item in messages:
+                if item.re == wanted and file_id(item) not in already:
+                    match = item
+                    break
+            if match is None:
+                ready = []
+                break
+            ready.append(match)
+        if ready and len(ready) == len(waiting_ids):
+            for item in ready:
                 print(file_id(item) + "  " + item.subject)
-                return 0
+            return 0
         if helper:
             for path in progress_files_for(board, project, helper, message_id):
                 if path.name in seen:

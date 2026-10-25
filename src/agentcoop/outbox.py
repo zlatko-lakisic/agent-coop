@@ -205,8 +205,8 @@ def process_outbox(
             kind, mid = parse_outbox_name(claimed.name)
             if kind == "progress":
                 _post_progress(board, project, agent, driver, claimed, mid)
-            elif kind == "nudge":
-                _post_nudge(board, project, agent, driver, claimed, now)
+            elif kind in ("nudge", "ping"):
+                _post_nudge(board, project, agent, driver, claimed, now, msg_type=kind)
             else:
                 _post_claimed(board, project, agent, driver, claimed, mid, now)
         finally:
@@ -373,6 +373,8 @@ def parse_outbox_name(name: str) -> tuple[str, str]:
         return "progress", name[: -len(".progress.md")]
     if folded == "nudge.md" or (folded.startswith("nudge.") and folded.endswith(".md")):
         return "nudge", ""
+    if folded == "ping.md" or (folded.startswith("ping.") and folded.endswith(".md")):
+        return "ping", ""
     stem = name[: -len(".md")] if folded.endswith(".md") else name
     return "answer", stem.split(".", 1)[0]
 
@@ -551,6 +553,56 @@ def _post_claimed(
         if saved is not None:
             _write_receipt(saved, posted + ".json", driver, now)
         return
+    if first.upper().startswith("DECLINE:"):
+        reason = text.split(":", 1)[1].strip() if ":" in text else ""
+        try:
+            posted = send(
+                board,
+                project=project,
+                sender=agent,
+                recipient=driver,
+                subject="Declined",
+                body=reason or "Declined.",
+                type="decline",
+                re=mid,
+                now=now,
+            )
+        except CoopError as exc:
+            _reject(board, project, agent, path, str(exc))
+            return
+        mark_done(board, project, agent, [mid])
+        saved = _finish(path, outbox_sent_dir(board, project, agent))
+        if saved is not None:
+            _write_receipt(saved, posted + ".json", driver, now)
+        return
+    if original.type in ("ping", "nudge") and first.lower().startswith("status:"):
+        fields = _heartbeat_fields(text)
+        try:
+            posted = send(
+                board,
+                project=project,
+                sender=agent,
+                recipient=driver,
+                subject="Heartbeat",
+                body=fields.get("next") or fields.get("body") or "Working.",
+                type="heartbeat",
+                re=mid,
+                status=fields.get("status") or "working",
+                on=fields.get("on") or None,
+                percent=fields.get("percent"),
+                step=fields.get("step") or None,
+                next_text=fields.get("next") or None,
+                eta_minutes=fields.get("eta_minutes"),
+                now=now,
+            )
+        except CoopError as exc:
+            _reject(board, project, agent, path, str(exc))
+            return
+        mark_done(board, project, agent, [mid])
+        saved = _finish(path, outbox_sent_dir(board, project, agent))
+        if saved is not None:
+            _write_receipt(saved, posted + ".json", driver, now)
+        return
     from agentcoop.runner import answer_body_and_attachments
 
     body, attachments = answer_body_and_attachments(
@@ -614,6 +666,32 @@ def _post_claimed(
         _write_receipt(saved, posted + ".json", original.sender, now)
 
 
+def _heartbeat_fields(text: str) -> dict:
+    """Read the first lines of a desktop heartbeat file."""
+    fields: dict = {}
+    for line in text.splitlines():
+        if ":" not in line:
+            break
+        key, value = line.split(":", 1)
+        name = key.strip().lower().replace(" ", "_")
+        if name not in ("status", "on", "percent", "step", "next", "eta_minutes"):
+            break
+        fields[name] = value.strip()
+    if "percent" in fields:
+        try:
+            fields["percent"] = int(fields["percent"])
+        except ValueError:
+            fields["percent"] = None
+    if "eta_minutes" in fields:
+        try:
+            fields["eta_minutes"] = int(fields["eta_minutes"])
+        except ValueError:
+            fields["eta_minutes"] = None
+    status = str(fields.get("status") or "working").lower()
+    fields["status"] = status if status in ("working", "idle", "blocked", "waiting") else "working"
+    return fields
+
+
 def _post_nudge(
     board: Path,
     project: str,
@@ -621,6 +699,7 @@ def _post_nudge(
     driver: str,
     path: Path,
     now: datetime | None,
+    msg_type: str = "nudge",
 ) -> None:
     """Post a helper nudge. The file text is the body."""
     try:
@@ -645,7 +724,7 @@ def _post_nudge(
             recipient=driver,
             subject="Attention",
             body=text,
-            type="nudge",
+            type=msg_type,
             now=now,
         )
     except CoopError as exc:
