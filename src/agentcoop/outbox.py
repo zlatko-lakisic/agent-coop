@@ -191,7 +191,7 @@ def process_outbox(
     box = outbox_dir(board, project, agent)
     processing = outbox_processing_dir(board, project, agent)
     candidates = _markdown_files(processing) + _markdown_files(box)
-    candidates.sort(key=lambda item: (0 if item.name.endswith(".progress.md") else 1, item.name))
+    candidates.sort(key=_outbox_order)
     for path in candidates:
         if path.parent.resolve() == box.resolve() and _is_young(path, now):
             continue
@@ -346,6 +346,16 @@ def first_rejected_reason(board: Path, project: str, agent: str) -> str | None:
 
 
 STALE_SECONDS = 10 * 60
+
+
+def _outbox_order(path: Path) -> tuple:
+    """Progress first, then the time the file was written, then the name."""
+    try:
+        mtime = path.stat().st_mtime
+    except OSError:
+        mtime = 0
+    progress = 0 if path.name.casefold().endswith(".progress.md") else 1
+    return (progress, mtime, path.name)
 
 
 def parse_outbox_name(name: str) -> tuple[str, str]:
@@ -839,8 +849,16 @@ def _reserve(folder: Path, name: str, skip: set[str] | None = None) -> tuple[Pat
             if (candidate + ".reserve").casefold() in taken:
                 continue
             reserve = folder / (candidate + ".reserve")
-            if _create_excl(reserve):
-                return folder / candidate, reserve
+            dest = folder / candidate
+            if not _create_excl(reserve):
+                continue
+            if dest.exists():
+                try:
+                    reserve.unlink()
+                except OSError:
+                    pass
+                continue
+            return dest, reserve
     raise CoopError("Could not pick a free file name in " + str(folder) + ".")
 
 

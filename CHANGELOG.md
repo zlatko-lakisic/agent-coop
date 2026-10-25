@@ -10,6 +10,8 @@
 - The Cursor rule tells the driver to start `cursor-loop` again when a turn ends, and what exit 4 and exit 5 mean. A non-zero exit is not the task finishing.
 - Scheduled Cursor runs allow `agentcoop.exe`, `agentcoopw.exe`, and `agentcoop.cmd` as well as `agentcoop`. Connecting Cursor writes `.cursor/permissions.json` with those names.
 - A test harness under `scripts/sim/` plays a helper and a fake driver without Cursor.
+- Messages sent in the same second stay in the order they were sent. Each message may include `seq`. Older readers ignore it.
+- Sharing a file that is already on the board keeps that message's own name, description, and kind. The stored bytes are still the first copy.
 
 ## 0.2.7 - 2026-10-23
 

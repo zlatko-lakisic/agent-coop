@@ -60,10 +60,11 @@ class Message:
     needs_reply: bool
     path: Path | None = None
     attachment_info: list[dict] = field(default_factory=list)
+    seq: int | None = None
 
     def to_dict(self) -> dict:
         """Return the on-disk JSON object."""
-        return {
+        payload = {
             "v": self.v,
             "id": self.id,
             "ts": self.ts,
@@ -79,6 +80,8 @@ class Message:
         }
         if self.attachment_info:
             payload["attachment_info"] = list(self.attachment_info)
+        if self.seq is not None:
+            payload["seq"] = self.seq
         return payload
 
 
@@ -139,6 +142,41 @@ def utc_now(now: datetime | None = None) -> datetime:
 def format_ts(now: datetime) -> str:
     """Format a UTC timestamp the way message files store it."""
     return utc_now(now).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _seq_value(value: object) -> int | None:
+    if isinstance(value, bool) or not isinstance(value, int):
+        return None
+    if value < 1:
+        return None
+    return value
+
+
+def message_sort_key(message: Message) -> tuple:
+    """Order by time, then send sequence, then id.
+
+    A message with no seq is an older file. It stays in id order within that second.
+    """
+    if message.seq is None:
+        return (message.ts, 0, 0, message.id)
+    return (message.ts, 1, message.seq, message.id)
+
+
+def next_message_seq(board: Path) -> int:
+    """Return the next send sequence number for this board."""
+    from agentcoop.projects import atomic_write_bytes, board_lock
+
+    path = board / ".state" / "message.seq"
+    with board_lock(board):
+        current = 0
+        if path.is_file():
+            try:
+                current = int(path.read_text(encoding="ascii").strip() or "0")
+            except ValueError:
+                current = 0
+        nxt = current + 1
+        atomic_write_bytes(path, (str(nxt) + "\n").encode("ascii"))
+        return nxt
 
 
 def make_id(sender: str, now: datetime | None = None) -> str:
@@ -206,6 +244,7 @@ def _message_from_dict(data: dict, path: Path | None) -> Message:
         attachment_info=[item for item in (data.get("attachment_info") or []) if isinstance(item, dict)]
         if isinstance(data.get("attachment_info"), list)
         else [],
+        seq=_seq_value(data.get("seq")),
     )
 
 
@@ -268,6 +307,7 @@ def new_messages(board: Path, project: str, agent: str, now: float | None = None
             issues.append(issue)
         elif message is not None:
             messages.append(message)
+    messages.sort(key=message_sort_key)
     return messages, issues
 
 
@@ -609,6 +649,7 @@ def send(
             "v": 1,
             "id": mid,
             "ts": format_ts(moment),
+            "seq": next_message_seq(board),
             "project": project,
             "sender": sender,
             "recipient": recipient,
@@ -711,8 +752,8 @@ def check_inbox(
                 else 1
                 if item.message.type == "context_request" and item.violation is None
                 else 2,
-                item.message.id,
             )
+            + message_sort_key(item.message)
         )
     return InboxReport(
         project=project,
@@ -780,7 +821,7 @@ def waiting(board: Path, project: str, agent: str) -> list[Message]:
             seen.add(file_id(message))
             if file_id(message) not in replies:
                 pending.append(message)
-    pending.sort(key=lambda item: item.id)
+    pending.sort(key=message_sort_key)
     return pending
 
 
@@ -846,7 +887,7 @@ def log_messages(board: Path, project: str) -> list[Message]:
                 message = load_message(path)
                 if message is not None and file_id(message) not in found:
                     found[file_id(message)] = message
-    return sorted(found.values(), key=lambda item: (item.ts, item.id))
+    return sorted(found.values(), key=message_sort_key)
 
 
 def _version_notice(report: InboxReport) -> str:
