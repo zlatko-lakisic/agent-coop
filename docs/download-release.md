@@ -2,6 +2,8 @@
 
 Use this page when you download Agent Co-op by hand. [agent-setup.md](agent-setup.md) and [agent-update.md](agent-update.md) both send you here for the file list and the hash check.
 
+An install always uses one of these published files. Check the hash before you run it. Never clone, build, or run from source to install.
+
 ## Which file
 
 | Computer | File |

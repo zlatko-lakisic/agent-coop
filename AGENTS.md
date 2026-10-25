@@ -9,3 +9,9 @@ Every change must work on Windows, macOS, and Linux. Test on all three in CI, an
 A tag release must point at a commit that is on main. On the GitHub release page, the target is main.
 
 Pull request checklist includes: Works on Windows, macOS, and Linux.
+
+## From a checkout
+
+From a checkout, run commands as `PYTHONPATH=src python3 -m agentcoop`.
+
+Use that only when you are changing this repo. Installing Agent Co-op uses a published release file and the hash check. Never clone, build, or run from source to install.

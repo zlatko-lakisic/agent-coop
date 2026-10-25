@@ -10,7 +10,7 @@ The Code side of the Claude desktop app is Claude Code, not this helper.
 
 ## Setup from chat
 
-In the Claude desktop app, say: Install Agent Co-op from github.com/zlatko-lakisic/agent-coop.
+In the Claude desktop app, the person names the folder. On macOS and Linux: Install Agent Co-op from github.com/zlatko-lakisic/agent-coop and connect my ~/.agent_board/projects folder. On Windows: Install Agent Co-op from github.com/zlatko-lakisic/agent-coop and connect my %USERPROFILE%\.agent_board\projects folder. If they used only "Install Agent Co-op from github.com/zlatko-lakisic/agent-coop", ask them to reply. On macOS and Linux: Yes, request access to ~/.agent_board/projects. On Windows: Yes, request access to %USERPROFILE%\.agent_board\projects. Do not request the folder until their own message names it.
 
 Claude follows [install-claude-desktop.md](../install-claude-desktop.md). Agent Co-op must already be on the computer. The first install is done by an agent that can run commands, such as Cursor.
 

@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- An install uses a published release and the hash check. A checkout is for contributors. A board with `projects.json` or `agents.json` is already installed, even with no `bin/VERSION`. Check again right before installing, and connect yourself if another agent finished first.
+- The Claude desktop install sentence names the projects folder, so the app can request access. A short sentence asks the person to reply with the path.
+
 ## 0.2.8 - 2026-10-25
 
 - The Cursor stop hook waits `cursor_hook_timeout_seconds` (default 600, longest 3600). If nothing arrives, it sends only `End your turn.` so the hook runs again. With the default, an idle chat costs about 6 turns an hour.

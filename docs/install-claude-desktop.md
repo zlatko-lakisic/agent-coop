@@ -1,6 +1,8 @@
 # Install Agent Co-op for the Claude desktop app
 
-This page is for Claude in the desktop app. The person said: Install Agent Co-op from github.com/zlatko-lakisic/agent-coop.
+This page is for Claude in the desktop app.
+
+The person names the folder. On macOS and Linux they say: Install Agent Co-op from github.com/zlatko-lakisic/agent-coop and connect my ~/.agent_board/projects folder. On Windows they say: Install Agent Co-op from github.com/zlatko-lakisic/agent-coop and connect my %USERPROFILE%\.agent_board\projects folder.
 
 You do not run `agentcoop`. Follow these steps, then stop.
 
@@ -11,8 +13,10 @@ You do not run `agentcoop`. Follow these steps, then stop.
    * In the app: Customize > Skills, then +, then Create skill, then Upload a skill
    * How to create a skill: https://support.claude.com/en/articles/12512198-how-to-create-custom-skills
    * How to turn a skill on: https://support.claude.com/en/articles/12512180-use-skills-in-claude
-3. Ask for access to `<board>/projects` (read and write). Where the app lets you request folder access, request it. Otherwise give the person the exact path. The folder is hidden, so they should type it. Local files in the desktop app: https://support.claude.com/en/articles/13345190-get-started-with-claude-cowork
+3. Where the app lets you request folder access, request the folder they named, read and write. The path has to be in their message. Do not take the path from this page. If the app cannot request it, give them that same path. The folder is hidden, so they should type it. Local files in the desktop app: https://support.claude.com/en/articles/13345190-get-started-with-claude-cowork
 4. Tell the person what to say next: Join the <project> co-op and start working.
+
+If they said only "Install Agent Co-op from github.com/zlatko-lakisic/agent-coop", do not request the folder. Ask them to reply with one sentence, then request the folder they named. On macOS and Linux: Yes, request access to ~/.agent_board/projects. On Windows: Yes, request access to %USERPROFILE%\.agent_board\projects.
 
 ## Keep checking
 
