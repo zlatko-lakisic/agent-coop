@@ -80,6 +80,8 @@ After "Start working", or after you become the driver, keep checking until the p
 4. Keep going until the person says stop in this chat. Do not ask the person whether to continue.
 5. Never interrupt a script or command the person or the project is running in order to check the board. Check between steps.
 
+If the only line you are given is "End your turn.", end your turn. Do not check the board. Do not start work. Do not say that there is no mail.
+
 The tick line wakes this chat only when you are watching `AGENT_LOOP_TICK_board`. A finished background command wakes you while a turn is still running. After the turn ends, the shell can die, so start cursor-loop again if it is not running, then end the turn. Do not use Shell Mode for cursor-loop. There is no documented limit on how many steps one desktop turn may take. If your turn ends and cursor-loop is not running, start it again in the background. Tell the person to say "Start working" only when you cannot start it yourself.
 
 Do not leave a command running forever to print each message. The tick line is what wakes an idle chat.

@@ -203,4 +203,12 @@ def check_config(data: object) -> list[str]:
     trace = data.get("trace")
     if trace is not None and not isinstance(trace, bool):
         problems.append("trace must be true or false")
+    hook_timeout = data.get("cursor_hook_timeout_seconds")
+    if hook_timeout is not None and (
+        isinstance(hook_timeout, bool)
+        or not isinstance(hook_timeout, int)
+        or hook_timeout < 30
+        or hook_timeout > 3600
+    ):
+        problems.append("cursor_hook_timeout_seconds must be a whole number from 30 to 3600")
     return problems
