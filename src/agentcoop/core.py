@@ -919,6 +919,10 @@ def render_check(report: InboxReport, *, summary: bool = False) -> str:
         helper_line = ", ".join(helper_bits) if helper_bits else "(none)"
         lines.append('Agent Co-op: you are the driver for "' + report.project + '".')
         lines.append("Helpers: " + helper_line + ".")
+        if report.board_path:
+            from agentcoop.approvals import header_lines
+
+            lines.extend(header_lines(Path(report.board_path), report.project))
         for item in visible:
             if item.violation or item.message.type != "nudge":
                 continue

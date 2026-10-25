@@ -56,6 +56,12 @@ def render_status(board: Path, now: datetime | None = None) -> str:
     else:
         last = "Last round: none yet."
     lines = ["# Status", ""]
+    from agentcoop.approvals import status_waiting_lines
+
+    waiting = status_waiting_lines(board)
+    if waiting:
+        lines.extend(waiting)
+        lines.append("")
     try:
         from agentcoop.updatecheck import status_lines
 

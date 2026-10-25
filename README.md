@@ -288,7 +288,7 @@ The check to require for `main` is `Test result`. Do not require a matrix job. W
 
 ## Contributing
 
-See the [contributing](https://github.com/zlatko-lakisic/agent-coop/wiki/Contributing) page.
+See the [contributing](https://github.com/zlatko-lakisic/agent-coop/wiki/Contributing) page. The stop-investigation harness is in [docs/debug/harness.md](docs/debug/harness.md).
 
 Issues and pull requests are welcome. If you get a new kind of agent working, add a note to the tool page under `docs/tools/` and say what you verified.
 

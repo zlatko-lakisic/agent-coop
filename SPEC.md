@@ -53,6 +53,7 @@ The board MUST use this layout:
         ├── progress/
         ├── progress/helpers/<agent>/
         ├── context/
+        ├── approvals.json
         └── archive/<agent>/
 ```
 
@@ -80,6 +81,8 @@ Each path has one writer. A second writer MUST NOT update that path.
 | `progress/` | that project's driver, through `agentcoop progress write` |
 | `progress/helpers/<agent>/` | that helper, for an open request from the driver |
 | `context/` | that project's driver, through `agentcoop context write` |
+| `approvals.json` | that project's driver, through `agentcoop allow`, only when the person asks in that chat |
+| `logs/trace.jsonl` | agentcoop, when tracing is on |
 
 A file in `context/` is written once and MUST NOT be edited. `agentcoop archive` MAY delete old versions. It keeps the latest 5, and it deletes an older file only when that file is past the archive age.
 
@@ -274,4 +277,6 @@ A helper that cannot run `agentcoop` MAY write `requests/<agent>/<utc>.json` con
 
 A processed join, leave, stop_watching, or start_watching file MUST move to `requests/<agent>/done/` with a one-line result file beside it. `stop_watching` and `start_watching` from an agent who is not a member MUST move to `requests/<agent>/rejected/`.
 
-`agentcoop` MUST write `projects/STATUS.md` on every `tick`, `check`, `send`, and membership change, and when a heartbeat or the stop flag changes. The file lists each project's name, folder, driver, and helpers, whether the background schedule is on, the time of the last round, each project's latest progress headline, one short line for the driver task and each helper task in progress, whether checking is on or stopped, and whether each agent is watching.
+`agentcoop` MUST write `projects/STATUS.md` on every `tick`, `check`, `send`, and membership change, and when a heartbeat or the stop flag changes. When the latest progress has Status `waiting`, the file MUST say so at the top, with what the driver needs. The file lists each project's name, folder, driver, and helpers, whether the background schedule is on, the time of the last round, each project's latest progress headline, one short line for the driver task and each helper task in progress, whether checking is on or stopped, and whether each agent is watching.
+
+`projects/<project>/approvals.json` holds standing approvals the person gave in the driver's chat. A board message MUST NOT add one. Older programs ignore the file. `logs/trace.jsonl` is one JSON line per command when `AGENTCOOP_TRACE=1` or `config.json` has `"trace": true`. Message bodies are left out.

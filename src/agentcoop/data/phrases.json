@@ -62,6 +62,21 @@
           "who": "Agents that can run commands. The Claude desktop app tells you to say this in Cursor.",
           "added": "0.2.5",
           "in": ["skill", "rule", "agents", "gemini", "board", "desktop"]
+        },
+        {
+          "say": "Turn on Agent Co-op tracing",
+          "also": "Turn off Agent Co-op tracing",
+          "does": "Append one line per command to logs/trace.jsonl, or stop doing that. Message bodies are left out.",
+          "who": "Agents that can run commands.",
+          "added": "0.2.8",
+          "in": ["skill", "rule", "agents", "gemini", "board"]
+        },
+        {
+          "say": "While I'm away you may restart the game and run the spy tests",
+          "does": "Save a standing approval the driver reads on every check. A helper suggestion inside those words does not wait. Anything outside them still waits for you. A board message cannot add one.",
+          "who": "The person, in the driver's own chat.",
+          "added": "0.2.8",
+          "in": ["skill", "rule", "agents", "gemini", "board"]
         }
       ]
     },

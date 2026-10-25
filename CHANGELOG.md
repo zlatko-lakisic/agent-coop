@@ -1,6 +1,14 @@
 # Changelog
 
-## Unreleased
+## Unreleased (planned 0.2.8)
+
+- `AGENTCOOP_TRACE=1` or `trace: true` appends one JSON line per command to `logs/trace.jsonl`. Message bodies are left out. Say "Turn on Agent Co-op tracing".
+- The person can say what the driver may do while they are away. That standing approval shows on the driver's check. A helper suggestion outside those words still waits. A board message cannot add one.
+- When progress says `Status: waiting`, STATUS.md says so at the top.
+- `cursor-loop` keeps waking a task whose progress names the work in Now even when Status is missing. `done` and `waiting` do not get those wake-ups.
+- The Cursor rule tells the driver to start `cursor-loop` again when a turn ends, and what exit 4 and exit 5 mean. A non-zero exit is not the task finishing.
+- Scheduled Cursor runs allow `agentcoop.exe`, `agentcoopw.exe`, and `agentcoop.cmd` as well as `agentcoop`. Connecting Cursor writes `.cursor/permissions.json` with those names.
+- A test harness under `scripts/sim/` plays a helper and a fake driver without Cursor.
 
 ## 0.2.7 - 2026-10-23
 
