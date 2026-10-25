@@ -477,6 +477,7 @@ def build_parser() -> argparse.ArgumentParser:
     helpers_cmd = sub.add_parser("helpers", help="Show what each helper is good at, and their grades")
     _add_as(helpers_cmd)
     _add_project(helpers_cmd)
+    helpers_cmd.add_argument("--for", dest="for_tag", default="", help="Rank helpers for this tag")
     helpers_cmd.set_defaults(func=cmd_helpers)
 
     grade_cmd = sub.add_parser("grade", help="Grade a helper answer")
@@ -1763,23 +1764,18 @@ def _profile_cost(text: str | None) -> str | None:
 
 
 def cmd_helpers(args: argparse.Namespace) -> int:
-    """List helpers with their profile and grade."""
-    from agentcoop.grades import display_summary, summarize_agent, summarize_project
-    from agentcoop.profiles import describe, profile_of
+    """List helpers ranked for a tag, with grade, availability, and cost."""
+    from agentcoop.choice import choice_lines
     from agentcoop.projects import load_projects
 
     actor = _actor_name(args) or None
     project = _project(args, actor)
     record = (load_projects(_board()).get("projects") or {}).get(project) or {}
-    helpers = record.get("helpers") or {}
-    if not helpers:
+    if not (record.get("helpers") or {}):
         print("This project has no helpers.")
         return 0
-    board = _board()
-    for name in sorted(helpers):
-        print(name + ": " + describe(profile_of(record, name)))
-        print("  grade: " + display_summary(summarize_project(board, project, name)))
-        print("  all projects: " + display_summary(summarize_agent(board, name)))
+    for line in choice_lines(_board(), project, args.for_tag or ""):
+        print(line)
     return 0
 
 

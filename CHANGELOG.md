@@ -14,6 +14,7 @@
 - Sharing a file that is already on the board keeps that message's own name, description, and kind. The stored bytes are still the first copy.
 - A helper can describe itself on join with tags, what it can do, and a cost. The person can change a profile, and changing another agent asks them to allow it.
 - The driver grades a helper's answer once. The grade is a file, not a setting. `agentcoop helpers` shows the average of the last 20. A helper sees only its own grades. Removing a grade asks the person to type the message id.
+- `agentcoop helpers` ranks helpers by grade, then whether they are watching, then cost. Fewer than 3 grades shows as new.
 
 ## 0.2.7 - 2026-10-23
 
