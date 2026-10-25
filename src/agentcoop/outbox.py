@@ -849,8 +849,16 @@ def _reserve(folder: Path, name: str, skip: set[str] | None = None) -> tuple[Pat
             if (candidate + ".reserve").casefold() in taken:
                 continue
             reserve = folder / (candidate + ".reserve")
-            if _create_excl(reserve):
-                return folder / candidate, reserve
+            dest = folder / candidate
+            if not _create_excl(reserve):
+                continue
+            if dest.exists():
+                try:
+                    reserve.unlink()
+                except OSError:
+                    pass
+                continue
+            return dest, reserve
     raise CoopError("Could not pick a free file name in " + str(folder) + ".")
 
 
