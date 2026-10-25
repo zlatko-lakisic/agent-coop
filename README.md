@@ -287,10 +287,12 @@ See the [contributing](https://github.com/zlatko-lakisic/agent-coop/wiki/Contrib
 
 Issues and pull requests are welcome. If you get a new kind of agent working, add a note to the tool page under `docs/tools/` and say what you verified.
 
-## Author
+## Authors
 
 Zlatko Lakisic
 
+Adna Zujo Lakisic
+
 ## License
 
-Apache License 2.0. See LICENSE. Copyright 2026 Zlatko Lakisic.
+Apache License 2.0. See LICENSE. Copyright 2026 Zlatko Lakisic and Adna Zujo Lakisic.
