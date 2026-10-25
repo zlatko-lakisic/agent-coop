@@ -752,8 +752,8 @@ def check_inbox(
                 else 1
                 if item.message.type == "context_request" and item.violation is None
                 else 2,
-                item.message.id,
             )
+            + message_sort_key(item.message)
         )
     return InboxReport(
         project=project,
@@ -821,7 +821,7 @@ def waiting(board: Path, project: str, agent: str) -> list[Message]:
             seen.add(file_id(message))
             if file_id(message) not in replies:
                 pending.append(message)
-    pending.sort(key=lambda item: item.id)
+    pending.sort(key=message_sort_key)
     return pending
 
 

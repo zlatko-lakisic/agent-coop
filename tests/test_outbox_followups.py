@@ -133,6 +133,55 @@ class FollowUpTests(unittest.TestCase):
                 ],
             )
 
+    def test_check_keeps_send_order_when_ids_sort_the_other_way(self) -> None:
+        with support.TempEnv() as env:
+            _ready(env)
+            asked = send(
+                env.board,
+                project="demo",
+                sender="cursor",
+                recipient="claude_code",
+                subject="Need help",
+                body="Please look.",
+                type="question",
+                needs_reply=True,
+            )
+            moment = datetime(2026, 10, 25, 12, 0, tzinfo=timezone.utc)
+            suffixes = iter(["ffff", "0000"])
+            with patch("agentcoop.core.secrets.token_hex", lambda _count: next(suffixes)):
+                send(
+                    env.board,
+                    project="demo",
+                    sender="claude_code",
+                    recipient="cursor",
+                    subject="One",
+                    body="original",
+                    type="answer",
+                    re=asked,
+                    now=moment,
+                )
+                send(
+                    env.board,
+                    project="demo",
+                    sender="claude_code",
+                    recipient="cursor",
+                    subject="Two",
+                    body="correction",
+                    type="answer",
+                    re=asked,
+                    now=moment,
+                )
+            text = render_check(check_inbox(env.board, "demo", "cursor"))
+            lines = [line for line in text.splitlines() if line.startswith("Read from")]
+            self.assertEqual(
+                lines,
+                [
+                    "Read from claude_code: One. original.",
+                    "Read from claude_code: Two. correction.",
+                ],
+            )
+            self.assertLess(text.index("_ffff"), text.index("_0000"))
+
     def test_exact_copy_is_not_posted_twice(self) -> None:
         with support.TempEnv() as env:
             _ready(env)
