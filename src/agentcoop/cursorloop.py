@@ -20,18 +20,27 @@ from agentcoop.watch import (
 )
 
 POLL_SECONDS = 2
-HOOK_TIMEOUT_SECONDS = 600
+HOOK_TIMEOUT_SECONDS = 3600
 HOOK_TIMEOUT_MIN_SECONDS = 30
 HOOK_TIMEOUT_MAX_SECONDS = 3600
 HOOK_RESERVE_SECONDS = 5
-REARM_MESSAGE = "End your turn."
+OLD_DEFAULT_HOOK_TIMEOUT = 600
+KEEP_AWAKE = (
+    "Agent Co-op keep-awake. If you are working on anything, ignore this and keep going. "
+    "Otherwise end your turn."
+)
+MAIL_TAIL_OLD = "Handle these, mark them done, then continue."
+MAIL_TAIL = (
+    "Handle these, mark them done, then continue what you were doing. "
+    "If there is nothing else, start cursor-loop again if it is not running and end your turn."
+)
 TICK_PREFIX = "AGENT_LOOP_TICK_board "
 
 
 def hook_timeout_seconds(board: Path) -> int:
-    """Return how long the stop hook may run. The default is 600 seconds.
+    """Return how long the stop hook may run. The default is 3600 seconds.
 
-    Cursor accepts any positive number and warns above 3600. A missing key uses 600.
+    Cursor accepts any positive number and warns above 3600. A missing key uses 3600.
     """
     try:
         raw = load_config(board).get("cursor_hook_timeout_seconds")
@@ -344,6 +353,7 @@ def run_cursor_loop(
         fresh = ids - announced
         if fresh and prompt:
             announced.update(ids)
+            _note_loop(board, agent, current)
             _tick(stream, prompt)
         else:
             status, now_line = _task_now(board, project)
@@ -351,6 +361,7 @@ def run_cursor_loop(
             due = last_keep is None or (current - last_keep).total_seconds() >= every * 60
             if _keep_task(status, now_line) and due:
                 last_keep = current
+                _note_loop(board, agent, current)
                 _tick(stream, "Check the Agent Co-op board and continue your current task: " + now_line)
         pause(POLL_SECONDS)
 
@@ -393,17 +404,20 @@ def cursor_stop_followup(
     status = str(payload.get("status") or "completed")
     if status != "completed":
         return {}
+    clock = now or (lambda: datetime.now(timezone.utc))
+    pause = sleep or time.sleep
+    if timeout_seconds is None:
+        timeout_seconds = hook_timeout_seconds(board)
+    started = _aware(clock())
+    generation = payload.get("generation_id")
+    if not isinstance(generation, str):
+        generation = ""
     projects = []
     for name, record in (load_projects(board).get("projects") or {}).items():
         if role_of(record, agent):
             projects.append(name)
     if not projects:
         return {}
-    clock = now or (lambda: datetime.now(timezone.utc))
-    pause = sleep or time.sleep
-    if timeout_seconds is None:
-        timeout_seconds = hook_timeout_seconds(board)
-    started = _aware(clock())
     active = [
         name
         for name in projects
@@ -415,23 +429,26 @@ def cursor_stop_followup(
         note_hook(board, name, agent, now=started)
     deadline = started + timedelta(seconds=max(0, timeout_seconds - reserve_seconds))
     while True:
+        if _hook_is_stale(board, agent, started, generation):
+            return {}
         current = _aware(clock())
         _sync_waiting(board, active, current)
+        if _hook_is_stale(board, agent, started, generation):
+            return {}
         chunks = []
         for name in active:
             prompt, _ids = _mail_prompt(board, name, agent)
             if prompt:
-                chunks.append(
-                    prompt.replace(
-                        "then continue.",
-                        "then start cursor-loop again if it is not running, and end your turn.",
-                    )
-                )
+                chunks.append(_hook_mail(prompt))
         if chunks:
+            if _hook_is_stale(board, agent, started, generation):
+                return {}
             return {"followup_message": "\n".join(chunks)}
         current = _aware(clock())
         if current >= deadline:
-            return {"followup_message": REARM_MESSAGE}
+            if _hook_is_stale(board, agent, started, generation):
+                return {}
+            return {"followup_message": KEEP_AWAKE}
         remaining = (deadline - current).total_seconds()
         pause(min(POLL_SECONDS, remaining) if remaining > 0 else 0)
 
@@ -442,20 +459,186 @@ def _aware(moment: datetime) -> datetime:
     return moment.astimezone(timezone.utc)
 
 
+def _note_loop(board: Path, agent: str, moment: datetime) -> None:
+    from agentcoop.activity import note_activity
+
+    note_activity(board, agent, "cursor-loop", now=moment)
+
+
+def _hook_is_stale(board: Path, agent: str, started: datetime, generation: str) -> bool:
+    from agentcoop.activity import turn_moved
+
+    return turn_moved(board, agent, started, generation)
+
+
+def _hook_mail(prompt: str) -> str:
+    if prompt.endswith(MAIL_TAIL_OLD):
+        return prompt[: -len(MAIL_TAIL_OLD)] + MAIL_TAIL
+    return prompt
+
+
+def migrate_saved_hook_timeout(board: Path) -> None:
+    """Move an untouched 600 second wait to 3600. A value the person set stays."""
+    from agentcoop.projects import mutate_config
+
+    try:
+        data = load_config(board)
+    except CoopError:
+        return
+    if data.get("cursor_hook_timeout_user_set") is True:
+        return
+    if data.get("cursor_hook_timeout_seconds") != OLD_DEFAULT_HOOK_TIMEOUT:
+        return
+
+    def change(config: dict) -> None:
+        if config.get("cursor_hook_timeout_user_set") is True:
+            return
+        if config.get("cursor_hook_timeout_seconds") == OLD_DEFAULT_HOOK_TIMEOUT:
+            config["cursor_hook_timeout_seconds"] = HOOK_TIMEOUT_SECONDS
+
+    mutate_config(board, change)
+
+
+def describe_hook_timeout(board: Path) -> str:
+    """Return the sentence for How often does Cursor end its turn?"""
+    seconds = hook_timeout_seconds(board)
+    if seconds % 60 == 0:
+        amount = str(seconds // 60) + " minutes"
+    else:
+        amount = str(seconds) + " seconds"
+    return "Cursor ends its turn after " + amount + " when the chat is idle. A busy chat is left alone."
+
+
+def set_hook_timeout_minutes(board: Path, minutes: int) -> str:
+    """Save the wake-up wait and mark it as chosen by the person."""
+    from agentcoop.projects import mutate_config
+
+    if isinstance(minutes, bool) or not isinstance(minutes, int) or minutes < 1 or minutes > 60:
+        raise CoopError("Wake-up wait must be a whole number of minutes from 1 to 60.", code=2)
+    seconds = minutes * 60
+
+    def change(config: dict) -> None:
+        config["cursor_hook_timeout_seconds"] = seconds
+        config["cursor_hook_timeout_user_set"] = True
+
+    mutate_config(board, change)
+    refresh_cursor_hook_files(board)
+    return (
+        "Cursor will wait "
+        + str(minutes)
+        + " minutes before the keep-awake. A busy chat is left alone."
+    )
+
+
+def refresh_cursor_hook_files(board: Path) -> None:
+    """Point installed Cursor hooks at the current wait and the prompt hook."""
+    import hashlib
+
+    from agentcoop.projects import load_projects, mutate_projects
+
+    timeout = hook_timeout_seconds(board)
+    try:
+        projects = load_projects(board).get("projects") or {}
+    except CoopError:
+        return
+    rewritten: list[tuple[str, Path, str]] = []
+    for name, record in projects.items():
+        if not isinstance(record, dict):
+            continue
+        raw = record.get("path")
+        if not isinstance(raw, str) or not raw:
+            continue
+        path = Path(raw) / ".cursor" / "hooks.json"
+        if not path.is_file():
+            continue
+        try:
+            loaded = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if not isinstance(loaded, dict) or not _patch_cursor_hooks(loaded, timeout):
+            continue
+        try:
+            path.write_text(json.dumps(loaded, indent=2) + "\n", encoding="utf-8")
+            digest = hashlib.sha256(path.read_bytes()).hexdigest()
+        except OSError:
+            continue
+        rewritten.append((name, path, digest))
+    if not rewritten:
+        return
+
+    def change(data: dict) -> None:
+        for name, path, digest in rewritten:
+            project = (data.get("projects") or {}).get(name)
+            if not isinstance(project, dict):
+                continue
+            for entry in project.get("installed") or []:
+                if isinstance(entry, dict) and Path(str(entry.get("path") or "")) == path:
+                    entry["sha256"] = digest
+
+    try:
+        mutate_projects(board, change)
+    except CoopError:
+        return
+
+
+def _patch_cursor_hooks(data: dict, timeout: int) -> bool:
+    hooks = data.get("hooks")
+    if not isinstance(hooks, dict):
+        return False
+    stop = hooks.get("stop")
+    if not isinstance(stop, list):
+        return False
+    prompts = hooks.get("beforeSubmitPrompt")
+    prompts_added = False
+    if not isinstance(prompts, list):
+        prompts = []
+        prompts_added = True
+    changed = False
+    additions: list[str] = []
+    for entry in stop:
+        if not isinstance(entry, dict):
+            continue
+        command = str(entry.get("command") or "")
+        needle = " hook cursor-stop --as "
+        if needle not in command:
+            continue
+        if entry.get("timeout") != timeout:
+            entry["timeout"] = timeout
+            changed = True
+        if "loop_limit" not in entry or entry.get("loop_limit") is not None:
+            entry["loop_limit"] = None
+            changed = True
+        additions.append(command.replace(needle, " hook cursor-prompt --as ", 1))
+    if not additions:
+        return False
+    if prompts_added:
+        hooks["beforeSubmitPrompt"] = prompts
+        changed = True
+    for prompt_command in additions:
+        if any(isinstance(item, dict) and item.get("command") == prompt_command for item in prompts):
+            continue
+        prompts.append({"command": prompt_command})
+        changed = True
+    return changed
+
+
 def cursor_hooks(board: Path, agent_name: str) -> dict:
     """Return the project hooks.json fragment for one Cursor agent."""
     from agentcoop.paths import agentcoop_command
 
-    command = agentcoop_command(board) + " hook cursor-stop --as " + agent_name
+    base = agentcoop_command(board)
+    stop = base + " hook cursor-stop --as " + agent_name
+    prompt = base + " hook cursor-prompt --as " + agent_name
     return {
         "version": 1,
         "hooks": {
+            "beforeSubmitPrompt": [{"command": prompt}],
             "stop": [
                 {
-                    "command": command,
+                    "command": stop,
                     "timeout": hook_timeout_seconds(board),
                     "loop_limit": None,
                 }
-            ]
+            ],
         },
     }

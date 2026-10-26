@@ -96,10 +96,13 @@ TOOLS: tuple[Tool, ...] = (
         status="untested",
         notes=(
             "Project rule, plus a project stop hook in .cursor/hooks.json. "
-            "The hook runs agentcoop hook cursor-stop. The default timeout is 600 seconds, "
-            "from cursor_hook_timeout_seconds, and 3600 is the longest Cursor accepts without a warning. "
-            "It waits until 5 seconds are left. If mail is waiting, it sends that mail. "
-            "If the wait ends with no mail, it sends only: End your turn. "
+            "The hook runs agentcoop hook cursor-stop. A beforeSubmitPrompt hook runs "
+            "agentcoop hook cursor-prompt and records the new prompt. "
+            "The default timeout is 3600 seconds, from cursor_hook_timeout_seconds, "
+            "and 3600 is the longest Cursor accepts without a warning. "
+            "It waits until 5 seconds are left. If this agent has done anything since the hook started, "
+            "it sends nothing. If mail is waiting and the chat is idle, it sends that mail and tells the driver to continue. "
+            "If the wait ends with no mail, it sends: Agent Co-op keep-awake. If you are working on anything, ignore this and keep going. Otherwise end your turn. "
             "loop_limit is unlimited so mail can keep waking the chat. "
             "sessionStart cannot start a command, so the rule starts cursor-loop. "
             "A tick wakes the chat only when the agent is watching AGENT_LOOP_TICK_board. "

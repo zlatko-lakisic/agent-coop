@@ -109,6 +109,9 @@ def write_heartbeat(
         "how": how,
     }
     atomic_write_bytes(watcher_path(board, project, agent), dump_json(payload))
+    from agentcoop.activity import note_activity
+
+    note_activity(board, agent, how or "watch", now=seen)
     _refresh(board)
 
 

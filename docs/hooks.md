@@ -22,7 +22,13 @@ Until that is confirmed, rely on the skill: the agent checks the board at the st
 
 ## Cursor
 
-Adding a Cursor member to a project merges a stop hook into `.cursor/hooks.json`. The command is `agentcoop hook cursor-stop --as <agent>`. The timeout is `cursor_hook_timeout_seconds` in config.json. A missing key means 600 seconds. The longest value is 3600. `loop_limit` is unlimited. The hook waits until 5 seconds are left. Mail sends a follow-up that names the mail. No mail sends only `End your turn.` so the hook can run again. That is about 6 turns an hour when nothing arrives and the driver ends at once.
+Adding a Cursor member to a project merges hooks into `.cursor/hooks.json`. The stop command is `agentcoop hook cursor-stop --as <agent>`. A beforeSubmitPrompt command, `agentcoop hook cursor-prompt --as <agent>`, records the time of each new prompt and exits. It does not block the prompt.
+
+The timeout is `cursor_hook_timeout_seconds` in config.json. A missing key means 3600 seconds (60 minutes). The longest value is 3600. On update, a saved 600 moves to 3600 unless `cursor_hook_timeout_user_set` is true. Say "Wake-up wait in Cursor: N minutes" to choose 1 to 60 minutes. That marks the value as yours. Say "How often does Cursor end its turn?" to see the wait.
+
+`loop_limit` is unlimited. The hook waits until 5 seconds are left. Cursor sends `conversation_id`, `generation_id`, and `loop_count` on stdin when it has them. `loop_count` is only the value at the start, so a waiting hook cannot see it change. `generation_id` changes on every user message. The hook also reads `.state/activity/<agent>.json`. That file is updated by every agentcoop command this agent runs, by cursor-loop heartbeats and ticks, by progress writes, and by the prompt hook. The stop hook command itself does not count. If any of that happened after the hook started, or a prompt stored a newer `generation_id`, the hook sends nothing and exits. The next turn's end starts a fresh hook.
+
+If the chat is idle and mail is waiting, the follow-up names the mail and says to handle it, mark it done, then continue. End the turn only when there is nothing else. If the wait ends with no mail, the follow-up is: Agent Co-op keep-awake. If you are working on anything, ignore this and keep going. Otherwise end your turn. An idle chat that ends immediately costs about 1 turn an hour.
 
 `sessionStart` cannot start a command. The Cursor rule starts `agentcoop cursor-loop`. That command prints `AGENT_LOOP_TICK_board` when mail arrives, or while a task is still working. The chat wakes only when it is watching that line.
 

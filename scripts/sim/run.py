@@ -24,7 +24,7 @@ if str(SIM) not in sys.path:
 
 from agentcoop.cli import main  # noqa: E402
 from agentcoop.core import new_messages  # noqa: E402
-from agentcoop.cursorloop import TICK_PREFIX, run_cursor_loop  # noqa: E402
+from agentcoop.cursorloop import KEEP_AWAKE, TICK_PREFIX, cursor_stop_followup, run_cursor_loop  # noqa: E402
 from agentcoop.progress import progress_dir  # noqa: E402
 from helper import load_scenario, run_timeline  # noqa: E402
 
@@ -84,6 +84,59 @@ def play(board: Path, scenario: dict, re_id: str) -> list[str]:
 def fake_driver(board: Path, scenario_id: str) -> dict:
     """Run the agentcoop side of one scenario and return a timeline report."""
     report: dict = {"scenario": scenario_id, "driver": "fake", "events": []}
+    if scenario_id == "s13":
+        from agentcoop.watch import write_heartbeat
+
+        activity = board / ".state" / "activity" / "cursor.json"
+        if activity.is_file():
+            activity.unlink()
+        clock = _Clock()
+        start = clock.now
+
+        def nap(seconds: float) -> None:
+            clock.advance(seconds)
+            if clock.now >= start + timedelta(seconds=2):
+                write_heartbeat(
+                    board,
+                    "demo",
+                    "cursor",
+                    since=clock.now,
+                    seen=clock.now,
+                    how="cursor-loop",
+                )
+
+        silent = cursor_stop_followup(
+            board,
+            "cursor",
+            json.dumps(
+                {
+                    "status": "completed",
+                    "generation_id": "gen-1",
+                    "conversation_id": "conv-1",
+                    "loop_count": 0,
+                }
+            ),
+            now=clock,
+            sleep=nap,
+            timeout_seconds=30,
+            reserve_seconds=5,
+        )
+        if activity.is_file():
+            activity.unlink()
+        idle_clock = _Clock()
+        idle = cursor_stop_followup(
+            board,
+            "cursor",
+            "{}",
+            now=idle_clock,
+            sleep=lambda seconds: idle_clock.advance(seconds),
+            timeout_seconds=6,
+            reserve_seconds=5,
+        )
+        report["silent"] = silent == {}
+        report["keep_awake"] = idle.get("followup_message") == KEEP_AWAKE
+        report["events"].append({"kind": "stale-hook", "silent": report["silent"]})
+        return report
     if scenario_id == "s12":
         folder = progress_dir(board, "demo")
         folder.mkdir(parents=True, exist_ok=True)

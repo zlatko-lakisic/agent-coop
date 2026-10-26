@@ -115,6 +115,9 @@ def apply_migrations(board: Path, target: int = BOARD_FORMAT) -> None:
             break
         current = nxt
     ensure_board_metadata(board)
+    from agentcoop.cursorloop import migrate_saved_hook_timeout
+
+    migrate_saved_hook_timeout(board)
 
 
 def assert_downgrade_allowed(board: Path, target: tuple[int, int, int]) -> None:

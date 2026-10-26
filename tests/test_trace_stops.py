@@ -226,6 +226,7 @@ class SimTests(unittest.TestCase):
                 ("s4", ("standing",)),
                 ("s12", ("ticked",)),
                 ("s10", ("exit",)),
+                ("s13", ("silent", "keep_awake")),
             ):
                 report = report_dir / (scenario + ".json")
                 result = subprocess.run(
@@ -261,6 +262,9 @@ class SimTests(unittest.TestCase):
             self.assertTrue(s12["ticked"])
             s10 = json.loads((report_dir / "s10.json").read_text(encoding="utf-8"))
             self.assertEqual(s10["exit"], 5)
+            s13 = json.loads((report_dir / "s13.json").read_text(encoding="utf-8"))
+            self.assertTrue(s13["silent"])
+            self.assertTrue(s13["keep_awake"])
 
 
 if __name__ == "__main__":

@@ -144,6 +144,20 @@
           "in": ["rule"]
         },
         {
+          "say": "Wake-up wait in Cursor: N minutes",
+          "does": "agentcoop wake-wait N. N is a whole number from 1 to 60. That is how long an idle Cursor chat waits before the keep-awake line. A busy chat is left alone. The default is 60.",
+          "who": "The person, in Cursor.",
+          "added": "0.2.9",
+          "in": ["rule"]
+        },
+        {
+          "say": "How often does Cursor end its turn?",
+          "does": "agentcoop wake-wait with no number. It prints the current wait and changes nothing.",
+          "who": "The person, in Cursor.",
+          "added": "0.2.9",
+          "in": ["rule"]
+        },
+        {
           "say": "Set claude_desktop's tags to reasoning and review",
           "does": "agentcoop profile claude_desktop --tags reasoning,review. claude_desktop is an example. Changing another agent asks you to allow it.",
           "who": "The person, in an agent's chat.",

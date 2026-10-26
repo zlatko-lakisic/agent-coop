@@ -153,6 +153,13 @@ def merge_hook_settings(existing: dict, addition: dict) -> dict:
         for entry in entries:
             command = _hook_command(entry)
             if command and command in known:
+                for item in current:
+                    if not isinstance(item, dict) or _hook_command(item) != command:
+                        continue
+                    if "timeout" in entry:
+                        item["timeout"] = entry["timeout"]
+                    if "loop_limit" in entry:
+                        item["loop_limit"] = entry["loop_limit"]
                 continue
             current.append(entry)
             if command:

@@ -284,6 +284,9 @@ def _finish_board(board: Path, new_version: str, old_version: str) -> None:
                 gitignore=True,
                 only_missing=True,
             )
+    from agentcoop.cursorloop import refresh_cursor_hook_files
+
+    refresh_cursor_hook_files(board)
     from agentcoop.rounds import refresh_schedule_command
 
     refresh_schedule_command(board)

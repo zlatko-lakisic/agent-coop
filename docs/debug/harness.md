@@ -13,8 +13,9 @@ python scripts/sim/run.py --scenario s3 --driver fake --board C:\temp\coop-board
 python scripts/sim/run.py --scenario s4 --driver fake --board C:\temp\coop-board --project C:\temp\coop-project --report C:\temp\s4.json
 python scripts/sim/run.py --scenario s12 --driver fake --board C:\temp\coop-board --project C:\temp\coop-project --report C:\temp\s12.json
 python scripts/sim/run.py --scenario s10 --driver fake --board C:\temp\coop-board --project C:\temp\coop-project --report C:\temp\s10.json
+python scripts/sim/run.py --scenario s13 --driver fake --board C:\temp\coop-board --project C:\temp\coop-project --report C:\temp\s13.json
 ```
 
-`s3` writes three answers in one second. `s4` writes a restart suggestion after a standing approval. `s12` ticks when Now is set and Status is missing. `s10` exits 5 after `bin/VERSION` changes.
+`s3` writes three answers in one second. `s4` writes a restart suggestion after a standing approval. `s12` ticks when Now is set and Status is missing. `s10` exits 5 after `bin/VERSION` changes. `s13` starts a stop hook, records a cursor-loop heartbeat during the wait, and checks that the hook sends nothing. A second wait with no activity sends the keep-awake line.
 
 A real Cursor run is manual. Save `agent --print --output-format stream-json` next to the board's `logs/trace.jsonl`. Say which run was the CLI and which was the app. See [cursor-stops.md](cursor-stops.md).
