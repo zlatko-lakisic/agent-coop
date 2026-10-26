@@ -222,4 +222,7 @@ def check_config(data: object) -> list[str]:
         or hook_timeout > 3600
     ):
         problems.append("cursor_hook_timeout_seconds must be a whole number from 30 to 3600")
+    chosen = data.get("cursor_hook_timeout_user_set")
+    if chosen is not None and not isinstance(chosen, bool):
+        problems.append("cursor_hook_timeout_user_set must be true or false")
     return problems

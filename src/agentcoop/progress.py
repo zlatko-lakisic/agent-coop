@@ -115,6 +115,9 @@ def write_progress(
         os.write(fd, payload.encode("utf-8"))
     finally:
         os.close(fd)
+    from agentcoop.activity import note_activity
+
+    note_activity(board, driver, "progress", now=moment)
     return name
 
 
@@ -532,6 +535,9 @@ def write_helper_progress(
         os.write(fd, payload.encode("utf-8"))
     finally:
         os.close(fd)
+    from agentcoop.activity import note_activity
+
+    note_activity(board, agent, "progress", now=when)
     return name
 
 

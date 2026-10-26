@@ -13,15 +13,22 @@ from pathlib import Path
 import support
 
 from agentcoop.cli import main
+from agentcoop.activity import load_activity, note_activity
 from agentcoop.cursorloop import (
+    KEEP_AWAKE,
+    MAIL_TAIL,
     TICK_PREFIX,
     chat_is_watching,
     cursor_stop_followup,
+    describe_hook_timeout,
     hook_fresh,
+    hook_timeout_seconds,
     idle_mode,
     leave_cursor_idle,
     maybe_notify,
+    migrate_saved_hook_timeout,
     notify_command,
+    refresh_cursor_hook_files,
     run_cursor_loop,
     status_idle_line,
 )
@@ -311,8 +318,8 @@ class HookTests(unittest.TestCase):
                 sleep=lambda seconds: clock.advance(seconds),
             )
             self.assertIn("Need a look", result["followup_message"])
-            self.assertIn("end your turn", result["followup_message"])
-            self.assertIn("start cursor-loop again", result["followup_message"])
+            self.assertIn(MAIL_TAIL, result["followup_message"])
+            self.assertNotIn("running, and end your turn", result["followup_message"])
             self.assertNotIn("no messages", result["followup_message"].lower())
             self.assertTrue(hook_fresh(env.board, "demo", "cursor", now=clock()))
 
@@ -338,7 +345,7 @@ class HookTests(unittest.TestCase):
                 timeout_seconds=6,
                 reserve_seconds=5,
             )
-            self.assertEqual(result, {"followup_message": "End your turn."})
+            self.assertEqual(result, {"followup_message": KEEP_AWAKE})
             self.assertNotIn("no messages", result["followup_message"].lower())
             self.assertNotIn("Handle these", result["followup_message"])
             self.assertGreaterEqual((clock() - datetime(2026, 10, 23, 12, 0, tzinfo=timezone.utc)).total_seconds(), 1)
@@ -377,7 +384,238 @@ class HookTests(unittest.TestCase):
                 reserve_seconds=5,
             )
             self.assertIn("Need a look", result["followup_message"])
-            self.assertNotEqual(result["followup_message"], "End your turn.")
+            self.assertIn(MAIL_TAIL, result["followup_message"])
+            self.assertNotEqual(result["followup_message"], KEEP_AWAKE)
+
+    def test_activity_during_the_wait_sends_nothing(self) -> None:
+        with support.TempEnv() as env:
+            _ready(env)
+            clock = _Clock()
+
+            def nap(seconds: float) -> None:
+                clock.advance(seconds)
+                note_activity(env.board, "cursor", "check", now=clock())
+
+            result = cursor_stop_followup(
+                env.board,
+                "cursor",
+                "{}",
+                now=clock,
+                sleep=nap,
+                timeout_seconds=30,
+                reserve_seconds=5,
+            )
+            self.assertEqual(result, {})
+
+    def test_a_heartbeat_during_the_wait_sends_nothing(self) -> None:
+        with support.TempEnv() as env:
+            _ready(env)
+            clock = _Clock()
+
+            def nap(seconds: float) -> None:
+                clock.advance(seconds)
+                from agentcoop.watch import write_heartbeat
+
+                write_heartbeat(
+                    env.board,
+                    "demo",
+                    "cursor",
+                    since=clock(),
+                    seen=clock(),
+                    how="cursor-loop",
+                )
+
+            result = cursor_stop_followup(
+                env.board,
+                "cursor",
+                json.dumps({"status": "completed", "loop_count": 0}),
+                now=clock,
+                sleep=nap,
+                timeout_seconds=30,
+                reserve_seconds=5,
+            )
+            self.assertEqual(result, {})
+
+    def test_a_newer_generation_sends_nothing(self) -> None:
+        with support.TempEnv() as env:
+            _ready(env)
+            clock = _Clock()
+            note_activity(
+                env.board,
+                "cursor",
+                "prompt",
+                now=clock(),
+                generation_id="gen-2",
+                conversation_id="conv-1",
+            )
+            result = cursor_stop_followup(
+                env.board,
+                "cursor",
+                json.dumps(
+                    {
+                        "status": "completed",
+                        "generation_id": "gen-1",
+                        "conversation_id": "conv-1",
+                        "loop_count": 0,
+                    }
+                ),
+                now=clock,
+                sleep=lambda seconds: clock.advance(seconds),
+                timeout_seconds=30,
+                reserve_seconds=5,
+            )
+            self.assertEqual(result, {})
+
+    def test_older_activity_still_sends_the_keep_awake(self) -> None:
+        with support.TempEnv() as env:
+            _ready(env)
+            clock = _Clock()
+            note_activity(
+                env.board,
+                "cursor",
+                "prompt",
+                now=clock() - timedelta(seconds=30),
+                generation_id="gen-1",
+            )
+            result = cursor_stop_followup(
+                env.board,
+                "cursor",
+                json.dumps({"status": "completed", "generation_id": "gen-1", "loop_count": 0}),
+                now=clock,
+                sleep=lambda seconds: clock.advance(seconds),
+                timeout_seconds=6,
+                reserve_seconds=5,
+            )
+            self.assertEqual(result, {"followup_message": KEEP_AWAKE})
+
+    def test_mail_does_not_wake_a_busy_agent(self) -> None:
+        with support.TempEnv() as env:
+            _ready(env)
+            clock = _Clock()
+
+            def nap(seconds: float) -> None:
+                clock.advance(seconds)
+                _mail(env)
+                note_activity(env.board, "cursor", "check", now=clock())
+
+            result = cursor_stop_followup(
+                env.board,
+                "cursor",
+                "{}",
+                now=clock,
+                sleep=nap,
+                timeout_seconds=30,
+                reserve_seconds=5,
+            )
+            self.assertEqual(result, {})
+
+    def test_a_check_is_activity_and_the_stop_hook_is_not(self) -> None:
+        with support.TempEnv() as env:
+            _ready(env)
+            self.assertEqual(_quiet(["check", "--as", "cursor", "--project", "demo"]), 0)
+            self.assertEqual(load_activity(env.board, "cursor")["source"], "check")
+            moment = datetime(2026, 10, 23, 11, 0, tzinfo=timezone.utc)
+            note_activity(env.board, "cursor", "check", now=moment)
+            before = load_activity(env.board, "cursor")
+            with patch("sys.stdin", io.StringIO('{"status": "aborted"}')):
+                code = main(["hook", "cursor-stop", "--as", "cursor"])
+            self.assertEqual(code, 0)
+            self.assertEqual(load_activity(env.board, "cursor"), before)
+
+    def test_prompt_hook_records_the_generation(self) -> None:
+        with support.TempEnv() as env:
+            _ready(env)
+            out = io.StringIO()
+            raw = json.dumps(
+                {
+                    "prompt": "do the long task",
+                    "generation_id": "gen-9",
+                    "conversation_id": "conv-9",
+                }
+            )
+            with patch("sys.stdin", io.StringIO(raw)):
+                with redirect_stdout(out):
+                    code = main(["hook", "cursor-prompt", "--as", "cursor"])
+            self.assertEqual(code, 0)
+            self.assertIn('"continue": true', out.getvalue())
+            data = load_activity(env.board, "cursor")
+            self.assertEqual(data["source"], "prompt")
+            self.assertEqual(data["generation_id"], "gen-9")
+            self.assertEqual(data["conversation_id"], "conv-9")
+
+    def test_missing_timeout_is_one_hour_and_600_moves_on_update(self) -> None:
+        with support.TempEnv() as env:
+            _ready(env)
+            self.assertEqual(hook_timeout_seconds(env.board), 3600)
+            self.assertIn("60 minutes", describe_hook_timeout(env.board))
+
+            def save_600(data: dict) -> None:
+                data["cursor_hook_timeout_seconds"] = 600
+
+            mutate_config(env.board, save_600)
+            migrate_saved_hook_timeout(env.board)
+            self.assertEqual(load_config(env.board)["cursor_hook_timeout_seconds"], 3600)
+            migrate_saved_hook_timeout(env.board)
+            self.assertEqual(load_config(env.board)["cursor_hook_timeout_seconds"], 3600)
+
+            def choose_600(data: dict) -> None:
+                data["cursor_hook_timeout_seconds"] = 600
+                data["cursor_hook_timeout_user_set"] = True
+
+            mutate_config(env.board, choose_600)
+            migrate_saved_hook_timeout(env.board)
+            self.assertEqual(load_config(env.board)["cursor_hook_timeout_seconds"], 600)
+
+            def save_900(data: dict) -> None:
+                data["cursor_hook_timeout_seconds"] = 900
+                data.pop("cursor_hook_timeout_user_set", None)
+
+            mutate_config(env.board, save_900)
+            migrate_saved_hook_timeout(env.board)
+            self.assertEqual(load_config(env.board)["cursor_hook_timeout_seconds"], 900)
+
+    def test_wake_wait_saves_a_chosen_value(self) -> None:
+        with support.TempEnv() as env:
+            _ready(env)
+            out = io.StringIO()
+            with redirect_stdout(out):
+                code = main(["wake-wait"])
+            self.assertEqual(code, 0)
+            self.assertIn("60 minutes", out.getvalue())
+            out = io.StringIO()
+            with redirect_stdout(out):
+                code = main(["wake-wait", "15"])
+            self.assertEqual(code, 0)
+            self.assertIn("15 minutes", out.getvalue())
+            saved = load_config(env.board)
+            self.assertEqual(saved["cursor_hook_timeout_seconds"], 900)
+            self.assertIs(saved["cursor_hook_timeout_user_set"], True)
+            err = io.StringIO()
+            with redirect_stderr(err):
+                self.assertEqual(main(["wake-wait", "0"]), 2)
+                self.assertEqual(main(["wake-wait", "61"]), 2)
+            self.assertIn("1 to 60", err.getvalue())
+
+    def test_refresh_updates_an_old_hook_file(self) -> None:
+        with support.TempEnv() as env:
+            folder = _ready(env)
+            hook = folder / ".cursor" / "hooks.json"
+            data = json.loads(hook.read_text(encoding="utf-8"))
+            data["hooks"]["stop"][0]["timeout"] = 600
+            data["hooks"].pop("beforeSubmitPrompt", None)
+            data["hooks"]["stop"].insert(0, {"command": "echo kept"})
+            hook.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+            refresh_cursor_hook_files(env.board)
+            updated = json.loads(hook.read_text(encoding="utf-8"))
+            commands = [entry.get("command") for entry in updated["hooks"]["stop"]]
+            self.assertIn("echo kept", commands)
+            ours = [entry for entry in updated["hooks"]["stop"] if "cursor-stop" in str(entry.get("command"))]
+            self.assertEqual(ours[0]["timeout"], 3600)
+            self.assertIsNone(ours[0]["loop_limit"])
+            self.assertIn("cursor-prompt", updated["hooks"]["beforeSubmitPrompt"][0]["command"])
+            text = hook.read_text(encoding="utf-8")
+            refresh_cursor_hook_files(env.board)
+            self.assertEqual(hook.read_text(encoding="utf-8"), text)
 
 
 class IdleTests(unittest.TestCase):
@@ -446,7 +684,11 @@ class InstallTests(unittest.TestCase):
             self.assertEqual(data["version"], 1)
             command = data["hooks"]["stop"][0]["command"]
             self.assertIn("hook cursor-stop --as cursor", command)
-            self.assertEqual(data["hooks"]["stop"][0]["timeout"], 600)
+            self.assertEqual(data["hooks"]["stop"][0]["timeout"], 3600)
+            self.assertIn(
+                "hook cursor-prompt --as cursor",
+                data["hooks"]["beforeSubmitPrompt"][0]["command"],
+            )
             self.assertIsNone(data["hooks"]["stop"][0]["loop_limit"])
             ignore = (folder / ".gitignore").read_text(encoding="utf-8")
             self.assertIn(".cursor/hooks.json", ignore)

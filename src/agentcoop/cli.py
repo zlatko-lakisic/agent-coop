@@ -71,6 +71,7 @@ def main(argv: list[str] | None = None) -> int:
     capture = command in ("check", "watch", "wait", "cursor-loop")
     code = 1
     try:
+        _note_run(args)
         _cleanup_replaced_binaries()
         if capture:
             from agentcoop.trace import Tee
@@ -103,6 +104,22 @@ def main(argv: list[str] | None = None) -> int:
         return code
     finally:
         _trace_command(argv, command, code, started, captured.getvalue())
+
+
+def _note_run(args: argparse.Namespace) -> None:
+    """Record that this agent ran a command. The waiting stop hook does not count."""
+    try:
+        command = str(getattr(args, "command", "") or "")
+        if command == "hook" and str(getattr(args, "hook_name", "") or "") == "cursor-stop":
+            return
+        agent = getattr(args, "as_name", None) or os.environ.get("AGENTCOOP_AGENT")
+        if not agent:
+            return
+        from agentcoop.activity import note_activity
+
+        note_activity(board_root(), str(agent), command or "command")
+    except Exception:
+        return
 
 
 def _trace_command(argv: list[str] | None, command: str, code: int, started: float, printed: str) -> None:
@@ -370,9 +387,13 @@ def build_parser() -> argparse.ArgumentParser:
     loop_cmd.set_defaults(func=cmd_cursor_loop)
 
     hook_cmd = sub.add_parser("hook", help="Answer a Cursor hook")
-    hook_cmd.add_argument("hook_name", help="cursor-stop")
+    hook_cmd.add_argument("hook_name", help="cursor-stop or cursor-prompt")
     _add_as(hook_cmd)
     hook_cmd.set_defaults(func=cmd_hook)
+
+    wake_cmd = sub.add_parser("wake-wait", help="Show or set how long an idle Cursor chat waits")
+    wake_cmd.add_argument("minutes", nargs="?", type=int)
+    wake_cmd.set_defaults(func=cmd_wake_wait)
 
     idle_cmd = sub.add_parser("idle", help="Choose what happens when Cursor is not watching")
     idle_cmd.add_argument("idle_mode", choices=("wait", "background"))
@@ -1203,16 +1224,36 @@ def cmd_hook(args: argparse.Namespace) -> int:
     import json
     import sys
 
+    from agentcoop.activity import note_prompt
     from agentcoop.cursorloop import cursor_stop_followup
 
+    raw = sys.stdin.read()
+    if args.hook_name == "cursor-prompt":
+        try:
+            note_prompt(_board(), _agent(args), raw)
+        except CoopError:
+            pass
+        print(json.dumps({"continue": True}), flush=True)
+        return 0
     if args.hook_name != "cursor-stop":
-        raise CoopError("The only hook is cursor-stop.", code=2)
+        raise CoopError("The hook must be cursor-stop or cursor-prompt.", code=2)
     agent = _agent(args)
     board = _board()
-    raw = sys.stdin.read()
     result = cursor_stop_followup(board, agent, raw)
     if result:
         print(json.dumps(result), flush=True)
+    return 0
+
+
+def cmd_wake_wait(args: argparse.Namespace) -> int:
+    """Show the idle wait, or save a wait of 1 to 60 minutes."""
+    from agentcoop.cursorloop import describe_hook_timeout, set_hook_timeout_minutes
+
+    board = _board()
+    if args.minutes is None:
+        print(describe_hook_timeout(board), flush=True)
+        return 0
+    print(set_hook_timeout_minutes(board, args.minutes), flush=True)
     return 0
 
 

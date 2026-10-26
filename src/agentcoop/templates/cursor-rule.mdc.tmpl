@@ -80,7 +80,9 @@ After "Start working", or after you become the driver, keep checking until the p
 4. Keep going until the person says stop in this chat. Do not ask the person whether to continue.
 5. Never interrupt a script or command the person or the project is running in order to check the board. Check between steps.
 
-If the only line you are given is "End your turn.", end your turn. Do not check the board. Do not start work. Do not say that there is no mail.
+If you are given "Agent Co-op keep-awake. If you are working on anything, ignore this and keep going. Otherwise end your turn." and you are working on anything, ignore it and keep going. If you are not working on anything, end your turn. Do not check the board for that line. Do not start work.
+
+If a line tells you to handle mail, mark it done, then continue what you were doing, do that. End the turn only when there is nothing else. If there is nothing else, start cursor-loop again if it is not running, then end your turn.
 
 The tick line wakes this chat only when you are watching `AGENT_LOOP_TICK_board`. A finished background command wakes you while a turn is still running. After the turn ends, the shell can die, so start cursor-loop again if it is not running, then end the turn. Do not use Shell Mode for cursor-loop. There is no documented limit on how many steps one desktop turn may take. If your turn ends and cursor-loop is not running, start it again in the background. Tell the person to say "Start working" only when you cannot start it yourself.
 
@@ -116,6 +118,8 @@ Tell them in plain words what you did and what changed. Do not paste raw command
 * "Check the board every N minutes": cursor-loop already uses that interval. To change it, run `{{AGENTCOOP}} start --every N`.
 * "Run the driver in the background when the chat is idle": `{{AGENTCOOP}} idle background`
 * "Leave messages until I say Start working": `{{AGENTCOOP}} idle wait`
+* "Wake-up wait in Cursor: N minutes": `{{AGENTCOOP}} wake-wait N`. N is a whole number from 1 to 60. The default is 60 minutes. A busy chat is left alone.
+* "How often does Cursor end its turn?": `{{AGENTCOOP}} wake-wait` and tell them the number. Change nothing.
 * "Leave this project": `{{AGENTCOOP}} leave --as {{AGENT_NAME}}`
 * "Who is in this project?" or "What's the status?": `{{AGENTCOOP}} status` and summarize it
 * "Set claude_desktop's tags to reasoning and review": `{{AGENTCOOP}} profile --as {{AGENT_NAME}} claude_desktop --tags reasoning,review`. Use their helper and their tags. Changing another agent asks the person to allow it.
