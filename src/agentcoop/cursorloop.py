@@ -35,6 +35,11 @@ MAIL_TAIL = (
     "If there is nothing else, start cursor-loop again if it is not running and end your turn."
 )
 TICK_PREFIX = "AGENT_LOOP_TICK_board "
+TRANSCRIPT_WARNING = (
+    "Cursor's transcript format is not recognized. A stale hook may interrupt work."
+)
+# Seen in Cursor 3.27.14 when a background shell notifies the chat. It is not a new task.
+SHELL_TASK_NOTICE = "Briefly inform the user about the task result"
 
 
 def hook_timeout_seconds(board: Path) -> int:
@@ -416,6 +421,10 @@ def cursor_stop_followup(
     if not isinstance(transcript, str):
         transcript = ""
     transcript_size = _file_size(transcript)
+    cursor_version = payload.get("cursor_version")
+    if not isinstance(cursor_version, str):
+        cursor_version = ""
+    _remember_transcript(board, transcript, cursor_version)
     projects = []
     for name, record in (load_projects(board).get("projects") or {}).items():
         if role_of(record, agent):
@@ -494,27 +503,129 @@ def _file_size(path: str) -> int:
 
 
 def _later_user_message(path: str, size_at_start: int) -> bool:
-    """Return True when the Cursor transcript gained a user message after the hook started.
+    """Return True when a real new turn was written after the hook started.
 
-    beforeSubmitPrompt does not run for a shell notification that wakes the chat.
-    The stop hook still receives transcript_path. A new user line there means a
-    newer turn has started. turn_ended from the turn that just finished does not.
+    A user line that is only a timestamp is Cursor queueing a shell notice.
+    That is not a new task, and it must not drop mail that is about to arrive.
     """
+    _status, new_turn = _inspect_transcript(path, size_at_start)
+    return new_turn
+
+
+def _remember_transcript(board: Path, path: str, cursor_version: str) -> None:
+    """Remember whether this Cursor transcript is a shape we can read."""
+    status, _new_turn = _inspect_transcript(path, 0)
+    recognized = status == "ok"
+    state_path = board / ".state" / "cursor-transcript.json"
+    previous: dict = {}
+    if state_path.is_file():
+        try:
+            loaded = json.loads(state_path.read_text(encoding="utf-8"))
+            if isinstance(loaded, dict):
+                previous = loaded
+        except (OSError, json.JSONDecodeError):
+            previous = {}
+    warned = previous.get("warned") is True and previous.get("recognized") is False
+    payload = {
+        "recognized": recognized,
+        "cursor_version": cursor_version,
+        "warned": (not recognized) or warned,
+    }
+    if not recognized and not warned:
+        from agentcoop.trace import note_warning
+
+        note_warning(board, TRANSCRIPT_WARNING)
+        payload["warned"] = True
+    if recognized:
+        payload["warned"] = False
+    try:
+        atomic_write_bytes(state_path, dump_json(payload))
+    except OSError:
+        return
+
+
+def _inspect_transcript(path: str, size_at_start: int) -> tuple[str, bool]:
+    """Return (status, new_turn). status is ok, missing, unreadable, or unrecognized."""
     if not path:
-        return False
+        return "missing", False
     file = Path(path)
     try:
-        if file.stat().st_size <= size_at_start:
-            return False
-        with file.open("rb") as handle:
-            handle.seek(max(0, size_at_start))
-            extra = handle.read().decode("utf-8", errors="replace")
+        if not file.exists():
+            return "missing", False
+        if not file.is_file():
+            return "unreadable", False
+        raw = file.read_bytes()
     except OSError:
-        return False
+        return "unreadable", False
+    text = raw.decode("utf-8", errors="replace")
+    lines = text.splitlines()
+    known = False
+    for line in lines:
+        if _line_kind(line) in ("known", "turn"):
+            known = True
+            break
+    if not known:
+        return "unrecognized", False
+    extra = raw[max(0, size_at_start) :].decode("utf-8", errors="replace")
     for line in extra.splitlines():
-        if '"role":"user"' in line or '"role": "user"' in line:
-            return True
-    return False
+        if _line_kind(line) == "turn":
+            return "ok", True
+    return "ok", False
+
+
+def _line_kind(line: str) -> str:
+    """Return blank, unknown, known, or turn."""
+    text = line.strip()
+    if not text:
+        return "blank"
+    try:
+        data = json.loads(text)
+    except json.JSONDecodeError:
+        return "unknown"
+    if not isinstance(data, dict):
+        return "unknown"
+    if data.get("type") == "turn_ended":
+        return "known"
+    role = data.get("role")
+    if role == "assistant":
+        return "known"
+    if role != "user":
+        return "unknown"
+    query = _user_query_text(data)
+    if query is None:
+        return "known"
+    if _real_query(query):
+        return "turn"
+    return "known"
+
+
+def _user_query_text(data: dict) -> str | None:
+    message = data.get("message")
+    if not isinstance(message, dict):
+        return None
+    content = message.get("content")
+    if not isinstance(content, list):
+        return None
+    parts: list[str] = []
+    for item in content:
+        if isinstance(item, dict) and item.get("type") == "text":
+            parts.append(str(item.get("text") or ""))
+    if not parts:
+        return None
+    return "\n".join(parts)
+
+
+def _real_query(text: str) -> bool:
+    import re
+
+    cleaned = re.sub(r"<timestamp>.*?</timestamp>", "", text, flags=re.S)
+    cleaned = cleaned.replace("<user_query>", "").replace("</user_query>", "")
+    cleaned = cleaned.strip()
+    if not cleaned:
+        return False
+    if cleaned.startswith(SHELL_TASK_NOTICE):
+        return False
+    return True
 
 
 def _hook_mail(prompt: str) -> str:

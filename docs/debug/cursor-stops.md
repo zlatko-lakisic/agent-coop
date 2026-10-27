@@ -101,7 +101,7 @@ Throwaway board `agentcoop-live-hook`. Not Comstar. Nothing was installed. The w
 
 The tick that woke the chat did not run `beforeSubmitPrompt`. The only prompt-hook lines in the trace are the two smoke tests from setup. The stop hook did receive `generation_id` on stdin. The first real stop hook exited with no text after 22 seconds, when a cursor-loop heartbeat updated activity. The reading task was still going and was not interrupted.
 
-A later stop hook, generation `a38ccd9c-3a57-469c-b0e5-f5089765f45b`, started after that turn. Activity was older than the hook. A helper nudge was written at the same second the hook exited. The hook printed nothing, and the nudge stayed in the outbox. The transcript had gained a new user line, so the hook treated that as a newer turn.
+A later stop hook, generation `a38ccd9c-3a57-469c-b0e5-f5089765f45b`, started after that turn. Activity was older than the hook. The new transcript lines were eight user lines that contain only `<timestamp>Tuesday, Oct 27, 2026, 11:22 AM (UTC-4)</timestamp>`, then one line whose query is Cursor's shell notice `Briefly inform the user about the task result...`. That is not a tick and not a prompt the person typed. The hook treated any user line as a new turn, printed nothing, and exited after 16 seconds. The helper nudge written at 15:22:57 stayed in `outbox/claude_desktop/nudge.20261027T152257Z.md`. It was not delivered and not handled.
 
 Trace lines:
 
