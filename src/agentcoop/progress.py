@@ -103,6 +103,17 @@ def write_progress(
     moment = now or datetime.now(timezone.utc).replace(microsecond=0)
     if moment.tzinfo is None:
         moment = moment.replace(tzinfo=timezone.utc)
+    fields_status = ""
+    try:
+        from agentcoop.progressmeta import parse_fields
+
+        fields_status = str(parse_fields(body).get("Status") or "")
+    except CoopError:
+        fields_status = ""
+    if fields_status in ("done", "review"):
+        from agentcoop.donereport import check_done_report
+
+        check_done_report(body)
     stamp = moment.astimezone(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     name = stamp + "_" + driver + ".md"
     folder = progress_dir(board, project)
@@ -155,8 +166,12 @@ def list_progress_text(board: Path, project: str, limit: int | None = None) -> s
     return "\n".join(lines) + "\n"
 
 
-def progress_template_text(*, helper: bool = False) -> str:
+def progress_template_text(*, helper: bool = False, done: bool = False) -> str:
     """Return the blank progress template. Helpers get the short one."""
+    if done:
+        from agentcoop.donereport import done_template
+
+        return done_template()
     from agentcoop.install import read_template
 
     text = read_template("helper-progress.md.tmpl" if helper else "progress.md.tmpl")

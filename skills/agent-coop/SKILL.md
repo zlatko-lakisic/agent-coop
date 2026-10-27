@@ -105,6 +105,7 @@ Write `outbox/claude_desktop/<message id>.progress.md`. A progress file is not t
 Start with Status (working, blocked, waiting, or done), Step (3 of 7, when the steps are known), Percent (a whole number from 0 to 100, only when something was counted), Now (one sentence), and For (the message id).
 Then use Now, Done so far, Next, and Blocked.
 Post when it starts, after each step, right before you need something, when you are blocked, and when you finish. Finish with Status: done, and Percent: 100 when the percent was counted.
+When an answer states a fact, add two lines: `How I know:` and `Not checked:`.
 While it runs, post at least every progress_every_minutes (default 10), even with no change: Still on step 3 of 7: <what>.
 Do not post on an idle check. Never interrupt a running script to post. Post between steps. If a script runs a long time, post after reading its output. Never use the mouse or the screen.
 In this chat, post: Progress: step 3 of 7 (43%). <Now>.

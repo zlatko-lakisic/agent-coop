@@ -355,6 +355,7 @@ def build_parser() -> argparse.ArgumentParser:
     progress_template = progress_sub.add_parser("template", help="Print the progress template")
     _add_as(progress_template)
     _add_project(progress_template)
+    progress_template.add_argument("--done", action="store_true", help="Print the done report template")
     progress_template.set_defaults(func=cmd_progress_template)
     progress_list = progress_sub.add_parser("list", help="List progress versions")
     _add_as(progress_list)
@@ -1134,7 +1135,7 @@ def cmd_progress_template(args: argparse.Namespace) -> int:
         project_name = resolve_project(board, explicit=args.project, cwd=Path.cwd(), agent=agent)
         project = (load_projects(board).get("projects") or {}).get(project_name) or {}
         helper = role_of(project, agent) == "helper"
-    print(progress_template_text(helper=helper), end="")
+    print(progress_template_text(helper=helper, done=bool(getattr(args, "done", False))), end="")
     return 0
 
 
