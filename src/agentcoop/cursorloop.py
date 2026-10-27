@@ -40,6 +40,8 @@ TRANSCRIPT_WARNING = (
 )
 # Seen in Cursor 3.27.14 when a background shell notifies the chat. It is not a new task.
 SHELL_TASK_NOTICE = "Briefly inform the user about the task result"
+FORMAT_SAMPLE = 65536
+MAIL_WAIT_LINE = "Cursor has not picked up mail for "
 
 
 def hook_timeout_seconds(board: Path) -> int:
@@ -442,11 +444,11 @@ def cursor_stop_followup(
         note_hook(board, name, agent, now=started)
     deadline = started + timedelta(seconds=max(0, timeout_seconds - reserve_seconds))
     while True:
-        if _hook_is_stale(board, agent, started, generation, transcript, transcript_size):
-            return {}
         current = _aware(clock())
+        if _hold_back(board, agent, started, generation, transcript, transcript_size, current):
+            return {}
         _sync_waiting(board, active, current)
-        if _hook_is_stale(board, agent, started, generation, transcript, transcript_size):
+        if _hold_back(board, agent, started, generation, transcript, transcript_size, current):
             return {}
         chunks = []
         for name in active:
@@ -454,14 +456,14 @@ def cursor_stop_followup(
             if prompt:
                 chunks.append(_hook_mail(prompt))
         if chunks:
-            if _hook_is_stale(board, agent, started, generation, transcript, transcript_size):
+            if _hold_back(board, agent, started, generation, transcript, transcript_size, current):
                 return {}
-            return {"followup_message": "\n".join(chunks)}
+            return _follow(board, agent, "\n".join(chunks), current)
         current = _aware(clock())
         if current >= deadline:
-            if _hook_is_stale(board, agent, started, generation, transcript, transcript_size):
+            if _hold_back(board, agent, started, generation, transcript, transcript_size, current):
                 return {}
-            return {"followup_message": KEEP_AWAKE}
+            return _follow(board, agent, KEEP_AWAKE, current)
         remaining = (deadline - current).total_seconds()
         pause(min(POLL_SECONDS, remaining) if remaining > 0 else 0)
 
@@ -473,9 +475,125 @@ def _aware(moment: datetime) -> datetime:
 
 
 def _note_loop(board: Path, agent: str, moment: datetime) -> None:
-    from agentcoop.activity import note_activity
+    from agentcoop.activity import note_activity, note_attention
 
     note_activity(board, agent, "cursor-loop", now=moment)
+    note_attention(board, agent, "tick", now=moment)
+
+
+def _follow(board: Path, agent: str, text: str, when: datetime) -> dict:
+    from agentcoop.activity import note_attention
+
+    note_attention(board, agent, "follow-up", now=when)
+    return {"followup_message": text}
+
+
+def _hold_back(
+    board: Path,
+    agent: str,
+    started: datetime,
+    generation: str,
+    transcript: str,
+    transcript_size: int,
+    now: datetime,
+) -> bool:
+    """Return True when the hook should send nothing.
+
+    Overdue mail is still sent. A transcript that looks busy does not drop it.
+    """
+    if _overdue_mail(board, now) is not None:
+        return False
+    return _hook_is_stale(board, agent, started, generation, transcript, transcript_size)
+
+
+def _overdue_mail(board: Path, now: datetime) -> str | None:
+    """Return the status line when the driver has left mail sitting too long.
+
+    A tick, a hook follow-up, or an agentcoop command after the mail arrived
+    counts as a pickup. A heartbeat does not. The transcript does not.
+    """
+    from agentcoop.activity import attention_at
+    from agentcoop.core import new_messages
+
+    try:
+        every = int(load_config(board).get("progress_every_minutes") or 10)
+    except (TypeError, ValueError, CoopError):
+        every = 10
+    if isinstance(every, bool) or every < 1:
+        every = 10
+    limit = every * 2 * 60
+    moment = _aware(now)
+    oldest: datetime | None = None
+    try:
+        projects = load_projects(board).get("projects") or {}
+    except CoopError:
+        return None
+    for name, record in projects.items():
+        if not isinstance(record, dict):
+            continue
+        driver = str(record.get("driver") or "")
+        if not driver:
+            continue
+        try:
+            messages, _issues = new_messages(board, str(name), driver)
+        except CoopError:
+            continue
+        seen = attention_at(board, driver)
+        for message in messages:
+            arrived = _message_time(message)
+            if arrived is None:
+                continue
+            if seen is not None and seen >= arrived:
+                continue
+            if (moment - arrived).total_seconds() <= limit:
+                continue
+            if oldest is None or arrived < oldest:
+                oldest = arrived
+    state_path = board / ".state" / "cursor-mail.json"
+    if oldest is None:
+        if state_path.is_file():
+            try:
+                state_path.unlink()
+            except OSError:
+                pass
+        return None
+    minutes = int((moment - oldest).total_seconds() // 60)
+    line = MAIL_WAIT_LINE + str(minutes) + " min."
+    since = oldest.strftime("%Y-%m-%dT%H:%M:%SZ")
+    previous: dict = {}
+    if state_path.is_file():
+        try:
+            loaded = json.loads(state_path.read_text(encoding="utf-8"))
+            if isinstance(loaded, dict):
+                previous = loaded
+        except (OSError, json.JSONDecodeError):
+            previous = {}
+    if previous.get("since") != since:
+        from agentcoop.trace import note_warning
+
+        note_warning(board, line)
+        try:
+            atomic_write_bytes(state_path, dump_json({"since": since, "line": line}))
+        except OSError:
+            pass
+    return line
+
+
+def cursor_mail_line(board: Path, now: datetime | None = None) -> str:
+    """Return the STATUS line for mail Cursor has not picked up, or empty."""
+    moment = now or datetime.now(timezone.utc)
+    found = _overdue_mail(board, moment)
+    return found or ""
+
+
+def _message_time(message: object) -> datetime | None:
+    raw = getattr(message, "ts", None)
+    if not isinstance(raw, str) or not raw:
+        return None
+    try:
+        return datetime.strptime(raw, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+    except ValueError:
+        return None
 
 
 def _hook_is_stale(
@@ -505,16 +623,24 @@ def _file_size(path: str) -> int:
 def _later_user_message(path: str, size_at_start: int) -> bool:
     """Return True when a real new turn was written after the hook started.
 
-    A user line that is only a timestamp is Cursor queueing a shell notice.
-    That is not a new task, and it must not drop mail that is about to arrive.
+    Only the bytes added since the hook started are read. A user line that is
+    only a timestamp is not a new task.
     """
-    _status, new_turn = _inspect_transcript(path, size_at_start)
-    return new_turn
+    extra = _read_added(path, size_at_start)
+    if not extra:
+        return False
+    for line in extra.decode("utf-8", errors="replace").splitlines():
+        if _line_kind(line) == "turn":
+            return True
+    return False
 
 
 def _remember_transcript(board: Path, path: str, cursor_version: str) -> None:
-    """Remember whether this Cursor transcript is a shape we can read."""
-    status, _new_turn = _inspect_transcript(path, 0)
+    """Remember whether this Cursor transcript is a shape we can read.
+
+    The format is sampled once, from the start of the file, not on every poll.
+    """
+    status = _transcript_status(path)
     recognized = status == "ok"
     state_path = board / ".state" / "cursor-transcript.json"
     previous: dict = {}
@@ -544,33 +670,44 @@ def _remember_transcript(board: Path, path: str, cursor_version: str) -> None:
         return
 
 
-def _inspect_transcript(path: str, size_at_start: int) -> tuple[str, bool]:
-    """Return (status, new_turn). status is ok, missing, unreadable, or unrecognized."""
+def _transcript_status(path: str) -> str:
+    """Return ok, missing, unreadable, or unrecognized. Reads at most one sample."""
+    kind, sample = _read_prefix(path)
+    if kind != "data":
+        return kind
+    for line in sample.decode("utf-8", errors="replace").splitlines():
+        if _line_kind(line) in ("known", "turn"):
+            return "ok"
+    return "unrecognized"
+
+
+def _read_prefix(path: str) -> tuple[str, bytes]:
+    """Return (kind, sample). kind is data, missing, or unreadable."""
     if not path:
-        return "missing", False
+        return "missing", b""
     file = Path(path)
     try:
         if not file.exists():
-            return "missing", False
+            return "missing", b""
         if not file.is_file():
-            return "unreadable", False
-        raw = file.read_bytes()
+            return "unreadable", b""
+        with file.open("rb") as handle:
+            return "data", handle.read(FORMAT_SAMPLE)
     except OSError:
-        return "unreadable", False
-    text = raw.decode("utf-8", errors="replace")
-    lines = text.splitlines()
-    known = False
-    for line in lines:
-        if _line_kind(line) in ("known", "turn"):
-            known = True
-            break
-    if not known:
-        return "unrecognized", False
-    extra = raw[max(0, size_at_start) :].decode("utf-8", errors="replace")
-    for line in extra.splitlines():
-        if _line_kind(line) == "turn":
-            return "ok", True
-    return "ok", False
+        return "unreadable", b""
+
+
+def _read_added(path: str, size_at_start: int) -> bytes:
+    """Return only the bytes written after the hook started."""
+    if not path:
+        return b""
+    file = Path(path)
+    try:
+        with file.open("rb") as handle:
+            handle.seek(max(0, size_at_start))
+            return handle.read()
+    except OSError:
+        return b""
 
 
 def _line_kind(line: str) -> str:

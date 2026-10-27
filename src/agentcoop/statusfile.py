@@ -56,6 +56,12 @@ def render_status(board: Path, now: datetime | None = None) -> str:
     else:
         last = "Last round: none yet."
     lines = ["# Status", ""]
+    from agentcoop.cursorloop import cursor_mail_line
+
+    late = cursor_mail_line(board, moment)
+    if late:
+        lines.append(late)
+        lines.append("")
     from agentcoop.approvals import status_waiting_lines
 
     waiting = status_waiting_lines(board)

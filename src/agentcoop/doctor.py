@@ -104,6 +104,11 @@ def run_doctor(
     items.extend(_outbox_checks(board, projects, agents, only=project_names, now=now))
     items.extend(_signin_checks(board, agents, only=member_names))
     items.extend(_transcript_doctor(board))
+    from agentcoop.cursorloop import cursor_mail_line
+
+    late = cursor_mail_line(board, now or datetime.now(timezone.utc))
+    if late:
+        items.append(DoctorItem("note", late))
     if project:
         items.append(_hello_check(board, projects, project))
     return items

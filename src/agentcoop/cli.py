@@ -118,6 +118,10 @@ def _note_run(args: argparse.Namespace) -> None:
         from agentcoop.activity import note_activity
 
         note_activity(board_root(), str(agent), command or "command")
+        if command != "hook":
+            from agentcoop.activity import note_attention
+
+            note_attention(board_root(), str(agent), "command")
     except Exception:
         return
 
