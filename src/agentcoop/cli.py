@@ -355,12 +355,43 @@ def build_parser() -> argparse.ArgumentParser:
     progress_template = progress_sub.add_parser("template", help="Print the progress template")
     _add_as(progress_template)
     _add_project(progress_template)
+    progress_template.add_argument("--done", action="store_true", help="Print the done report template")
     progress_template.set_defaults(func=cmd_progress_template)
     progress_list = progress_sub.add_parser("list", help="List progress versions")
     _add_as(progress_list)
     _add_project(progress_list)
     progress_list.add_argument("--limit", type=int)
     progress_list.set_defaults(func=cmd_progress_list)
+
+    review_cmd = sub.add_parser("review", help="Ask a helper to check finished work")
+    review_sub = review_cmd.add_subparsers(dest="review_action", required=True)
+    review_mode_cmd = review_sub.add_parser("mode", help="Set when review is required")
+    _add_as(review_mode_cmd)
+    _add_project(review_mode_cmd)
+    review_mode_cmd.add_argument("review_mode", choices=("off", "changes", "always"))
+    review_mode_cmd.set_defaults(func=cmd_review_mode)
+    review_request = review_sub.add_parser("request", help="Ask a helper to review a done report")
+    _add_as(review_request)
+    _add_project(review_request)
+    review_request.add_argument("--to", dest="review_to", required=True)
+    review_request.add_argument("--task", dest="review_task", required=True)
+    review_request.set_defaults(func=cmd_review_request)
+    review_reply = review_sub.add_parser("reply", help="Send a review verdict")
+    _add_as(review_reply)
+    _add_project(review_reply)
+    review_reply.add_argument("--re", dest="review_re", required=True)
+    review_reply.add_argument("--verdict", dest="review_verdict", required=True)
+    review_reply.add_argument("--body", default="")
+    review_reply.set_defaults(func=cmd_review_reply)
+    review_override = review_sub.add_parser("override", help="Mark the task done without approval")
+    _add_as(review_override)
+    _add_project(review_override)
+    review_override.set_defaults(func=cmd_review_override)
+
+    resume_cmd = sub.add_parser("resume", help="Show where a new chat should pick up")
+    _add_as(resume_cmd)
+    _add_project(resume_cmd)
+    resume_cmd.set_defaults(func=cmd_resume)
 
     wait_cmd = sub.add_parser("wait", help="Wait for a reply")
     _add_as(wait_cmd)
@@ -1134,7 +1165,7 @@ def cmd_progress_template(args: argparse.Namespace) -> int:
         project_name = resolve_project(board, explicit=args.project, cwd=Path.cwd(), agent=agent)
         project = (load_projects(board).get("projects") or {}).get(project_name) or {}
         helper = role_of(project, agent) == "helper"
-    print(progress_template_text(helper=helper), end="")
+    print(progress_template_text(helper=helper, done=bool(getattr(args, "done", False))), end="")
     return 0
 
 
@@ -1146,6 +1177,107 @@ def cmd_progress_list(args: argparse.Namespace) -> int:
     project = resolve_project(board, explicit=args.project, cwd=Path.cwd(), agent=agent)
     print(list_progress_text(board, project, limit=args.limit), end="")
     return 0
+
+
+def cmd_review_mode(args: argparse.Namespace) -> int:
+    from agentcoop.taskreview import set_review_mode
+
+    agent = _agent(args)
+    board = _board()
+    project = resolve_project(board, explicit=args.project, cwd=Path.cwd(), agent=agent)
+    print(set_review_mode(board, project, args.review_mode), flush=True)
+    return 0
+
+
+def cmd_review_request(args: argparse.Namespace) -> int:
+    from agentcoop.core import send
+    from agentcoop.taskreview import record_request, task_bundle
+
+    agent = _agent(args)
+    board = _board()
+    project = resolve_project(board, explicit=args.project, cwd=Path.cwd(), agent=agent)
+    paths = task_bundle(board, project, args.review_task)
+    progress = paths[0]
+    body = progress.read_text(encoding="utf-8")
+    message_id = send(
+        board,
+        project=project,
+        sender=agent,
+        recipient=args.review_to,
+        subject="Review this task",
+        body=body,
+        type="review",
+        attachments=[str(path) for path in paths],
+        needs_reply=True,
+    )
+    record_request(board, project, args.review_task, args.review_to, message_id)
+    print(message_id, flush=True)
+    return 0
+
+
+def cmd_review_reply(args: argparse.Namespace) -> int:
+    from agentcoop.core import send
+    from agentcoop.taskreview import record_verdict
+
+    agent = _agent(args)
+    board = _board()
+    project = resolve_project(board, explicit=args.project, cwd=Path.cwd(), agent=agent)
+    message_id = send(
+        board,
+        project=project,
+        sender=agent,
+        recipient=_driver_name(board, project),
+        subject="Review",
+        body=args.body or args.review_verdict,
+        type="review",
+        re=args.review_re,
+        verdict=args.review_verdict,
+    )
+    record_verdict(
+        board,
+        project,
+        reviewer=agent,
+        verdict=args.review_verdict,
+        body=args.body or "",
+        message_id=message_id,
+    )
+    print(message_id, flush=True)
+    return 0
+
+
+def cmd_review_override(args: argparse.Namespace) -> int:
+    from agentcoop.confirm import confirm_person
+    from agentcoop.taskreview import record_override
+
+    agent = _agent(args)
+    board = _board()
+    project = resolve_project(board, explicit=args.project, cwd=Path.cwd(), agent=agent)
+    confirm_person(
+        "This marks the task done without a reviewer's approval.",
+        expected="review",
+        kind="review",
+        asked_by=agent,
+    )
+    record_override(board, project, agent)
+    print("Override recorded. The done report must include: Override: the person marked this done anyway.", flush=True)
+    return 0
+
+
+def cmd_resume(args: argparse.Namespace) -> int:
+    from agentcoop.taskreview import resume_text
+
+    agent = _agent(args)
+    board = _board()
+    project = resolve_project(board, explicit=args.project, cwd=Path.cwd(), agent=agent)
+    print(resume_text(board, project, agent), end="")
+    return 0
+
+
+def _driver_name(board: Path, project: str) -> str:
+    from agentcoop.projects import load_projects
+
+    record = (load_projects(board).get("projects") or {}).get(project) or {}
+    return str(record.get("driver") or "")
 
 
 def cmd_wait(args: argparse.Namespace) -> int:

@@ -98,6 +98,9 @@ def check_projects(data: object) -> list[str]:
                     cost = profile.get("cost")
                     if cost is not None and cost not in ("low", "medium", "high"):
                         problems.append(name + " profile cost must be low, medium, or high")
+        review = record.get("review")
+        if review is not None and review not in ("off", "changes", "always"):
+            problems.append(name + " review must be off, changes, or always")
     return problems
 
 

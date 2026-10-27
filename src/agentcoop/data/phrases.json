@@ -301,6 +301,46 @@
       ]
     },
     {
+      "title": "Done means verified",
+      "rows": [
+        {
+          "say": "Review my work before it counts as done",
+          "does": "Set review to changes. A task that edits project files waits for a helper's approval.",
+          "who": "The driver, in its own chat.",
+          "added": "0.2.9",
+          "in": ["skill", "rule", "agents", "gemini", "board", "desktop"]
+        },
+        {
+          "say": "Turn off review",
+          "does": "Set review to off. Status done no longer waits for a reviewer.",
+          "who": "The driver, in its own chat.",
+          "added": "0.2.9",
+          "in": ["skill", "rule", "agents", "gemini", "board", "desktop"]
+        },
+        {
+          "say": "Review everything",
+          "does": "Set review to always. Every finished task waits for a helper's approval.",
+          "who": "The driver, in its own chat.",
+          "added": "0.2.9",
+          "in": ["skill", "rule", "agents", "gemini", "board", "desktop"]
+        },
+        {
+          "say": "Mark it done anyway",
+          "does": "Record the person's override and allow Status done. A board message cannot do this.",
+          "who": "The person, in the driver's chat.",
+          "added": "0.2.9",
+          "in": ["skill", "rule", "agents", "gemini", "board", "desktop"]
+        },
+        {
+          "say": "Continue the co-op work here",
+          "does": "Read the context, the latest progress, open reviews, and open requests, and pick up there. Finished parts stay finished.",
+          "who": "The driver, in a new chat.",
+          "added": "0.2.9",
+          "in": ["skill", "rule", "agents", "gemini", "board", "desktop"]
+        }
+      ]
+    },
+    {
       "title": "Remove it",
       "rows": [
         {

@@ -6,7 +6,7 @@ import re
 
 from agentcoop.errors import CoopError
 
-STATUSES = ("working", "blocked", "waiting", "done")
+STATUSES = ("working", "blocked", "waiting", "done", "review")
 _STEP = re.compile(r"^(0|[1-9]\d*) of ([1-9]\d*)$")
 _KEYS = ("Status", "Step", "Percent", "Now", "For")
 
@@ -16,7 +16,7 @@ def parse_status(value: str) -> str:
     text = (value or "").strip()
     if text not in STATUSES:
         raise CoopError(
-            "Status must be working, blocked, waiting, or done. " + (text or "An empty status") + " is not one of those.",
+            "Status must be working, blocked, waiting, review, or done. " + (text or "An empty status") + " is not one of those.",
             code=2,
         )
     return text

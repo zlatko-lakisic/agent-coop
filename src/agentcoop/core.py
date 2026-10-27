@@ -49,6 +49,7 @@ KNOWN_TYPES = {
     "heartbeat",
     "decline",
     "cancel",
+    "review",
 }
 NUDGE_CHARS = 500
 NUDGE_MINUTES = 30
@@ -84,6 +85,7 @@ class Message:
     step: str | None = None
     next_text: str | None = None
     eta_minutes: int | None = None
+    verdict: str | None = None
 
     def to_dict(self) -> dict:
         """Return the on-disk JSON object."""
@@ -125,6 +127,8 @@ class Message:
             payload["next"] = self.next_text
         if self.eta_minutes is not None:
             payload["eta_minutes"] = self.eta_minutes
+        if self.verdict:
+            payload["verdict"] = self.verdict
         return payload
 
 
@@ -298,6 +302,7 @@ def _message_from_dict(data: dict, path: Path | None) -> Message:
         step=data.get("step") if isinstance(data.get("step"), str) and data.get("step") else None,
         next_text=data.get("next") if isinstance(data.get("next"), str) and data.get("next") else None,
         eta_minutes=data.get("eta_minutes") if isinstance(data.get("eta_minutes"), int) and not isinstance(data.get("eta_minutes"), bool) else None,
+        verdict=data.get("verdict") if isinstance(data.get("verdict"), str) and data.get("verdict") else None,
     )
 
 
@@ -502,6 +507,8 @@ def protocol_violation(project: dict, message: Message, board: Path, project_nam
             return ping_violation(board, project_name, message, driver, helpers)
         if message.type == "cancel" and not message.re:
             return "A cancel names the request it stops."
+        if message.type == "review" and message.verdict:
+            return "The driver sends a review request. The helper sends the verdict."
         if message.recipient not in helpers:
             return "The driver can only message helpers."
         return None
@@ -541,6 +548,10 @@ def protocol_violation(project: dict, message: Message, board: Path, project_nam
                 + message.sender
             )
         return None
+    if message.type == "review" and not message.verdict:
+        return "A review from a helper needs a verdict."
+    if message.type == "review" and message.verdict not in ("approve", "changes", "cannot_verify"):
+        return "A review verdict must be approve, changes, or cannot_verify."
     if message.recipient != driver or not message.re:
         return (
             "Helpers can only reply to the driver. "
@@ -564,6 +575,7 @@ def assert_can_send(
     re_id: str | None,
     msg_type: str = "status",
     now: datetime | None = None,
+    verdict: str | None = None,
 ) -> dict:
     """Raise when agentcoop send must refuse this message. Returns the project."""
     projects, intact = read_projects_checked(board)
@@ -599,6 +611,7 @@ def assert_can_send(
         body="",
         attachments=[],
         needs_reply=False,
+        verdict=verdict,
     )
     # probe id is not a file. protocol_violation only opens a file when re is set.
     reason = protocol_violation(project, probe, board, project_name)
@@ -641,6 +654,7 @@ def send(
     step: str | None = None,
     next_text: str | None = None,
     eta_minutes: int | None = None,
+    verdict: str | None = None,
 ) -> str:
     """Write a message and return its id."""
     require_board(board)
@@ -662,6 +676,10 @@ def send(
             raise CoopError("A ping can be at most 500 characters.")
     if type in ("heartbeat", "decline", "cancel"):
         needs_reply = False
+    if type == "review":
+        needs_reply = verdict is None
+        if verdict is not None and verdict not in ("approve", "changes", "cannot_verify"):
+            raise CoopError("A review verdict must be approve, changes, or cannot_verify.", code=2)
     if len(subject) > 120:
         raise CoopError("The subject is too long. Keep it to 120 characters.")
     if not allow_secret and (secret_warning(subject) or secret_warning(body)):
@@ -677,7 +695,9 @@ def send(
             "The message is too long. Put the long text in a file under your files "
             "folder and attach that path."
         )
-    project_record = assert_can_send(board, project, sender, recipient, re, msg_type=type, now=now)
+    project_record = assert_can_send(
+        board, project, sender, recipient, re, msg_type=type, now=now, verdict=verdict
+    )
     roots = list(config.get("allowed_roots") or [])
     project_path = Path(project_record["path"])
     sources = list(attachments or [])
@@ -763,6 +783,8 @@ def send(
             payload["next"] = next_text
         if eta_minutes is not None:
             payload["eta_minutes"] = eta_minutes
+        if verdict:
+            payload["verdict"] = verdict
         if infos:
             payload["attachment_info"] = infos
         try:

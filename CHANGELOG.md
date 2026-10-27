@@ -10,6 +10,11 @@
 - The default wait is 60 minutes (`cursor_hook_timeout_seconds` 3600). On update, a saved 600 moves to 3600 unless the person set the wait. Say "Wake-up wait in Cursor: N minutes" (1 to 60). Say "How often does Cursor end its turn?" to see the wait.
 - An install uses a published release and the hash check. A checkout is for contributors. A board with `projects.json` or `agents.json` is already installed, even with no `bin/VERSION`. Check again right before installing, and connect yourself if another agent finished first.
 - The Claude desktop install sentence names the projects folder, so the app can request access. A short sentence asks the person to reply with the path.
+- A finished task includes a done report: Asked, Claims, Not verified, Surprises, and Risks. `agentcoop progress template --done` prints the blank report. Status done is refused when a section is missing, an Asked item has no mark, a claim has no evidence, or Not verified says None while something was only partly done.
+- A project setting `review` is `off`, `changes`, or `always`. The default is `changes` when a helper is tagged `review`, otherwise `off`. When review applies, the driver posts Status review and asks a helper. The task counts as done only after `approve`, or after the person says "Mark it done anyway" in the driver's chat. A board message cannot override that.
+- Each review writes one file under `projects/<name>/reviews/`. `agentcoop status` and STATUS.md show how many of the last 20 passed the first time, and how many claims were refuted or items skipped.
+- Say "Continue the co-op work here" in a new driver chat. `agentcoop resume` prints the context, the latest progress, open reviews, and open requests. Finished parts stay finished.
+- The Claude desktop app answers a review by writing `outbox/claude_desktop/<message id>.md` whose first line is `verdict: approve`, `verdict: changes`, or `verdict: cannot_verify`.
 
 ## 0.2.8 - 2026-10-25
 

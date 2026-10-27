@@ -86,7 +86,7 @@ Each path has one writer. A second writer MUST NOT update that path.
 
 A file in `context/` is written once and MUST NOT be edited. `agentcoop archive` MAY delete old versions. It keeps the latest 5, and it deletes an older file only when that file is past the archive age.
 
-A progress file MAY start with `Status` (`working`, `blocked`, `waiting`, or `done`), `Step` (such as `3 of 7`), `Percent` (a whole number from 0 to 100), `Now` (one sentence), and `For` (a message id). `Percent` is present only when it was counted. A helper writes `progress/helpers/<agent>/<stamp>_<message id>.md`. Older programs ignore that folder. A Claude desktop progress note is `outbox/<agent>/<message id>.progress.md`. It is not an answer. The answer is `<message id>.md` or `<message id>.<UTC timestamp>.md`.
+A progress file MAY start with `Status` (`working`, `blocked`, `waiting`, `review`, or `done`), `Step` (such as `3 of 7`), `Percent` (a whole number from 0 to 100), `Now` (one sentence), and `For` (a message id). `Percent` is present only when it was counted. A file with Status `done` or `review` MUST include the sections Asked, Claims, Not verified, Surprises, and Risks. A helper writes `progress/helpers/<agent>/<stamp>_<message id>.md`. Older programs ignore that folder. A Claude desktop progress note is `outbox/<agent>/<message id>.progress.md`. It is not an answer. The answer is `<message id>.md` or `<message id>.<UTC timestamp>.md`.
 
 ## 4. Agent and project names
 
@@ -108,7 +108,7 @@ Each message MUST be one UTF-8 JSON file named `<id>.json`.
 | `seq` | Optional positive integer. The order the message was sent on this board. Readers that do not know this field MUST ignore it. Listing order is `ts`, then `seq`, then `id`. |
 | `project` | Project name. |
 | `sender`, `recipient` | Agent names. |
-| `type` | SHOULD be `question`, `answer`, `task`, `status`, `ack`, `patch`, `context_request`, `nudge`, `ping`, `heartbeat`, `decline`, or `cancel`. Unknown types MUST be tolerated. Older readers mark `ping`, `heartbeat`, `decline`, and `cancel` out of protocol. |
+| `type` | SHOULD be `question`, `answer`, `task`, `status`, `ack`, `patch`, `context_request`, `nudge`, `ping`, `heartbeat`, `decline`, `cancel`, or `review`. Unknown types MUST be tolerated. Older readers mark `ping`, `heartbeat`, `decline`, `cancel`, and `review` out of protocol. |
 | `re` | Id of the message being answered, or `null`. |
 | `subject` | At most 120 characters. |
 | `body` | At most 16 KB of UTF-8 unless config raises the limit. Longer text SHOULD be a file under `files/<sender>/`, attached by path. |
@@ -119,6 +119,7 @@ Each message MUST be one UTF-8 JSON file named `<id>.json`.
 | `moved_from` | Optional. The request id this message replaces. |
 | `auto` | Optional boolean. True when Agent Co-op posted a heartbeat because the agent did not. |
 | `about` | Optional message id a ping is about. |
+| `verdict` | Optional on `type` `review`. One of `approve`, `changes`, or `cannot_verify`. A review request omits it. Readers that do not know this field MUST ignore it. |
 
 Readers MUST ignore file names that start with a dot.
 
@@ -174,6 +175,8 @@ In bare mode, the earliest open request from that helper is accepted. Later ones
 
 Helpers MUST NOT message each other. They MUST NOT start a thread, except the context request, the nudge, and the ping above.
 
+A fourth exception: the driver MAY send a `review` request to one helper, with `re` null and `needs_reply` true. The helper answers with `type` `review`, `re` set to that request, and `verdict` `approve`, `changes`, or `cannot_verify`. The driver MUST NOT send a verdict. While review applies, Status `done` waits until that verdict is `approve`, or the person records an override in the driver's chat. A board message MUST NOT record that override.
+
 Only the driver writes files in the project folder. Helpers send patches or drafts as attachments. The driver decides what to apply.
 
 `agentcoop send` MUST refuse violations. `agentcoop check` MUST label a bare-mode violation `OUT OF PROTOCOL: ignore this message` and MUST NOT present its body as instructions.
@@ -185,6 +188,10 @@ Only the driver writes files in the project folder. Helpers send patches or draf
 A project MAY include `profiles`, a map of agent name to an object. That object MAY include `accepts`, `tags` (short labels), `can` (`read`, `run`, `vision`, `web`), and `cost` (`low`, `medium`, `high`). A missing field means unknown. Older readers MUST ignore fields they do not use. The helper note stays in `helpers`.
 
 `projects/<project>/grades/<helper>/` holds one grade file per answer, written once and never edited. The file name is `<UTC stamp>_<answer id>.json`. Only the driver at that time, from `roles_history`, may write there. A grade has `score` (1 to 5), `outcome` (`used`, `partly_used`, `not_used`, `wrong`), optional `correct`, `useful`, and `followed_ask` (each 1 to 5), `tags`, and `note`. Agent Co-op fills `reply_minutes`, `progress_updates`, `late`, `declined`, and `second_opinion_group`. Totals are computed when read. Removing a grade moves the file to `grades/removed/`. Older readers MUST ignore the folder.
+
+`projects/<project>/reviews/` holds one file per review verdict, written once and never edited. The file name is `<message id>.json`. It records the driver, the reviewer, the verdict, how many claims were refuted, how many asked items were skipped, how many surprises were unexplained, and whether the review passed the first time. `open.json` and `override.json` are the current review and the person's override. Older readers MUST ignore the folder.
+
+A project MAY include `review`: `off`, `changes`, or `always`. When the key is missing and a helper profile has the tag `review`, the mode is `changes`. Otherwise it is `off`. Older readers MUST ignore the key.
 
 `agents.json` lists connected agents. Each agent has `tool`, `display`, `connected`, and `installed`. Runner agents also have a `runner` object with `api`, `host`, and `model`.
 
