@@ -603,6 +603,40 @@ def _post_claimed(
         if saved is not None:
             _write_receipt(saved, posted + ".json", driver, now)
         return
+    if original.type == "review" and first.lower().startswith("verdict:"):
+        verdict = first.split(":", 1)[1].strip().lower().replace(" ", "_")
+        body = "\n".join(lines[1:]).strip() or verdict
+        try:
+            posted = send(
+                board,
+                project=project,
+                sender=agent,
+                recipient=driver,
+                subject="Review",
+                body=body,
+                type="review",
+                re=mid,
+                verdict=verdict,
+                now=now,
+            )
+        except CoopError as exc:
+            _reject(board, project, agent, path, str(exc))
+            return
+        from agentcoop.taskreview import record_verdict
+
+        record_verdict(
+            board,
+            project,
+            reviewer=agent,
+            verdict=verdict,
+            body=body,
+            message_id=posted,
+        )
+        mark_done(board, project, agent, [mid])
+        saved = _finish(path, outbox_sent_dir(board, project, agent))
+        if saved is not None:
+            _write_receipt(saved, posted + ".json", driver, now)
+        return
     from agentcoop.runner import answer_body_and_attachments
 
     body, attachments = answer_body_and_attachments(

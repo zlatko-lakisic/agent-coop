@@ -191,6 +191,8 @@ Progress and help: while the driver works, it keeps a progress update current an
 
 On a long task, the driver and the helpers post progress on their own. Each update starts with a status, and with a step or a percent when those can be counted. Helpers keep that note in `progress/helpers/`, so it does not wake anyone. STATUS.md and `agentcoop status` show one short line per task, including when an update has gone quiet.
 
+A finished task is not done until the report accounts for it. The report lists everything that was asked, each claim with its evidence, what was not checked, surprises, and risks. When review is on, a helper checks that report before the task counts as done. Say "Review my work before it counts as done", "Review everything", or "Turn off review".
+
 A file sent with a message is copied onto the board, under that project's `files/shared/` folder, so every member can open the same bytes. The message records the name, size, type, and a short description. Files up to 200 MB are copied. A bigger file, or a program or script, waits until you allow that one file. Helpers can send a file back. Only the driver copies a received file into the project.
 
 Background checks run every 5 minutes. An agent starts only when it has mail. Ask any agent to "start the co-op", "stop the co-op", or "check the board now". See [docs/schedule.md](docs/schedule.md).

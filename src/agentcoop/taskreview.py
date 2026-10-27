@@ -301,3 +301,28 @@ def _load(path: Path) -> dict:
     except (OSError, json.JSONDecodeError):
         return {}
     return data if isinstance(data, dict) else {}
+
+
+def resume_text(board: Path, project: str, agent: str) -> str:
+    """Return where a new chat should pick up. Finished parts stay finished."""
+    from agentcoop.context import latest_version
+    from agentcoop.core import new_messages
+    from agentcoop.progress import latest_progress
+
+    lines = [
+        "Continue the co-op work here.",
+        "Do not redo parts already marked done.",
+        "",
+    ]
+    context = latest_version(board, project)
+    if context is not None:
+        lines.append("Context: " + context.name)
+    progress = latest_progress(board, project)
+    if progress is not None:
+        lines.append("Progress: " + progress.name)
+        lines.append(progress.read_text(encoding="utf-8").strip())
+    lines.extend(open_review_lines(board, project))
+    messages, _issues = new_messages(board, project, agent)
+    for message in messages:
+        lines.append("Open: " + message.subject)
+    return "\n".join(lines).strip() + "\n"

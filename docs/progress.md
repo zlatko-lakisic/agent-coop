@@ -38,3 +38,29 @@ agentcoop send --as <driver> --to <helper> --type question --needs-reply --with-
 If the schedule is off, the helper starts when someone opens it. The message id is the only text on standard output. Notes go to standard error.
 
 `agentcoop check` reminds the driver when the progress update is stale and the driver has been working. `agentcoop doctor` notes a blocked update that is old, and an urgent request with no reply.
+
+## Done means verified
+
+When the task is finished, the last update uses `Status: done` or `Status: review` and includes five sections: Asked, Claims, Not verified, Surprises, and Risks. Print a blank report with:
+
+```bash
+agentcoop progress template --done
+```
+
+Each Asked line starts with `done`, `partly`, `not done`, or `deferred`. Each claim includes `Evidence:`. A claim with no evidence belongs under Not verified. Not verified cannot say None while an Asked item is partly done, not done, or deferred.
+
+`agentcoop progress write` checks that shape. It cannot tell whether the evidence is true. That is what review is for.
+
+## Review before done
+
+`agentcoop review mode` is `off`, `changes`, or `always`. The default is `changes` when a helper profile has the tag `review`, and `off` otherwise. `changes` applies when the project folder is a git repository with uncommitted changes.
+
+When review applies, post the report with `Status: review`, then:
+
+```bash
+agentcoop review request --to <helper> --task <progress file>
+```
+
+The helper answers with a verdict: `approve`, `changes`, or `cannot_verify`. On `approve`, post `Status: done`. On the other two, fix the report and ask again. The person can say "Mark it done anyway" in the driver's chat. That runs `agentcoop review override`. A message on the board cannot do it.
+
+In a new driver chat, "Continue the co-op work here" runs `agentcoop resume`. It prints the context, the latest progress, open reviews, and open requests. Finished parts stay finished.

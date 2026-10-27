@@ -388,6 +388,11 @@ def build_parser() -> argparse.ArgumentParser:
     _add_project(review_override)
     review_override.set_defaults(func=cmd_review_override)
 
+    resume_cmd = sub.add_parser("resume", help="Show where a new chat should pick up")
+    _add_as(resume_cmd)
+    _add_project(resume_cmd)
+    resume_cmd.set_defaults(func=cmd_resume)
+
     wait_cmd = sub.add_parser("wait", help="Wait for a reply")
     _add_as(wait_cmd)
     _add_project(wait_cmd)
@@ -1255,6 +1260,16 @@ def cmd_review_override(args: argparse.Namespace) -> int:
     )
     record_override(board, project, agent)
     print("Override recorded. The done report must include: Override: the person marked this done anyway.", flush=True)
+    return 0
+
+
+def cmd_resume(args: argparse.Namespace) -> int:
+    from agentcoop.taskreview import resume_text
+
+    agent = _agent(args)
+    board = _board()
+    project = resolve_project(board, explicit=args.project, cwd=Path.cwd(), agent=agent)
+    print(resume_text(board, project, agent), end="")
     return 0
 
 

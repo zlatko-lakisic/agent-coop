@@ -84,6 +84,21 @@ def play(board: Path, scenario: dict, re_id: str) -> list[str]:
 def fake_driver(board: Path, scenario_id: str) -> dict:
     """Run the agentcoop side of one scenario and return a timeline report."""
     report: dict = {"scenario": scenario_id, "driver": "fake", "events": []}
+    if scenario_id == "s14":
+        import agentcoop.progress as progress_mod
+        from agentcoop.taskreview import resume_text
+
+        folder = progress_mod.progress_dir(board, "demo")
+        folder.mkdir(parents=True, exist_ok=True)
+        (folder / "20261027T120000Z.md").write_text(
+            "Status: done\nNow: The first part is finished.\nNext: Start the second part.\n",
+            encoding="utf-8",
+        )
+        text = resume_text(board, "demo", "cursor")
+        report["resumed"] = "The first part is finished." in text
+        report["keeps_done"] = "Do not redo parts already marked done." in text
+        report["events"].append({"kind": "resume", "text": text})
+        return report
     if scenario_id == "s13":
         from agentcoop.watch import write_heartbeat
 

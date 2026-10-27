@@ -123,6 +123,11 @@ def write_progress(
     folder = progress_dir(board, project)
     private_dir(folder)
     path = folder / name
+    while path.exists():
+        moment = moment + timedelta(seconds=1)
+        stamp = moment.astimezone(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+        name = stamp + "_" + driver + ".md"
+        path = folder / name
     payload = body if body.endswith("\n") else body + "\n"
     mode = 0o600 if os.name != "nt" else 0o666
     fd = os.open(str(path), os.O_CREAT | os.O_EXCL | os.O_WRONLY | getattr(os, "O_BINARY", 0), mode)
