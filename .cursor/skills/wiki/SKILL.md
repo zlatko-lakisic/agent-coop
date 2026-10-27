@@ -38,7 +38,8 @@ Update it when a change touches anything a person sees or does:
 | `src/agentcoop/confirm.py` | Permissions |
 | `src/agentcoop/safety.py`, `docs/security.md` | Safety and privacy |
 | `src/agentcoop/projects.py`, `src/agentcoop/schema.py` | Projects, Settings files |
-| `src/agentcoop/context.py`, `src/agentcoop/progress.py` | Context and progress |
+| `src/agentcoop/context.py`, `src/agentcoop/progress.py` | Context and progress, Done means verified |
+| `src/agentcoop/taskreview.py`, `src/agentcoop/donereport.py` | Done means verified, Roles, Working with several helpers |
 | `src/agentcoop/rounds.py`, `docs/schedule.md` | Background runs, Keeping agents checking |
 | `src/agentcoop/ui.py`, `src/agentcoop/statusfile.py` | STATUS.md and the viewer |
 | `src/agentcoop/tools.py`, `AGENTS-SUPPORT.md`, `docs/tools/` | Cursor, Claude Code, Codex and the ChatGPT desktop app, Gemini CLI, Local models, Planned agents, Claude desktop app |
