@@ -119,10 +119,9 @@ def write_progress(
         from agentcoop.donereport import check_done_report
 
         check_done_report(body)
-    from agentcoop.taskreview import assert_done_allowed, baseline_open, note_task_start
-
-    starting = not baseline_open(board, project)
     if fields_status == "done":
+        from agentcoop.taskreview import assert_done_allowed
+
         assert_done_allowed(board, project, body)
     stamp = moment.astimezone(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     name = stamp + "_" + driver + ".md"
@@ -144,11 +143,10 @@ def write_progress(
     from agentcoop.activity import note_activity
 
     note_activity(board, driver, "progress", now=moment)
-    note_task_start(board, project, name, closed=fields_status == "done" and starting)
-    if fields_status == "done" and not starting:
-        from agentcoop.taskreview import close_baseline
+    if fields_status == "done":
+        from agentcoop.taskreview import finish_done
 
-        close_baseline(board, project)
+        finish_done(board, project)
     return name
 
 

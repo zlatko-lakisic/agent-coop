@@ -53,7 +53,7 @@ Each Asked line starts with `done`, `partly`, `not done`, or `deferred`. Each cl
 
 ## Review before done
 
-`agentcoop review mode` is `off`, `changes`, or `always`. The default is `changes` when a helper profile has the tag `review`, and `off` otherwise. The first progress update of a task records a baseline. `changes` applies when the project has changed since that baseline. A commit, a staged edit, an unstaged edit, or a new file all count. A folder that is not a git repository uses each file's size and modified time.
+`agentcoop review mode` is `off`, `changes`, or `always`. The default is `changes` when a helper profile has the tag `review`, and `off` otherwise. The fingerprint is taken when the project is added and when a task is closed. It is not taken on a progress update. `changes` applies when the current fingerprint differs from the last closed one, whether or not the change was committed. A git repository and any other folder use the same check.
 
 When review applies, post the report with `Status: review`, then:
 
@@ -61,6 +61,6 @@ When review applies, post the report with `Status: review`, then:
 agentcoop review request --to <helper> --task <progress file>
 ```
 
-The request attaches the report and the change since the baseline, including the contents of new text files that fit the share limit. The helper answers with a verdict: `approve`, `changes`, or `cannot_verify`. On `approve`, post `Status: done` with a line `Task: <that progress file>`. That approval covers only that task, and only while the project still matches the reviewed change. A later task, or any edit after approval, needs a new review. On `changes` or `cannot_verify`, fix the report and ask again. The person can say "Mark it done anyway" in the driver's chat. That runs `agentcoop review override`. A message on the board cannot do it. An empty progress update is refused.
+The request lists files added, changed, and deleted, with the text of changed files that fit the share limit, and a git diff when there is one. The helper answers with a verdict: `approve`, `changes`, or `cannot_verify`. On `approve`, post `Status: done` with a line `Task: <that progress file>`. That approval covers only that task, and only while the fingerprint still matches. A later task, or any edit after approval, needs a new review. On `changes` or `cannot_verify`, fix the report and ask again. The person can say "Mark it done anyway" in the driver's chat. That runs `agentcoop review override`. A message on the board cannot do it, and it cannot turn review off. An empty progress update is refused.
 
 In a new driver chat, "Continue the co-op work here" runs `agentcoop resume`. It prints the context, the latest progress, open reviews, and open requests. Finished parts stay finished.

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
@@ -55,37 +56,34 @@ def review_applies(board: Path, project: str) -> bool:
         return False
     if mode == "always":
         return True
-    return changed_since_baseline(board, project)
+    from agentcoop.fingerprint import changed
+
+    return changed(board, project)
 
 
 def assert_done_allowed(board: Path, project: str, body: str) -> None:
-    """Refuse Status: done while a required review is still open."""
-    if not review_applies(board, project):
+    """Refuse Status: done unless review is unnecessary, approved, or overridden."""
+    if _override_valid(board, project) and OVERRIDE_LINE in body:
         return
-    if OVERRIDE_LINE in body and override_recorded(board, project):
-        return
-    data = _load(_open_path(board, project))
-    baseline = _load(_baseline_path(board, project))
-    approved_for = str(data.get("baseline_task") or "")
-    current_task = "" if baseline.get("closed") else str(baseline.get("task") or "")
-    if data.get("approved") is True and current_task and current_task == approved_for:
-        task = str(data.get("task") or "")
-        if not _names_task(body, task):
-            raise CoopError(
-                "This done report has to name the approved task. Add a line Task: " + task + ".",
-                code=2,
-            )
-        if _change_hash(board, project) != data.get("change_hash"):
+    from agentcoop.fingerprint import current
+
+    approval = _valid_approval(board, project)
+    digest = current(board, project)["digest"]
+    if approval:
+        task = str(approval.get("task") or "")
+        if _names_task(body, task) and digest == approval.get("fingerprint"):
+            return
+        if _names_task(body, task):
             raise CoopError(
                 "The project changed after the review. Ask for review again.",
                 code=2,
             )
-        return
-    if data.get("approved") is True:
         raise CoopError(
             "This is a new task. It needs its own review before it counts as done.",
             code=2,
         )
+    if not review_applies(board, project):
+        return
     raise CoopError(
         "This task needs a review before it counts as done. "
         "Post Status: review, then run agentcoop review request.",
@@ -93,35 +91,28 @@ def assert_done_allowed(board: Path, project: str, body: str) -> None:
     )
 
 
-def note_task_start(board: Path, project: str, task: str, *, closed: bool) -> None:
-    """Record a baseline when this progress file starts a task. A done write closes it."""
-    if baseline_open(board, project):
-        if closed:
-            close_baseline(board, project)
-        return
-    folder = _project_folder(board, project)
-    state = _capture(folder)
-    state["task"] = task
-    state["closed"] = closed
-    path = _baseline_path(board, project)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    atomic_write_bytes(path, dump_json(state))
+def finish_done(board: Path, project: str) -> None:
+    """Close the fingerprint after Status: done was saved, and consume the approval."""
+    from agentcoop.fingerprint import take_closed
 
-
-def baseline_open(board: Path, project: str) -> bool:
-    """Return True when a task has a baseline and is not finished."""
-    data = _load(_baseline_path(board, project))
-    return bool(data) and data.get("closed") is not True
-
-
-def close_baseline(board: Path, project: str) -> None:
-    """Mark the current task finished so the next progress update starts a new one."""
-    path = _baseline_path(board, project)
+    take_closed(board, project)
+    path = _open_path(board, project)
     data = _load(path)
     if not data:
         return
-    data["closed"] = True
+    data["approved"] = False
+    data["request"] = ""
+    data.pop("seal", None)
     atomic_write_bytes(path, dump_json(data))
+    _refresh(board)
+
+
+def assert_requested_reviewer(board: Path, project: str, reviewer: str) -> None:
+    """Refuse a verdict from a helper who was not asked."""
+    data = _load(_open_path(board, project))
+    helper = str(data.get("helper") or "")
+    if not helper or reviewer != helper:
+        raise CoopError(reviewer + " was not asked to review this task.", code=2)
 
 
 def task_bundle(board: Path, project: str, task: str) -> list[Path]:
@@ -147,8 +138,12 @@ def record_request(board: Path, project: str, task: str, helper: str, message_id
     data["helper"] = helper
     data["request"] = message_id
     data["approved"] = False
-    data["baseline_task"] = str(_load(_baseline_path(board, project)).get("task") or "")
-    data["change_hash"] = _change_hash(board, project)
+    from agentcoop.fingerprint import current
+
+    scanned = current(board, project)
+    data["fingerprint"] = scanned["digest"]
+    data["files"] = scanned["files"]
+    data.pop("seal", None)
     data["rounds"] = list(data.get("rounds") or [])
     atomic_write_bytes(path, dump_json(data))
     _refresh(board)
@@ -169,6 +164,9 @@ def record_verdict(
     path = _open_path(board, project)
     path.parent.mkdir(parents=True, exist_ok=True)
     data = _load(path)
+    helper = str(data.get("helper") or "")
+    if not helper or reviewer != helper:
+        raise CoopError(reviewer + " was not asked to review this task.", code=2)
     rounds = list(data.get("rounds") or [])
     refuted, skipped, surprises = _counts(body)
     first = verdict == "approve" and not any(
@@ -187,6 +185,14 @@ def record_verdict(
     )
     data["rounds"] = rounds
     data["approved"] = verdict == "approve"
+    if verdict == "approve":
+        from agentcoop.fingerprint import accept_reviewed
+
+        fields = _approval_fields(data)
+        data["seal"] = _seal(board, fields)
+        accept_reviewed(board, project, data.get("files") or {}, str(data.get("fingerprint") or ""))
+    else:
+        data.pop("seal", None)
     atomic_write_bytes(path, dump_json(data))
     metric = board / "projects" / project / "reviews" / (message_id + ".json")
     metric.parent.mkdir(parents=True, exist_ok=True)
@@ -215,27 +221,27 @@ def latest_approved(board: Path, project: str) -> bool:
 
 def record_override(board: Path, project: str, by: str, now: datetime | None = None) -> None:
     """Remember that the person marked the task done without approval."""
+    from agentcoop.fingerprint import take_closed
+
     moment = now or datetime.now(timezone.utc)
     if moment.tzinfo is None:
         moment = moment.replace(tzinfo=timezone.utc)
+    payload = {
+        "by": by,
+        "ts": moment.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "line": OVERRIDE_LINE,
+    }
+    payload["seal"] = _seal(board, payload)
     path = board / "projects" / project / "reviews" / "override.json"
     path.parent.mkdir(parents=True, exist_ok=True)
-    atomic_write_bytes(
-        path,
-        dump_json(
-            {
-                "by": by,
-                "ts": moment.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-                "line": OVERRIDE_LINE,
-            }
-        ),
-    )
+    atomic_write_bytes(path, dump_json(payload))
+    take_closed(board, project)
     _refresh(board)
 
 
 def override_recorded(board: Path, project: str) -> bool:
     """Return True when the person already overrode the open review."""
-    return (board / "projects" / project / "reviews" / "override.json").is_file()
+    return _override_valid(board, project)
 
 
 def review_summary(board: Path, project: str, agent: str) -> str:
@@ -289,20 +295,86 @@ def open_review_lines(board: Path, project: str) -> list[str]:
     ]
 
 
-def changed_since_baseline(board: Path, project: str) -> bool:
-    """Return True when the project differs from the open task's baseline."""
-    baseline = _load(_baseline_path(board, project))
-    if not baseline or baseline.get("closed") is True:
-        return False
+def _bundle_text(board: Path, project: str) -> str:
+    """List added, changed, and deleted files, plus a git diff when there is one."""
+    from agentcoop.fingerprint import closed_files, current
+
     folder = _project_folder(board, project)
-    if baseline.get("kind") == "git":
-        return _git_changed(folder, baseline)
-    return _norm(baseline.get("files")) != _norm(_file_meta(folder))
+    scanned = current(board, project)
+    old = closed_files(board, project)
+    now = scanned["files"] if isinstance(scanned.get("files"), dict) else {}
+    parts = []
+    for rel in sorted(set(now) - set(old)):
+        parts.append(_file_section(board, folder, rel, "Added"))
+    for rel in sorted(set(now) & set(old)):
+        if now[rel] != old[rel]:
+            parts.append(_file_section(board, folder, rel, "Changed"))
+    for rel in sorted(set(old) - set(now)):
+        parts.append("Deleted: " + rel + "\n")
+    if folder.is_dir() and (folder / ".git").exists():
+        diff = _run_git(folder, "--no-pager", "diff", "--no-ext-diff", "--no-color", "HEAD")
+        staged = _run_git(folder, "--no-pager", "diff", "--cached", "--no-ext-diff", "--no-color", "HEAD")
+        parts.append(_fit_share(board, diff.stdout, "git diff"))
+        if staged.stdout.strip() and staged.stdout != diff.stdout:
+            parts.append(_fit_share(board, staged.stdout, "git diff --cached"))
+    text = "".join(parts)
+    if not text.strip():
+        return "No changes since the last closed fingerprint.\n"
+    return text if text.endswith("\n") else text + "\n"
 
 
-def _change_hash(board: Path, project: str) -> str:
-    """Return a hash of the change since the baseline."""
-    return hashlib.sha256(_bundle_text(board, project).encode("utf-8")).hexdigest()
+def _approval_fields(data: dict) -> dict:
+    return {
+        "approved": True,
+        "fingerprint": str(data.get("fingerprint") or ""),
+        "helper": str(data.get("helper") or ""),
+        "request": str(data.get("request") or ""),
+        "task": str(data.get("task") or ""),
+    }
+
+
+def _valid_approval(board: Path, project: str) -> dict | None:
+    data = _load(_open_path(board, project))
+    if data.get("approved") is not True:
+        return None
+    fields = _approval_fields(data)
+    if data.get("seal") != _seal(board, fields):
+        return None
+    return fields
+
+
+def _override_valid(board: Path, project: str) -> bool:
+    path = board / "projects" / project / "reviews" / "override.json"
+    data = _load(path)
+    if data.get("line") != OVERRIDE_LINE:
+        return False
+    payload = {
+        "by": data.get("by"),
+        "line": OVERRIDE_LINE,
+        "ts": data.get("ts"),
+    }
+    return data.get("seal") == _seal(board, payload)
+
+
+def _seal(board: Path, payload: dict) -> str:
+    secret = _review_secret(board)
+    text = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(secret + text.encode("utf-8")).hexdigest()
+
+
+def _review_secret(board: Path) -> bytes:
+    path = board / ".state" / "review-seal"
+    if path.is_file():
+        try:
+            found = path.read_bytes()
+        except OSError:
+            found = b""
+        if found:
+            return found
+    path.parent.mkdir(parents=True, exist_ok=True)
+    secret = os.urandom(32)
+    atomic_write_bytes(path, secret)
+    return secret
 
 
 def _names_task(body: str, task: str) -> bool:
@@ -317,73 +389,6 @@ def _names_task(body: str, task: str) -> bool:
 def _project_folder(board: Path, project: str) -> Path:
     record = (load_projects(board).get("projects") or {}).get(project) or {}
     return Path(str(record.get("path") or ""))
-
-
-def _capture(folder: Path) -> dict:
-    """Return git HEAD plus untracked files, or a file list when git is not in use."""
-    if folder.is_dir() and (folder / ".git").exists():
-        head = _run_git(folder, "rev-parse", "--verify", "HEAD")
-        if head.returncode == 0 and head.stdout.strip():
-            return {
-                "kind": "git",
-                "head": head.stdout.strip(),
-                "untracked": _untracked_meta(folder),
-            }
-    return {"kind": "files", "files": _file_meta(folder)}
-
-
-def _git_changed(folder: Path, baseline: dict) -> bool:
-    head = str(baseline.get("head") or "")
-    current = _run_git(folder, "rev-parse", "--verify", "HEAD")
-    if current.returncode != 0 or current.stdout.strip() != head:
-        return True
-    diff = _run_git(folder, "--no-pager", "diff", "--no-ext-diff", "--no-color", head)
-    if diff.stdout.strip():
-        return True
-    staged = _run_git(folder, "--no-pager", "diff", "--cached", "--no-ext-diff", "--no-color", head)
-    if staged.stdout.strip():
-        return True
-    return _norm(baseline.get("untracked")) != _norm(_untracked_meta(folder))
-
-
-def _bundle_text(board: Path, project: str) -> str:
-    """Return the full change since the baseline, for the reviewer."""
-    baseline = _load(_baseline_path(board, project))
-    folder = _project_folder(board, project)
-    if not baseline or not folder.is_dir():
-        return "No baseline was recorded for this task.\n"
-    parts: list[str] = []
-    if baseline.get("kind") == "git" and baseline.get("head"):
-        diff = _run_git(
-            folder,
-            "--no-pager",
-            "diff",
-            "--no-ext-diff",
-            "--no-color",
-            str(baseline.get("head")),
-        )
-        parts.append(_fit_share(board, diff.stdout, "The diff"))
-        old = {item["path"]: item for item in _as_rows(baseline.get("untracked"))}
-        current = {item["path"]: item for item in _untracked_meta(folder)}
-        for path in sorted(set(current) - set(old)):
-            parts.append(_file_section(board, folder, path, "New file"))
-        for path in sorted(set(current) & set(old)):
-            if _norm([current[path]]) != _norm([old[path]]):
-                parts.append(_file_section(board, folder, path, "Changed file"))
-    else:
-        old = {item["path"]: item for item in _as_rows(baseline.get("files"))}
-        current = {item["path"]: item for item in _file_meta(folder)}
-        for path in sorted(set(current) - set(old)):
-            parts.append(_file_section(board, folder, path, "New file"))
-        for path in sorted(set(current) & set(old)):
-            if _norm([current[path]]) != _norm([old[path]]):
-                parts.append(_file_section(board, folder, path, "Changed file"))
-        for path in sorted(set(old) - set(current)):
-            parts.append("Deleted: " + path + "\n")
-    text = "".join(parts)
-    if not text.strip():
-        return "No changes since the task started.\n"
-    return text if text.endswith("\n") else text + "\n"
 
 
 def _fit_share(board: Path, text: str, label: str) -> str:
@@ -430,71 +435,6 @@ def _file_section(board: Path, folder: Path, rel: str, label: str) -> str:
     return label + ": " + rel + "\n" + text + ("" if text.endswith("\n") else "\n")
 
 
-def _file_meta(folder: Path) -> list:
-    rows = []
-    if not folder.is_dir():
-        return rows
-    for path in folder.rglob("*"):
-        if not path.is_file():
-            continue
-        try:
-            rel_parts = path.relative_to(folder).parts
-        except ValueError:
-            continue
-        if ".git" in rel_parts:
-            continue
-        try:
-            stat = path.stat()
-        except OSError:
-            continue
-        rows.append(
-            {
-                "path": path.relative_to(folder).as_posix(),
-                "size": stat.st_size,
-                "mtime_ns": stat.st_mtime_ns,
-            }
-        )
-    rows.sort(key=lambda item: item["path"])
-    return rows
-
-
-def _untracked_meta(folder: Path) -> list:
-    listed = _run_git(folder, "ls-files", "--others", "--exclude-standard", "-z")
-    rows = []
-    for name in listed.stdout.split("\0"):
-        if not name:
-            continue
-        path = folder / name
-        if not path.is_file():
-            continue
-        try:
-            stat = path.stat()
-        except OSError:
-            continue
-        rows.append({"path": name.replace("\\", "/"), "size": stat.st_size, "mtime_ns": stat.st_mtime_ns})
-    rows.sort(key=lambda item: item["path"])
-    return rows
-
-
-def _as_rows(value: object) -> list:
-    if not isinstance(value, list):
-        return []
-    return [item for item in value if isinstance(item, dict) and item.get("path")]
-
-
-def _norm(rows: object) -> tuple:
-    cleaned = []
-    for item in _as_rows(rows):
-        try:
-            size = int(item.get("size") or 0)
-            mtime = int(item.get("mtime_ns") or 0)
-        except (TypeError, ValueError):
-            size = 0
-            mtime = 0
-        cleaned.append((str(item.get("path")), size, mtime))
-    return tuple(sorted(cleaned))
-
-
 def _run_git(folder: Path, *args: str) -> subprocess.CompletedProcess:
     try:
         return subprocess.run(
@@ -527,10 +467,6 @@ def _refresh(board: Path) -> None:
     from agentcoop.statusfile import refresh_status
 
     refresh_status(board)
-
-
-def _baseline_path(board: Path, project: str) -> Path:
-    return board / "projects" / project / "reviews" / "baseline.json"
 
 
 def _open_path(board: Path, project: str) -> Path:
