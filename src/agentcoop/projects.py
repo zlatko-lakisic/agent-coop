@@ -628,6 +628,9 @@ def add_project(
     from agentcoop.statusfile import refresh_status
 
     refresh_status(board)
+    from agentcoop.fingerprint import take_closed
+
+    take_closed(board, name)
 
 
 def _validate_new_project(board: Path, name: str, record: dict, projects: dict, agents: dict) -> None:

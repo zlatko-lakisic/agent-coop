@@ -368,7 +368,7 @@ def build_parser() -> argparse.ArgumentParser:
     review_mode_cmd = review_sub.add_parser("mode", help="Set when review is required")
     _add_as(review_mode_cmd)
     _add_project(review_mode_cmd)
-    review_mode_cmd.add_argument("review_mode", choices=("off", "changes", "always"))
+    review_mode_cmd.add_argument("review_mode", nargs="?", choices=("off", "changes", "always"))
     review_mode_cmd.set_defaults(func=cmd_review_mode)
     review_request = review_sub.add_parser("request", help="Ask a helper to review a done report")
     _add_as(review_request)
@@ -1180,11 +1180,22 @@ def cmd_progress_list(args: argparse.Namespace) -> int:
 
 
 def cmd_review_mode(args: argparse.Namespace) -> int:
-    from agentcoop.taskreview import set_review_mode
+    from agentcoop.confirm import confirm_person
+    from agentcoop.taskreview import review_mode, set_review_mode
 
     agent = _agent(args)
     board = _board()
     project = resolve_project(board, explicit=args.project, cwd=Path.cwd(), agent=agent)
+    if not args.review_mode:
+        print(review_mode(board, project), flush=True)
+        return 0
+    if args.review_mode == "off":
+        confirm_person(
+            "This turns review off. A task can be marked done without a reviewer.",
+            expected="review",
+            kind="review",
+            asked_by=agent,
+        )
     print(set_review_mode(board, project, args.review_mode), flush=True)
     return 0
 
@@ -1217,11 +1228,12 @@ def cmd_review_request(args: argparse.Namespace) -> int:
 
 def cmd_review_reply(args: argparse.Namespace) -> int:
     from agentcoop.core import send
-    from agentcoop.taskreview import record_verdict
+    from agentcoop.taskreview import assert_requested_reviewer, record_verdict
 
     agent = _agent(args)
     board = _board()
     project = resolve_project(board, explicit=args.project, cwd=Path.cwd(), agent=agent)
+    assert_requested_reviewer(board, project, agent)
     message_id = send(
         board,
         project=project,

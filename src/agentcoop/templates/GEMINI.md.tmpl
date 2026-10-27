@@ -116,7 +116,7 @@ Run agentcoop uninstall --agent only when the person asks you to uninstall in yo
 
 Say only what you can show. Every "works" or "fixed" needs evidence. Anything you did not run goes under Not verified.
 
-A commit does not skip review. The first progress update records a baseline. Anything different after that, including a commit or a new file, still needs review. On Status: done, name the reviewed progress file with a line `Task: <file>`. One approval covers that task only, while the project still matches the reviewed change.
+A commit does not skip review. The fingerprint is taken when the project is added and when a task closes, not on a progress update. Anything different after that, including a commit or a new file, still needs review. On Status: done, name the reviewed progress file with a line `Task: <file>`. One approval covers that task only, while the fingerprint still matches.
 
 Account for everything asked. Never drop a requested item without saying so.
 
