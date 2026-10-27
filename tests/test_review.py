@@ -152,6 +152,9 @@ class ReviewTests(unittest.TestCase):
             self.assertIn("0 of 2 reviews passed first time", summary)
             self.assertIn("1 claims refuted", summary)
             self.assertIn(summary, render_status(env.board))
+            status_text = (env.board / "projects" / "STATUS.md").read_text(encoding="utf-8")
+            self.assertIn(summary, status_text)
+            self.assertIn("Finish the small change.", status_text)
 
     def test_review_summary_uses_the_last_20(self) -> None:
         with support.TempEnv() as env:

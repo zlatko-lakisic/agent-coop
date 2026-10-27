@@ -98,6 +98,7 @@ def record_request(board: Path, project: str, task: str, helper: str, message_id
     data["approved"] = False
     data["rounds"] = list(data.get("rounds") or [])
     atomic_write_bytes(path, dump_json(data))
+    _refresh(board)
 
 
 def record_verdict(
@@ -151,6 +152,7 @@ def record_verdict(
             }
         ),
     )
+    _refresh(board)
 
 
 def latest_approved(board: Path, project: str) -> bool:
@@ -175,6 +177,7 @@ def record_override(board: Path, project: str, by: str, now: datetime | None = N
             }
         ),
     )
+    _refresh(board)
 
 
 def override_recorded(board: Path, project: str) -> bool:
@@ -287,6 +290,13 @@ def _diff_text(folder: Path) -> str:
         return "git could not be run.\n"
     listed = status.stdout.strip() or "(no changed files)"
     return "Changed files:\n" + listed + "\n\n" + diff.stdout
+
+
+def _refresh(board: Path) -> None:
+    """Rewrite STATUS.md after a review file changes."""
+    from agentcoop.statusfile import refresh_status
+
+    refresh_status(board)
 
 
 def _open_path(board: Path, project: str) -> Path:
