@@ -95,6 +95,23 @@ Date: 2026-10-25. Board and project were under the temp folder. Not Comstar. Not
 
 `agent` and `cursor-agent` are not on PATH, so this was not a second Cursor window. The app test from 0.2.8 is still the last one that typed into a chat. What this run shows is the hook process: when a command or a tick lands during the wait, there is no follow-up for Cursor to submit.
 
+### App chat on 2026-10-27
+
+Throwaway board `agentcoop-live-hook`. Not Comstar. Nothing was installed. The wait was 2 minutes. `cursor-loop` ticked every 60 seconds. Cursor 3.27.14.
+
+The tick that woke the chat did not run `beforeSubmitPrompt`. The only prompt-hook lines in the trace are the two smoke tests from setup. The stop hook did receive `generation_id` on stdin. The first real stop hook exited with no text after 22 seconds, when a cursor-loop heartbeat updated activity. The reading task was still going and was not interrupted.
+
+A later stop hook, generation `a38ccd9c-3a57-469c-b0e5-f5089765f45b`, started after that turn. Activity was older than the hook. The new transcript lines were eight user lines that contain only `<timestamp>Tuesday, Oct 27, 2026, 11:22 AM (UTC-4)</timestamp>`, then one line whose query is Cursor's shell notice `Briefly inform the user about the task result...`. That is not a tick and not a prompt the person typed. The hook treated any user line as a new turn, printed nothing, and exited after 16 seconds. The helper nudge written at 15:22:57 stayed in `outbox/claude_desktop/nudge.20261027T152257Z.md`. It was not delivered and not handled.
+
+Trace lines:
+
+```text
+{"time":"2026-10-27T15:14:28.342Z","agent":"cursor","command":"hook","args":["hook","cursor-stop","--as","cursor"],"exit":0,"ms":22080}
+{"time":"2026-10-27T15:22:57.712Z","agent":"cursor","command":"hook","args":["hook","cursor-stop","--as","cursor"],"exit":0,"ms":16151}
+```
+
+No `hook cursor-prompt` line exists for either wake. Both stop hooks exited 0 and wrote no follow-up.
+
 ## What to change on your PC
 
 1. Say Start working once in the Cursor chat so `cursor-loop` is running and the chat is watching `AGENT_LOOP_TICK_board`.

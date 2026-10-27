@@ -466,6 +466,446 @@ class HookTests(unittest.TestCase):
             )
             self.assertEqual(result, {})
 
+    def test_a_new_transcript_user_line_sends_nothing(self) -> None:
+        with support.TempEnv() as env:
+            _ready(env)
+            transcript = env.root / "transcript.jsonl"
+            transcript.write_text('{"role":"assistant","message":{}}\n', encoding="utf-8")
+            clock = _Clock()
+            added = {"done": False}
+
+            def nap(seconds: float) -> None:
+                clock.advance(seconds)
+                if not added["done"]:
+                    with transcript.open("a", encoding="utf-8") as handle:
+                        handle.write(
+                            json.dumps(
+                                {
+                                    "role": "user",
+                                    "message": {
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "<user_query>\nCheck the Agent Co-op board and continue your current task: Read the files.\n</user_query>",
+                                            }
+                                        ]
+                                    },
+                                }
+                            )
+                            + "\n"
+                        )
+                    added["done"] = True
+
+            result = cursor_stop_followup(
+                env.board,
+                "cursor",
+                json.dumps(
+                    {
+                        "status": "completed",
+                        "generation_id": "gen-1",
+                        "loop_count": 0,
+                        "transcript_path": str(transcript),
+                    }
+                ),
+                now=clock,
+                sleep=nap,
+                timeout_seconds=30,
+                reserve_seconds=5,
+            )
+            self.assertEqual(result, {})
+
+    def test_turn_ended_in_the_transcript_still_sends_the_keep_awake(self) -> None:
+        with support.TempEnv() as env:
+            _ready(env)
+            transcript = env.root / "transcript.jsonl"
+            transcript.write_text('{"role":"assistant","message":{}}\n', encoding="utf-8")
+            clock = _Clock()
+
+            def nap(seconds: float) -> None:
+                clock.advance(seconds)
+                with transcript.open("a", encoding="utf-8") as handle:
+                    handle.write('{"type":"turn_ended","status":"success"}\n')
+
+            result = cursor_stop_followup(
+                env.board,
+                "cursor",
+                json.dumps(
+                    {
+                        "status": "completed",
+                        "generation_id": "gen-1",
+                        "loop_count": 0,
+                        "transcript_path": str(transcript),
+                    }
+                ),
+                now=clock,
+                sleep=nap,
+                timeout_seconds=6,
+                reserve_seconds=5,
+            )
+            self.assertEqual(result, {"followup_message": KEEP_AWAKE})
+
+    def test_timestamp_lines_do_not_drop_mail_that_arrives_with_them(self) -> None:
+        with support.TempEnv() as env:
+            _ready(env)
+            transcript = env.root / "transcript.jsonl"
+            transcript.write_text('{"role":"assistant","message":{}}\n', encoding="utf-8")
+            clock = _Clock()
+            added = {"done": False}
+            stamp = "<timestamp>Tuesday, Oct 27, 2026, 11:22 AM (UTC-4)</timestamp>"
+            notice = (
+                stamp
+                + "\n\n<user_query>Briefly inform the user about the task result "
+                + "and perform any follow-up actions (if needed). "
+                + "If there's no follow-ups needed, don't explicitly say that.</user_query>"
+            )
+
+            def nap(seconds: float) -> None:
+                clock.advance(seconds)
+                if added["done"]:
+                    return
+                with transcript.open("a", encoding="utf-8") as handle:
+                    for text in (stamp, notice):
+                        handle.write(
+                            json.dumps(
+                                {
+                                    "role": "user",
+                                    "message": {"content": [{"type": "text", "text": text}]},
+                                }
+                            )
+                            + "\n"
+                        )
+                _mail(env, kind="nudge")
+                added["done"] = True
+
+            result = cursor_stop_followup(
+                env.board,
+                "cursor",
+                json.dumps(
+                    {
+                        "status": "completed",
+                        "generation_id": "gen-1",
+                        "loop_count": 0,
+                        "transcript_path": str(transcript),
+                    }
+                ),
+                now=clock,
+                sleep=nap,
+                timeout_seconds=30,
+                reserve_seconds=5,
+            )
+            self.assertIn("Please look at the helper note.", result["followup_message"])
+            self.assertIn(MAIL_TAIL, result["followup_message"])
+
+    def test_an_unknown_transcript_warns_and_still_wakes(self) -> None:
+        with support.TempEnv() as env:
+            _ready(env)
+            transcript = env.root / "transcript.jsonl"
+            transcript.write_text("this is not the cursor transcript\n", encoding="utf-8")
+            clock = _Clock()
+            result = cursor_stop_followup(
+                env.board,
+                "cursor",
+                json.dumps(
+                    {
+                        "status": "completed",
+                        "generation_id": "gen-1",
+                        "loop_count": 0,
+                        "cursor_version": "3.27.14",
+                        "transcript_path": str(transcript),
+                    }
+                ),
+                now=clock,
+                sleep=lambda seconds: clock.advance(seconds),
+                timeout_seconds=6,
+                reserve_seconds=5,
+            )
+            self.assertEqual(result, {"followup_message": KEEP_AWAKE})
+            trace = (env.board / "logs" / "trace.jsonl").read_text(encoding="utf-8")
+            self.assertIn(
+                "Cursor's transcript format is not recognized. A stale hook may interrupt work.",
+                trace,
+            )
+            from agentcoop.doctor import format_doctor, run_doctor
+
+            text = format_doctor(run_doctor(env.board))
+            self.assertIn(
+                "Cursor's transcript format is not recognized. A stale hook may interrupt work.",
+                text,
+            )
+            warning = "Cursor's transcript format is not recognized. A stale hook may interrupt work."
+            for label, payload in (
+                ("missing", {"status": "completed", "generation_id": "gen-1", "loop_count": 0}),
+                (
+                    "unreadable",
+                    {
+                        "status": "completed",
+                        "generation_id": "gen-1",
+                        "loop_count": 0,
+                        "transcript_path": str(env.root),
+                    },
+                ),
+            ):
+                state = env.board / ".state" / "cursor-transcript.json"
+                trace_path = env.board / "logs" / "trace.jsonl"
+                if state.is_file():
+                    state.unlink()
+                if trace_path.is_file():
+                    trace_path.unlink()
+                clock = _Clock()
+                result = cursor_stop_followup(
+                    env.board,
+                    "cursor",
+                    json.dumps(payload),
+                    now=clock,
+                    sleep=lambda seconds: clock.advance(seconds),
+                    timeout_seconds=6,
+                    reserve_seconds=5,
+                )
+                self.assertEqual(result, {"followup_message": KEEP_AWAKE}, label)
+                self.assertIn(warning, trace_path.read_text(encoding="utf-8"), label)
+
+    def test_a_large_transcript_reads_only_new_bytes(self) -> None:
+        with support.TempEnv() as env:
+            _ready(env)
+            transcript = env.root / "transcript.jsonl"
+            one = b'{"role":"assistant","message":{}}\n'
+            filler = one * 40000
+            self.assertGreater(len(filler), 1_000_000)
+            transcript.write_bytes(filler)
+            query = json.dumps(
+                {
+                    "role": "user",
+                    "message": {
+                        "content": [
+                            {"type": "text", "text": "<user_query>\nKeep going.\n</user_query>"}
+                        ]
+                    },
+                }
+            ).encode("utf-8") + b"\n"
+            clock = _Clock()
+            added = {"done": False}
+            reads: list[tuple[int, int]] = []
+            prefixes: list[int] = []
+            import agentcoop.cursorloop as loopmod
+
+            real_added = loopmod._read_added
+            real_prefix = loopmod._read_prefix
+
+            def spy_added(path: str, start: int) -> bytes:
+                data = real_added(path, start)
+                if str(path).endswith("transcript.jsonl"):
+                    reads.append((start, len(data)))
+                return data
+
+            def spy_prefix(path: str):
+                kind, sample = real_prefix(path)
+                if str(path).endswith("transcript.jsonl"):
+                    prefixes.append(len(sample))
+                return kind, sample
+
+            original = Path.read_bytes
+
+            def guarded(self, *args, **kwargs):
+                if self.name.endswith("transcript.jsonl"):
+                    raise AssertionError("read the whole transcript")
+                return original(self, *args, **kwargs)
+
+            def nap(seconds: float) -> None:
+                clock.advance(seconds)
+                if added["done"]:
+                    return
+                with transcript.open("ab") as handle:
+                    handle.write(query)
+                added["done"] = True
+
+            from contextlib import ExitStack
+
+            with ExitStack() as stack:
+                stack.enter_context(patch.object(loopmod, "_read_added", side_effect=spy_added))
+                stack.enter_context(patch.object(loopmod, "_read_prefix", side_effect=spy_prefix))
+                stack.enter_context(patch.object(Path, "read_bytes", guarded))
+                result = cursor_stop_followup(
+                    env.board,
+                    "cursor",
+                    json.dumps(
+                        {
+                            "status": "completed",
+                            "generation_id": "gen-1",
+                            "loop_count": 0,
+                            "transcript_path": str(transcript),
+                        }
+                    ),
+                    now=clock,
+                    sleep=nap,
+                    timeout_seconds=30,
+                    reserve_seconds=5,
+                )
+            self.assertEqual(result, {})
+            self.assertEqual(prefixes, [loopmod.FORMAT_SAMPLE])
+            self.assertGreaterEqual(len(reads), 1)
+            for start, size in reads:
+                self.assertGreaterEqual(start, 1_000_000)
+                self.assertLess(size, 5000)
+
+    def test_overdue_mail_is_sent_even_when_the_transcript_looks_busy(self) -> None:
+        with support.TempEnv() as env:
+            _ready(env)
+            attention = env.board / ".state" / "attention" / "cursor.json"
+            if attention.is_file():
+                attention.unlink()
+
+            def set_every(data: dict) -> None:
+                data["progress_every_minutes"] = 1
+
+            mutate_config(env.board, set_every)
+            transcript = env.root / "transcript.jsonl"
+            transcript.write_text('{"role":"assistant","message":{}}\n', encoding="utf-8")
+            clock = _Clock()
+            added = {"done": False}
+
+            def nap(seconds: float) -> None:
+                clock.advance(seconds)
+                if added["done"]:
+                    return
+                with transcript.open("a", encoding="utf-8") as handle:
+                    handle.write(
+                        json.dumps(
+                            {
+                                "role": "user",
+                                "message": {
+                                    "content": [
+                                        {
+                                            "type": "text",
+                                            "text": "<user_query>\nDo the long task.\n</user_query>",
+                                        }
+                                    ]
+                                },
+                            }
+                        )
+                        + "\n"
+                    )
+                from agentcoop.core import send
+
+                send(
+                    env.board,
+                    project="demo",
+                    sender="claude_code",
+                    recipient="cursor",
+                    subject="Attention",
+                    body="Please look at the helper note.",
+                    type="nudge",
+                    now=clock() - timedelta(minutes=3),
+                )
+                from agentcoop.doctor import format_doctor, run_doctor
+                from agentcoop.statusfile import render_status
+
+                page = render_status(env.board, now=clock())
+                self.assertTrue(
+                    page.startswith("# Status\n\nCursor has not picked up mail for 3 min.\n")
+                )
+                self.assertIn(
+                    "Cursor has not picked up mail for 3 min.",
+                    format_doctor(run_doctor(env.board, now=clock())),
+                )
+                added["done"] = True
+
+            result = cursor_stop_followup(
+                env.board,
+                "cursor",
+                json.dumps(
+                    {
+                        "status": "completed",
+                        "generation_id": "gen-1",
+                        "loop_count": 0,
+                        "transcript_path": str(transcript),
+                    }
+                ),
+                now=clock,
+                sleep=nap,
+                timeout_seconds=30,
+                reserve_seconds=5,
+            )
+            self.assertIn("Please look at the helper note.", result["followup_message"])
+            trace = (env.board / "logs" / "trace.jsonl").read_text(encoding="utf-8")
+            self.assertIn("Cursor has not picked up mail for 3 min.", trace)
+            from agentcoop.statusfile import render_status
+
+            # The follow-up counts as a pickup, so the line is checked before that.
+            page = (env.board / ".state" / "cursor-mail.json").read_text(encoding="utf-8")
+            self.assertIn("Cursor has not picked up mail for 3 min.", page)
+
+    def test_a_tick_after_the_mail_lets_a_real_turn_stay_quiet(self) -> None:
+        with support.TempEnv() as env:
+            _ready(env)
+            attention = env.board / ".state" / "attention" / "cursor.json"
+            if attention.is_file():
+                attention.unlink()
+
+            def set_every(data: dict) -> None:
+                data["progress_every_minutes"] = 1
+
+            mutate_config(env.board, set_every)
+            clock = _Clock()
+            from agentcoop.activity import note_attention
+
+            note_attention(env.board, "cursor", "tick", now=clock())
+            quiet = env.root / "quiet.jsonl"
+            quiet.write_text('{"role":"assistant","message":{}}\n', encoding="utf-8")
+            marked = {"done": False}
+
+            def nap_quiet(seconds: float) -> None:
+                clock.advance(seconds)
+                if marked["done"]:
+                    return
+                with quiet.open("a", encoding="utf-8") as handle:
+                    handle.write(
+                        json.dumps(
+                            {
+                                "role": "user",
+                                "message": {
+                                    "content": [
+                                        {
+                                            "type": "text",
+                                            "text": "<user_query>\nStill working.\n</user_query>",
+                                        }
+                                    ]
+                                },
+                            }
+                        )
+                        + "\n"
+                    )
+                from agentcoop.core import send
+
+                send(
+                    env.board,
+                    project="demo",
+                    sender="claude_code",
+                    recipient="cursor",
+                    subject="Attention",
+                    body="Still here.",
+                    type="nudge",
+                    now=clock() - timedelta(minutes=3),
+                )
+                marked["done"] = True
+
+            skipped = cursor_stop_followup(
+                env.board,
+                "cursor",
+                json.dumps(
+                    {
+                        "status": "completed",
+                        "generation_id": "gen-2",
+                        "loop_count": 0,
+                        "transcript_path": str(quiet),
+                    }
+                ),
+                now=clock,
+                sleep=nap_quiet,
+                timeout_seconds=30,
+                reserve_seconds=5,
+            )
+            self.assertEqual(skipped, {})
+
     def test_older_activity_still_sends_the_keep_awake(self) -> None:
         with support.TempEnv() as env:
             _ready(env)

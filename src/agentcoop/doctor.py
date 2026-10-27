@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
@@ -102,9 +103,31 @@ def run_doctor(
     items.extend(_progress_checks(board, projects, now=now))
     items.extend(_outbox_checks(board, projects, agents, only=project_names, now=now))
     items.extend(_signin_checks(board, agents, only=member_names))
+    items.extend(_transcript_doctor(board))
+    from agentcoop.cursorloop import cursor_mail_line
+
+    late = cursor_mail_line(board, now or datetime.now(timezone.utc))
+    if late:
+        items.append(DoctorItem("note", late))
     if project:
         items.append(_hello_check(board, projects, project))
     return items
+
+
+def _transcript_doctor(board: Path) -> list[DoctorItem]:
+    """Warn when the last stop hook could not read Cursor's transcript."""
+    path = board / ".state" / "cursor-transcript.json"
+    if not path.is_file():
+        return []
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return []
+    if not isinstance(data, dict) or data.get("recognized") is not False:
+        return []
+    from agentcoop.cursorloop import TRANSCRIPT_WARNING
+
+    return [DoctorItem("note", TRANSCRIPT_WARNING)]
 
 
 def os_access_write(path: Path) -> bool:

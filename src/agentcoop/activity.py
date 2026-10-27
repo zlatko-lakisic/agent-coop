@@ -64,6 +64,33 @@ def note_prompt(board: Path, agent: str, raw: str) -> None:
     )
 
 
+def note_attention(
+    board: Path,
+    agent: str,
+    source: str,
+    *,
+    now: datetime | None = None,
+) -> None:
+    """Record a tick, a command, or a hook follow-up. A heartbeat does not count."""
+    try:
+        validate_agent_name(agent)
+        moment = _aware(now or datetime.now(timezone.utc))
+        path = board / ".state" / "attention" / (agent + ".json")
+        atomic_write_bytes(path, dump_json({"last_at": _stamp(moment), "source": source}))
+    except Exception:
+        return
+
+
+def attention_at(board: Path, agent: str) -> datetime | None:
+    """Return the last tick, command, or follow-up time for this agent."""
+    try:
+        path = board / ".state" / "attention" / (agent + ".json")
+    except CoopError:
+        return None
+    data = _read_json(path)
+    return _parse_stamp(data.get("last_at"))
+
+
 def load_activity(board: Path, agent: str) -> dict:
     """Return the activity record, or an empty dict when there is none."""
     try:

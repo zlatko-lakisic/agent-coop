@@ -118,6 +118,22 @@ def note_command(
         handle.write(line)
 
 
+def note_warning(board: Path, text: str) -> None:
+    """Append one warning line. This is written even when command tracing is off."""
+    now = datetime.now(timezone.utc)
+    stamp = now.strftime("%Y-%m-%dT%H:%M:%S.") + f"{int(now.microsecond / 1000):03d}Z"
+    record = {"time": stamp, "warning": text}
+    folder = board / "logs"
+    try:
+        folder.mkdir(parents=True, exist_ok=True)
+        path = folder / "trace.jsonl"
+        line = json.dumps(record, ensure_ascii=False, separators=(",", ":")) + "\n"
+        with path.open("a", encoding="utf-8") as handle:
+            handle.write(line)
+    except OSError:
+        return
+
+
 def agent_from_args(argv: list[str]) -> str:
     """Return --as NAME, or AGENTCOOP_AGENT, without reading a message body."""
     for index, arg in enumerate(argv):

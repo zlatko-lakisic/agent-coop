@@ -4,7 +4,8 @@
 
 ## 0.2.9 - 2026-10-25
 
-- The Cursor stop hook no longer tells a busy chat to stop. If this agent ran a command, cursor-loop heartbeated, progress was written, or a new prompt arrived after the hook started, the old hook sends nothing. The next turn's end starts a fresh hook.
+- The Cursor stop hook no longer tells a busy chat to stop. If this agent ran a command, cursor-loop heartbeated, progress was written, or a new prompt arrived after the hook started, the old hook sends nothing. A transcript line counts as a new turn only when it has a user_query that is not Cursor's shell-task notice. A user line that is only a timestamp does not drop waiting mail. If the transcript cannot be read, the trace and doctor warn that a stale hook may interrupt work. The next turn's end starts a fresh hook.
+- If mail has waited more than twice the progress interval and Cursor has not ticked, followed up, or run a command since it arrived, STATUS.md and doctor say so, and the next stop hook sends that mail even when the transcript looks like a new turn.
 - With no mail, the follow-up is "Agent Co-op keep-awake. If you are working on anything, ignore this and keep going. Otherwise end your turn." Mail says to handle it, mark it done, then continue, and to end the turn only when there is nothing else.
 - The default wait is 60 minutes (`cursor_hook_timeout_seconds` 3600). On update, a saved 600 moves to 3600 unless the person set the wait. Say "Wake-up wait in Cursor: N minutes" (1 to 60). Say "How often does Cursor end its turn?" to see the wait.
 - An install uses a published release and the hash check. A checkout is for contributors. A board with `projects.json` or `agents.json` is already installed, even with no `bin/VERSION`. Check again right before installing, and connect yourself if another agent finished first.
