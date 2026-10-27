@@ -87,6 +87,11 @@ def write_progress(
     record = (load_projects(board).get("projects") or {}).get(project)
     if record is None:
         raise CoopError("There is no project named " + project + ".")
+    if not str(body or "").strip():
+        raise CoopError(
+            "An empty progress update was not saved. Write what changed.",
+            code=2,
+        )
     if role_of(record, driver) != "driver":
         raise CoopError("Only the driver of " + project + " writes progress updates.")
     if not allow_secret and secret_warning(body):
@@ -114,9 +119,10 @@ def write_progress(
         from agentcoop.donereport import check_done_report
 
         check_done_report(body)
-    if fields_status == "done":
-        from agentcoop.taskreview import assert_done_allowed
+    from agentcoop.taskreview import assert_done_allowed, baseline_open, note_task_start
 
+    starting = not baseline_open(board, project)
+    if fields_status == "done":
         assert_done_allowed(board, project, body)
     stamp = moment.astimezone(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     name = stamp + "_" + driver + ".md"
@@ -138,6 +144,11 @@ def write_progress(
     from agentcoop.activity import note_activity
 
     note_activity(board, driver, "progress", now=moment)
+    note_task_start(board, project, name, closed=fields_status == "done" and starting)
+    if fields_status == "done" and not starting:
+        from agentcoop.taskreview import close_baseline
+
+        close_baseline(board, project)
     return name
 
 

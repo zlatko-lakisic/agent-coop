@@ -16,6 +16,7 @@
 - Say "Continue the co-op work here" in a new driver chat. `agentcoop resume` prints the context, the latest progress, open reviews, and open requests. Finished parts stay finished.
 - The Claude desktop app answers a review by writing `outbox/claude_desktop/<message id>.md` whose first line is `verdict: approve`, `verdict: changes`, or `verdict: cannot_verify`.
 - STATUS.md and `agentcoop status` show the review line as soon as the verdict is saved. A done report's `Now` line is the progress headline when the update has no "Working on now" section.
+- Review follows the task, not a clean `git status`. The first progress update records a baseline: git HEAD and the working tree, or a list of files with size and modified time when the folder is not a git repository. A commit, a staged edit, or a new file after that baseline still needs review. The review bundle is the full change since the baseline, including the contents of new text files, within the share size limit. An approval covers that task only, and only while the project still matches the reviewed change. An empty progress update is refused.
 
 ## 0.2.8 - 2026-10-25
 

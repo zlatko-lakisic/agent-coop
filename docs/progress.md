@@ -53,7 +53,7 @@ Each Asked line starts with `done`, `partly`, `not done`, or `deferred`. Each cl
 
 ## Review before done
 
-`agentcoop review mode` is `off`, `changes`, or `always`. The default is `changes` when a helper profile has the tag `review`, and `off` otherwise. `changes` applies when the project folder is a git repository with uncommitted changes.
+`agentcoop review mode` is `off`, `changes`, or `always`. The default is `changes` when a helper profile has the tag `review`, and `off` otherwise. The first progress update of a task records a baseline. `changes` applies when the project has changed since that baseline. A commit, a staged edit, an unstaged edit, or a new file all count. A folder that is not a git repository uses each file's size and modified time.
 
 When review applies, post the report with `Status: review`, then:
 
@@ -61,6 +61,6 @@ When review applies, post the report with `Status: review`, then:
 agentcoop review request --to <helper> --task <progress file>
 ```
 
-The helper answers with a verdict: `approve`, `changes`, or `cannot_verify`. On `approve`, post `Status: done`. On the other two, fix the report and ask again. The person can say "Mark it done anyway" in the driver's chat. That runs `agentcoop review override`. A message on the board cannot do it.
+The request attaches the report and the change since the baseline, including the contents of new text files that fit the share limit. The helper answers with a verdict: `approve`, `changes`, or `cannot_verify`. On `approve`, post `Status: done` with a line `Task: <that progress file>`. That approval covers only that task, and only while the project still matches the reviewed change. A later task, or any edit after approval, needs a new review. On `changes` or `cannot_verify`, fix the report and ask again. The person can say "Mark it done anyway" in the driver's chat. That runs `agentcoop review override`. A message on the board cannot do it. An empty progress update is refused.
 
 In a new driver chat, "Continue the co-op work here" runs `agentcoop resume`. It prints the context, the latest progress, open reviews, and open requests. Finished parts stay finished.
