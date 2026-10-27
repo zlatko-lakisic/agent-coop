@@ -15,6 +15,7 @@
 - Each review writes one file under `projects/<name>/reviews/`. `agentcoop status` and STATUS.md show how many of the last 20 passed the first time, and how many claims were refuted or items skipped.
 - Say "Continue the co-op work here" in a new driver chat. `agentcoop resume` prints the context, the latest progress, open reviews, and open requests. Finished parts stay finished.
 - The Claude desktop app answers a review by writing `outbox/claude_desktop/<message id>.md` whose first line is `verdict: approve`, `verdict: changes`, or `verdict: cannot_verify`.
+- STATUS.md and `agentcoop status` show the review line as soon as the verdict is saved. A done report's `Now` line is the progress headline when the update has no "Working on now" section.
 
 ## 0.2.8 - 2026-10-25
 

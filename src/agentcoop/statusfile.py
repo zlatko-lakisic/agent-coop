@@ -31,6 +31,15 @@ def progress_headline(board: Path, project: str) -> str:
         text = line.strip()
         if text:
             return text
+    from agentcoop.errors import CoopError
+    from agentcoop.progressmeta import parse_fields
+
+    try:
+        now_line = str(parse_fields(body).get("Now") or "").strip()
+    except CoopError:
+        now_line = ""
+    if now_line:
+        return now_line
     return "No progress yet."
 
 

@@ -298,6 +298,9 @@ def format_status(board: Path) -> str:
         summary = review_summary(board, project, str(item.get("driver") or ""))
         if summary:
             lines.append(summary)
+        from agentcoop.taskreview import open_review_lines
+
+        lines.extend(open_review_lines(board, project))
         if not dest.exists():
             if item.get("driver") and not inside_git(folder):
                 driver = str(item.get("driver"))
