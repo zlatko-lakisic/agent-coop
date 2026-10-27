@@ -466,6 +466,69 @@ class HookTests(unittest.TestCase):
             )
             self.assertEqual(result, {})
 
+    def test_a_new_transcript_user_line_sends_nothing(self) -> None:
+        with support.TempEnv() as env:
+            _ready(env)
+            transcript = env.root / "transcript.jsonl"
+            transcript.write_text('{"role":"assistant","message":{}}\n', encoding="utf-8")
+            clock = _Clock()
+            added = {"done": False}
+
+            def nap(seconds: float) -> None:
+                clock.advance(seconds)
+                if not added["done"]:
+                    with transcript.open("a", encoding="utf-8") as handle:
+                        handle.write('{"role":"user","message":{"content":[{"type":"text","text":"tick"}]}}\n')
+                    added["done"] = True
+
+            result = cursor_stop_followup(
+                env.board,
+                "cursor",
+                json.dumps(
+                    {
+                        "status": "completed",
+                        "generation_id": "gen-1",
+                        "loop_count": 0,
+                        "transcript_path": str(transcript),
+                    }
+                ),
+                now=clock,
+                sleep=nap,
+                timeout_seconds=30,
+                reserve_seconds=5,
+            )
+            self.assertEqual(result, {})
+
+    def test_turn_ended_in_the_transcript_still_sends_the_keep_awake(self) -> None:
+        with support.TempEnv() as env:
+            _ready(env)
+            transcript = env.root / "transcript.jsonl"
+            transcript.write_text('{"role":"assistant","message":{}}\n', encoding="utf-8")
+            clock = _Clock()
+
+            def nap(seconds: float) -> None:
+                clock.advance(seconds)
+                with transcript.open("a", encoding="utf-8") as handle:
+                    handle.write('{"type":"turn_ended","status":"success"}\n')
+
+            result = cursor_stop_followup(
+                env.board,
+                "cursor",
+                json.dumps(
+                    {
+                        "status": "completed",
+                        "generation_id": "gen-1",
+                        "loop_count": 0,
+                        "transcript_path": str(transcript),
+                    }
+                ),
+                now=clock,
+                sleep=nap,
+                timeout_seconds=6,
+                reserve_seconds=5,
+            )
+            self.assertEqual(result, {"followup_message": KEEP_AWAKE})
+
     def test_older_activity_still_sends_the_keep_awake(self) -> None:
         with support.TempEnv() as env:
             _ready(env)

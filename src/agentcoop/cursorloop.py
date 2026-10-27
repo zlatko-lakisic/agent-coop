@@ -412,6 +412,10 @@ def cursor_stop_followup(
     generation = payload.get("generation_id")
     if not isinstance(generation, str):
         generation = ""
+    transcript = payload.get("transcript_path")
+    if not isinstance(transcript, str):
+        transcript = ""
+    transcript_size = _file_size(transcript)
     projects = []
     for name, record in (load_projects(board).get("projects") or {}).items():
         if role_of(record, agent):
@@ -429,11 +433,11 @@ def cursor_stop_followup(
         note_hook(board, name, agent, now=started)
     deadline = started + timedelta(seconds=max(0, timeout_seconds - reserve_seconds))
     while True:
-        if _hook_is_stale(board, agent, started, generation):
+        if _hook_is_stale(board, agent, started, generation, transcript, transcript_size):
             return {}
         current = _aware(clock())
         _sync_waiting(board, active, current)
-        if _hook_is_stale(board, agent, started, generation):
+        if _hook_is_stale(board, agent, started, generation, transcript, transcript_size):
             return {}
         chunks = []
         for name in active:
@@ -441,12 +445,12 @@ def cursor_stop_followup(
             if prompt:
                 chunks.append(_hook_mail(prompt))
         if chunks:
-            if _hook_is_stale(board, agent, started, generation):
+            if _hook_is_stale(board, agent, started, generation, transcript, transcript_size):
                 return {}
             return {"followup_message": "\n".join(chunks)}
         current = _aware(clock())
         if current >= deadline:
-            if _hook_is_stale(board, agent, started, generation):
+            if _hook_is_stale(board, agent, started, generation, transcript, transcript_size):
                 return {}
             return {"followup_message": KEEP_AWAKE}
         remaining = (deadline - current).total_seconds()
@@ -465,10 +469,52 @@ def _note_loop(board: Path, agent: str, moment: datetime) -> None:
     note_activity(board, agent, "cursor-loop", now=moment)
 
 
-def _hook_is_stale(board: Path, agent: str, started: datetime, generation: str) -> bool:
+def _hook_is_stale(
+    board: Path,
+    agent: str,
+    started: datetime,
+    generation: str,
+    transcript: str = "",
+    transcript_size: int = 0,
+) -> bool:
     from agentcoop.activity import turn_moved
 
-    return turn_moved(board, agent, started, generation)
+    if turn_moved(board, agent, started, generation):
+        return True
+    return _later_user_message(transcript, transcript_size)
+
+
+def _file_size(path: str) -> int:
+    if not path:
+        return 0
+    try:
+        return Path(path).stat().st_size
+    except OSError:
+        return 0
+
+
+def _later_user_message(path: str, size_at_start: int) -> bool:
+    """Return True when the Cursor transcript gained a user message after the hook started.
+
+    beforeSubmitPrompt does not run for a shell notification that wakes the chat.
+    The stop hook still receives transcript_path. A new user line there means a
+    newer turn has started. turn_ended from the turn that just finished does not.
+    """
+    if not path:
+        return False
+    file = Path(path)
+    try:
+        if file.stat().st_size <= size_at_start:
+            return False
+        with file.open("rb") as handle:
+            handle.seek(max(0, size_at_start))
+            extra = handle.read().decode("utf-8", errors="replace")
+    except OSError:
+        return False
+    for line in extra.splitlines():
+        if '"role":"user"' in line or '"role": "user"' in line:
+            return True
+    return False
 
 
 def _hook_mail(prompt: str) -> str:
