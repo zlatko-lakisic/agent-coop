@@ -18,6 +18,8 @@ def done_template() -> str:
     return """Status: done
 Now:
 
+Task: <the reviewed progress file, on Status: done>
+
 ## Asked
 - done: <copy one requested item>
 - partly: <copy one requested item>. Missing: <what is left>

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import subprocess
 import unittest
 from pathlib import Path
 
@@ -33,6 +34,20 @@ None
 ## Risks
 None
 """
+
+
+def _named(body: str, task: str) -> str:
+    return body.rstrip() + "\nTask: " + task + "\n"
+
+
+def _git(folder: Path, *args: str) -> subprocess.CompletedProcess:
+    return subprocess.run(
+        ["git", "-c", "user.name=Person", "-c", "user.email=person@localhost", *args],
+        cwd=str(folder),
+        check=True,
+        capture_output=True,
+        text=True,
+    )
 
 
 def _ready(env: support.TempEnv) -> Path:
@@ -143,7 +158,7 @@ class ReviewTests(unittest.TestCase):
                 ]
             )
             self.assertEqual(approve, 0)
-            name = write_progress(env.board, "demo", "cursor", done)
+            name = write_progress(env.board, "demo", "cursor", _named(done, task))
             self.assertTrue(name.endswith("_cursor.md"))
             from agentcoop.statusfile import render_status
             from agentcoop.taskreview import review_summary
@@ -254,17 +269,192 @@ class ReviewTests(unittest.TestCase):
             name = write_progress(env.board, "demo", "cursor", done)
             self.assertTrue(name.endswith("_cursor.md"))
 
-    def test_changes_mode_blocks_a_dirty_repository(self) -> None:
-        import subprocess
-
+    def test_commit_then_done_is_refused(self) -> None:
         with support.TempEnv() as env:
             folder = _ready(env)
-            subprocess.run(["git", "init"], cwd=folder, check=True, capture_output=True)
-            (folder / "note.txt").write_text("hello\n", encoding="utf-8")
+            _git(folder, "init")
+            (folder / "readme.txt").write_text("start\n", encoding="utf-8")
+            _git(folder, "add", "-A")
+            _git(folder, "commit", "-m", "start")
             set_review_mode(env.board, "demo", "changes")
+            write_progress(env.board, "demo", "cursor", "Status: working\nNow: Start the note.\n")
+            (folder / "readme.txt").write_text("start\ncommitted-line-alpha\n", encoding="utf-8")
+            _git(folder, "add", "readme.txt")
+            _git(folder, "commit", "-m", "update")
+            clean = subprocess.run(
+                ["git", "status", "--porcelain"],
+                cwd=str(folder),
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(clean.stdout.strip(), "")
             done = REPORT.replace("Status: review", "Status: done")
-            with self.assertRaises(CoopError):
+            with self.assertRaises(CoopError) as caught:
                 write_progress(env.board, "demo", "cursor", done)
+            self.assertIn("needs a review", str(caught.exception))
+
+    def test_the_bundle_shows_committed_changes_and_new_file_contents(self) -> None:
+        with support.TempEnv() as env:
+            folder = _ready(env)
+            _git(folder, "init")
+            (folder / "readme.txt").write_text("start\n", encoding="utf-8")
+            _git(folder, "add", "-A")
+            _git(folder, "commit", "-m", "start")
+            set_review_mode(env.board, "demo", "changes")
+            write_progress(env.board, "demo", "cursor", "Status: working\nNow: Start the note.\n")
+            (folder / "readme.txt").write_text("start\ncommitted-line-alpha\n", encoding="utf-8")
+            _git(folder, "add", "readme.txt")
+            _git(folder, "commit", "-m", "update")
+            (folder / "extra.txt").write_text("new-file-contents-beta\n", encoding="utf-8")
+            task = write_progress(env.board, "demo", "cursor", REPORT)
+            self.assertEqual(
+                main(
+                    [
+                        "review",
+                        "request",
+                        "--as",
+                        "cursor",
+                        "--project",
+                        "demo",
+                        "--to",
+                        "claude_code",
+                        "--task",
+                        task,
+                    ]
+                ),
+                0,
+            )
+            messages, _issues = new_messages(env.board, "demo", "claude_code")
+            bundle = ""
+            for attachment in messages[-1].attachments:
+                bundle += Path(attachment).read_text(encoding="utf-8")
+            self.assertIn("committed-line-alpha", bundle)
+            self.assertIn("new-file-contents-beta", bundle)
+
+    def test_a_second_task_done_is_refused_after_approval(self) -> None:
+        with support.TempEnv() as env:
+            _ready(env)
+            set_review_mode(env.board, "demo", "always")
+            task = write_progress(env.board, "demo", "cursor", REPORT)
+            self.assertEqual(
+                main(
+                    [
+                        "review",
+                        "request",
+                        "--as",
+                        "cursor",
+                        "--project",
+                        "demo",
+                        "--to",
+                        "claude_code",
+                        "--task",
+                        task,
+                    ]
+                ),
+                0,
+            )
+            messages, _issues = new_messages(env.board, "demo", "claude_code")
+            self.assertEqual(
+                main(
+                    [
+                        "review",
+                        "reply",
+                        "--as",
+                        "claude_code",
+                        "--project",
+                        "demo",
+                        "--re",
+                        messages[-1].id,
+                        "--verdict",
+                        "approve",
+                        "--body",
+                        "Approved.",
+                    ]
+                ),
+                0,
+            )
+            done = _named(REPORT.replace("Status: review", "Status: done"), task)
+            write_progress(env.board, "demo", "cursor", done)
+            second = write_progress(env.board, "demo", "cursor", REPORT)
+            with self.assertRaises(CoopError) as caught:
+                write_progress(
+                    env.board,
+                    "demo",
+                    "cursor",
+                    _named(REPORT.replace("Status: review", "Status: done"), second),
+                )
+            self.assertIn("new task", str(caught.exception))
+
+    def test_changes_after_approval_need_a_new_review(self) -> None:
+        with support.TempEnv() as env:
+            folder = _ready(env)
+            set_review_mode(env.board, "demo", "always")
+            task = write_progress(env.board, "demo", "cursor", REPORT)
+            self.assertEqual(
+                main(
+                    [
+                        "review",
+                        "request",
+                        "--as",
+                        "cursor",
+                        "--project",
+                        "demo",
+                        "--to",
+                        "claude_code",
+                        "--task",
+                        task,
+                    ]
+                ),
+                0,
+            )
+            messages, _issues = new_messages(env.board, "demo", "claude_code")
+            self.assertEqual(
+                main(
+                    [
+                        "review",
+                        "reply",
+                        "--as",
+                        "claude_code",
+                        "--project",
+                        "demo",
+                        "--re",
+                        messages[-1].id,
+                        "--verdict",
+                        "approve",
+                        "--body",
+                        "Approved.",
+                    ]
+                ),
+                0,
+            )
+            (folder / "later.txt").write_text("after the review\n", encoding="utf-8")
+            with self.assertRaises(CoopError) as caught:
+                write_progress(
+                    env.board,
+                    "demo",
+                    "cursor",
+                    _named(REPORT.replace("Status: review", "Status: done"), task),
+                )
+            self.assertIn("changed after the review", str(caught.exception))
+
+    def test_a_non_git_folder_counts_as_changed_when_files_change(self) -> None:
+        with support.TempEnv() as env:
+            folder = _ready(env)
+            set_review_mode(env.board, "demo", "changes")
+            write_progress(env.board, "demo", "cursor", "Status: working\nNow: Start the note.\n")
+            (folder / "note.txt").write_text("hello\n", encoding="utf-8")
+            done = REPORT.replace("Status: review", "Status: done")
+            with self.assertRaises(CoopError) as caught:
+                write_progress(env.board, "demo", "cursor", done)
+            self.assertIn("needs a review", str(caught.exception))
+
+    def test_an_empty_progress_update_is_refused(self) -> None:
+        with support.TempEnv() as env:
+            _ready(env)
+            with self.assertRaises(CoopError) as caught:
+                write_progress(env.board, "demo", "cursor", "  \n")
+            self.assertIn("empty", str(caught.exception).lower())
 
     def test_changes_mode_ignores_a_folder_that_is_not_a_repository(self) -> None:
         with support.TempEnv() as env:
@@ -321,7 +511,7 @@ class DesktopReviewTests(unittest.TestCase):
             path.write_text("verdict: approve\nApproved.\n", encoding="utf-8")
             os.utime(path, (when, when))
             process_outbox(env.board, "demo", "claude_desktop")
-            name = write_progress(env.board, "demo", "cursor", done)
+            name = write_progress(env.board, "demo", "cursor", _named(done, task))
             self.assertTrue(name.endswith("_cursor.md"))
 
 
