@@ -114,6 +114,10 @@ def write_progress(
         from agentcoop.donereport import check_done_report
 
         check_done_report(body)
+    if fields_status == "done":
+        from agentcoop.taskreview import assert_done_allowed
+
+        assert_done_allowed(board, project, body)
     stamp = moment.astimezone(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     name = stamp + "_" + driver + ".md"
     folder = progress_dir(board, project)

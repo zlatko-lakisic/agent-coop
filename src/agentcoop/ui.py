@@ -216,6 +216,7 @@ class ViewerHandler(BaseHTTPRequestHandler):
                     "tasks": _task_rows(board, name),
                     "files": _shared_rows(board, name, self.server.token),
                     "grades": _grade_rows(board, name),
+                    "reviews": _review_line(board, name, str(project.get("driver") or "")),
                 }
             )
         agent_rows = []
@@ -284,6 +285,13 @@ def _shared_rows(board: Path, project: str, token: str) -> list[dict]:
             }
         )
     return rows
+
+
+def _review_line(board: Path, project: str, driver: str) -> str:
+    """Return the short review line for the viewer."""
+    from agentcoop.taskreview import review_summary
+
+    return review_summary(board, project, driver)
 
 
 def _grade_rows(board: Path, project: str) -> list[dict]:

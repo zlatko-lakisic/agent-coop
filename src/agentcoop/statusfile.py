@@ -88,6 +88,12 @@ def render_status(board: Path, now: datetime | None = None) -> str:
         from agentcoop.grades import status_lines as grade_status_lines
 
         lines.extend(grade_status_lines(board, name))
+        from agentcoop.taskreview import open_review_lines, review_summary
+
+        summary = review_summary(board, name, str(project.get("driver") or ""))
+        if summary:
+            lines.append(summary)
+        lines.extend(open_review_lines(board, name))
         from agentcoop.ping import not_answering_lines
         from agentcoop.tasks import recent_event_lines
 
