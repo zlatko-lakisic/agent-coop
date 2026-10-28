@@ -42,6 +42,7 @@ class LiveHub:
         self._watcher_stop = threading.Event()
         self._watcher: threading.Thread | None = None
         self._last_signature: tuple | None = None
+        self._baseline_ready = False
         self._last_event_ids: dict[str, str] = {}
         self._last_status: str = ""
         self._last_agents: dict[str, str] = {}
@@ -154,14 +155,17 @@ class LiveHub:
             status_view,
         )
 
-        while not self._watcher_stop.wait(1.0):
+        # First pass runs immediately so tests and subscribers are not waiting a full second.
+        delay = 0.0
+        while not self._watcher_stop.wait(delay):
+            delay = 1.0
             try:
                 signature = _signature(self.board, None)
             except Exception:
                 continue
             if signature == self._last_signature:
                 continue
-            first_pass = self._last_signature is None
+            first_pass = not self._baseline_ready
             self._last_signature = signature
             try:
                 clear_cache()
@@ -222,6 +226,8 @@ class LiveHub:
                             self.push({"type": "histogram.delta", "project": name, "data": hist})
                 except Exception:
                     pass
+            if first_pass:
+                self._baseline_ready = True
 
 
 class LiveSession:
