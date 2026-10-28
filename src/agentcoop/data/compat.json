@@ -9,7 +9,7 @@
       "oldest_reader": "0.2.0",
       "board_changes": "Nothing",
       "settings_changes": "None",
-      "downgrade_loses": "A downgrade loses the viewer WebSocket. The old HTML page and the /api/v2/ HTTP routes remain. Live pushes and the file cookie from the socket upgrade are gone.",
+      "downgrade_loses": "A downgrade loses the new timeline viewer and its WebSocket. The older serif HTML page returns if that build still ships it. The /api/v2/ HTTP routes remain on 0.2.10. Live pushes and the file cookie from the socket upgrade are gone.",
       "desktop_skill": "Same",
       "upgrade_from": "0.2.0"
     },
