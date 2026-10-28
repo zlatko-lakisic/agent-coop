@@ -8,6 +8,7 @@ import socket
 import threading
 import time
 import webbrowser
+from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
@@ -19,9 +20,17 @@ from agentcoop.install import read_template
 from agentcoop.paths import board_root, home_dir
 from agentcoop.projects import INTEGRITY_WARNING, load_agents, read_projects_checked, require_board
 from agentcoop.tools import tool_can_drive
+from agentcoop.viewerlive import LiveHub, LiveSession
 from agentcoop.wizard import add_project_flow, change_driver, helper_add, helper_remove
+from agentcoop.wsserver import (
+    WebSocketConnection,
+    handshake_response,
+    is_websocket_upgrade,
+    parse_upgrade_headers,
+)
 
 _SKIP_DIRS = {"Library", "Applications", "node_modules", "Pictures", "Movies", "Music"}
+_FILE_COOKIE = "agentcoop_files"
 
 
 class ViewerServer(ThreadingHTTPServer):
@@ -33,6 +42,8 @@ class ViewerServer(ThreadingHTTPServer):
         self.board = board
         self.token = token
         self.idle_at = time.time()
+        self.live = LiveHub(board, token)
+        self.live.server = self
         super().__init__((host, port), ViewerHandler)
 
     def server_bind(self) -> None:
@@ -44,6 +55,21 @@ class ViewerServer(ThreadingHTTPServer):
         self.server_name = "127.0.0.1"
         self.server_port = self.server_address[1]
 
+    def server_activate(self) -> None:
+        super().server_activate()
+        self.live.start()
+
+    def server_close(self) -> None:
+        try:
+            self.live.stop()
+        except Exception:
+            pass
+        super().server_close()
+
+    def touch(self) -> None:
+        """Count HTTP or WebSocket traffic as activity for the idle shutdown."""
+        self.idle_at = time.time()
+
 
 class ViewerHandler(BaseHTTPRequestHandler):
     """Serve the one page and the JSON actions behind it."""
@@ -54,11 +80,20 @@ class ViewerHandler(BaseHTTPRequestHandler):
         return
 
     def do_GET(self) -> None:  # noqa: N802
-        self.server.idle_at = time.time()
+        self.server.touch()
+        if is_websocket_upgrade(self.headers):
+            self._websocket()
+            return
+        path = urlparse(self.path).path
+        if path.startswith("/files/"):
+            if not self._file_allowed():
+                self._send(403, b"This page needs the token from the agentcoop ui command.\n")
+                return
+            self._shared_file(path)
+            return
         if not self._allowed():
             self._send(403, b"This page needs the token from the agentcoop ui command.\n")
             return
-        path = urlparse(self.path).path
         if path in ("/", "/index.html"):
             page = read_template("ui.html").encode("utf-8")
             self._send(200, page, "text/html; charset=utf-8")
@@ -78,13 +113,10 @@ class ViewerHandler(BaseHTTPRequestHandler):
         if path.startswith("/api/v2/"):
             self._v2(path)
             return
-        if path.startswith("/files/"):
-            self._shared_file(path)
-            return
         self._send(404, b"Not found.\n")
 
     def do_POST(self) -> None:  # noqa: N802
-        self.server.idle_at = time.time()
+        self.server.touch()
         if not self._allowed():
             self._send(403, b"This page needs the token from the agentcoop ui command.\n")
             return
@@ -124,11 +156,67 @@ class ViewerHandler(BaseHTTPRequestHandler):
             return
         self._send(200, text.encode("utf-8"), "text/plain; charset=utf-8")
 
+    def _websocket(self) -> None:
+        """Upgrade this request to the viewer live socket."""
+        headers = parse_upgrade_headers(self.headers)
+        origin = headers.get("origin", "")
+        expected = "http://127.0.0.1:" + str(self.server.server_port)
+        if origin != expected:
+            self._send(403, b"Origin is not allowed.\n")
+            return
+        if not self.server.live.can_accept():
+            self._send(503, b"Too many viewer connections.\n")
+            return
+        key = headers.get("sec-websocket-key", "")
+        if not key:
+            self._send(400, b"Missing Sec-WebSocket-Key.\n")
+            return
+        file_session = self.server.live.new_file_session()
+        cookie = (
+            _FILE_COOKIE
+            + "="
+            + file_session
+            + "; HttpOnly; SameSite=Strict; Path=/files/"
+        )
+        response = handshake_response(key, extra_headers=[("Set-Cookie", cookie)])
+        try:
+            self.connection.sendall(response)
+        except OSError:
+            return
+        self.close_connection = True
+        conn = WebSocketConnection(self.connection, server=True)
+        session = LiveSession(
+            self.server.live,
+            conn,
+            file_session=file_session,
+            origin=origin,
+            on_activity=self.server.touch,
+        )
+        # Stay on this request thread until the socket closes. ThreadingHTTPServer
+        # already gives one thread per connection.
+        session.run()
+
     def _allowed(self) -> bool:
         query = parse_qs(urlparse(self.path).query)
         supplied = (query.get("t") or [""])[0]
         header = self.headers.get("X-Agentcoop-Token", "")
         return supplied == self.server.token or header == self.server.token
+
+    def _file_allowed(self) -> bool:
+        if self._allowed():
+            return True
+        raw = self.headers.get("Cookie", "")
+        if not raw:
+            return False
+        jar = SimpleCookie()
+        try:
+            jar.load(raw)
+        except (TypeError, ValueError):
+            return False
+        morsel = jar.get(_FILE_COOKIE)
+        if morsel is None:
+            return False
+        return self.server.live.file_session_ok(morsel.value)
 
     def _json(self) -> dict:
         length = int(self.headers.get("Content-Length") or "0")
@@ -145,10 +233,12 @@ class ViewerHandler(BaseHTTPRequestHandler):
         self.send_header("Cache-Control", "no-store")
         self.send_header("X-Content-Type-Options", "nosniff")
         self.send_header("Referrer-Policy", "no-referrer")
+        ws_origin = "ws://127.0.0.1:" + str(self.server.server_port)
         policy = (
             "default-src 'self'; script-src 'self'; style-src 'self'; "
-            "img-src 'self' data: blob:; connect-src 'self'; frame-ancestors 'none'; "
-            "base-uri 'none'; form-action 'self'"
+            "img-src 'self' data: blob:; connect-src 'self' "
+            + ws_origin
+            + "; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"
         )
         if content_type.startswith("text/html"):
             policy = policy.replace("script-src 'self'", "script-src 'self' 'unsafe-inline'", 1)
@@ -214,7 +304,9 @@ class ViewerHandler(BaseHTTPRequestHandler):
             self.send_header(
                 "Content-Security-Policy",
                 "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; "
-                "connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'",
+                "connect-src 'self' ws://127.0.0.1:"
+                + str(self.server.server_port)
+                + "; frame-ancestors 'none'; base-uri 'none'; form-action 'self'",
             )
             self.end_headers()
             self.wfile.write(data)
@@ -346,6 +438,11 @@ class ViewerHandler(BaseHTTPRequestHandler):
         }
 
 
+def files_view(board: Path, project: str, token: str) -> list[dict]:
+    """Return shared files the viewer may show. Paths stay inside the shared folder."""
+    return _shared_rows(board, project, token)
+
+
 def _shared_rows(board: Path, project: str, token: str) -> list[dict]:
     """Return shared files the viewer may show. Paths stay inside the shared folder."""
     from urllib.parse import quote
@@ -364,6 +461,7 @@ def _shared_rows(board: Path, project: str, token: str) -> list[dict]:
             relative = path.resolve().relative_to(root.resolve())
         except (OSError, ValueError):
             continue
+        # Cookie-backed file requests omit the token query. The old page still uses ?t=.
         url = (
             "/files/"
             + quote(project)
@@ -380,6 +478,7 @@ def _shared_rows(board: Path, project: str, token: str) -> list[dict]:
                 "bytes": int(row.get("bytes") or 0),
                 "size": human_size(int(row.get("bytes") or 0)),
                 "url": url,
+                "path": "/files/" + quote(project) + "/" + "/".join(quote(part) for part in relative.parts),
                 "description": str(row.get("description") or ""),
             }
         )
