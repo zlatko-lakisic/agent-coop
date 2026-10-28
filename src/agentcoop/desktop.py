@@ -40,7 +40,9 @@ def scheduled_prompt(project: str, agent: str) -> str:
         + " project as "
         + agent
         + ", using the Agent Co-op skill. If STATUS.md says checking is stopped for this project, "
-        + "stop right away. If NEW.md says no new messages, stop right away. "
+        + "stop right away. Read STATUS.md and compare the driver's progress age. "
+        + "If that progress has not changed for the progress interval during a task, or it says waiting or stopped, nudge. "
+        + "If NEW.md says no new messages and it has no stall line, stop right away. "
         + "Otherwise answer each message, then stop."
     )
 

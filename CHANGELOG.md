@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- cursor-loop posts helper outbox files on every pass, so a nudge reaches the driver while that loop is running.
+- A progress file that starts with a heading still counts as an open task when it has a Working on now section.
+- STATUS.md says `idle, turn ended` when a working update is older than the progress interval. NEW.md adds `Driver progress unchanged for N min during a task.`
+- STATUS.md says the background round is late when Last round is older than three schedule intervals, and names `agentcoop start`.
+- `agentcoop rejected clear` moves old rejected answers aside so NEW.md stops listing them.
+- The Claude desktop task prompt tells the helper to read the progress age and nudge when it stalls. A cursor-loop tick cannot start a new turn after the driver has ended it.
+
 ## 0.2.9 - 2026-10-25
 
 - The Cursor stop hook no longer tells a busy chat to stop. If this agent ran a command, cursor-loop heartbeated, progress was written, or a new prompt arrived after the hook started, the old hook sends nothing. A transcript line counts as a new turn only when it has a user_query that is not Cursor's shell-task notice. A user line that is only a timestamp does not drop waiting mail. If the transcript cannot be read, the trace and doctor warn that a stale hook may interrupt work. The next turn's end starts a fresh hook.

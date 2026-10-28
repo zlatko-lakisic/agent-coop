@@ -205,10 +205,9 @@ def format_status(board: Path) -> str:
     else:
         lines.append("Schedule: off.")
     last = board / ".state" / "last-tick"
-    if last.is_file():
-        lines.append("Last round: " + last.read_text(encoding="utf-8").strip())
-    else:
-        lines.append("Last round: none yet.")
+    from agentcoop.statusfile import last_round_line
+
+    lines.append(last_round_line(board))
     config = load_config(board)
     lines.append(
         "Progress: long task "

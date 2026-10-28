@@ -7,10 +7,10 @@
       "spec": "0.3",
       "board_format": 1,
       "oldest_reader": "0.2.0",
-      "board_changes": "None",
+      "board_changes": "NEW.md may include a line that the driver's progress is unchanged. outbox/<agent>/cleared/ holds rejected answers moved aside by agentcoop rejected clear. Older programs ignore that folder. STATUS.md may say idle, turn ended, and may say the background round is late.",
       "settings_changes": "None",
-      "downgrade_loses": "Nothing",
-      "desktop_skill": "Same",
+      "downgrade_loses": "A downgrade no longer posts helper outbox files from cursor-loop. NEW.md no longer says when driver progress has gone quiet. STATUS.md again says working while the turn has ended, and it no longer flags a late background round. agentcoop rejected clear is not a command.",
+      "desktop_skill": "Changed",
       "upgrade_from": "0.2.0"
     },
     {

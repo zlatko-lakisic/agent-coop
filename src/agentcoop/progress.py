@@ -289,6 +289,37 @@ def reminder_line(board: Path, project: str, agent: str, *, now: datetime | None
     )
 
 
+def stall_line(board: Path, project: str, now: datetime | None = None) -> str:
+    """Return a NEW.md line when driver progress has gone quiet during a task."""
+    latest = latest_progress(board, project)
+    if latest is None:
+        return ""
+    try:
+        when = datetime.fromtimestamp(latest.stat().st_mtime, timezone.utc)
+        text = latest.read_text(encoding="utf-8")
+    except OSError:
+        return ""
+    moment = now or datetime.now(timezone.utc)
+    if moment.tzinfo is None:
+        moment = moment.replace(tzinfo=timezone.utc)
+    every = int(load_config(board).get("progress_every_minutes") or 10)
+    age_minutes = int((moment - when).total_seconds() // 60)
+    if age_minutes < every:
+        return ""
+    from agentcoop.progressmeta import parse_fields
+
+    try:
+        fields = parse_fields(text)
+    except CoopError:
+        fields = {}
+    status = str(fields.get("Status") or "")
+    if not status and section_text(text, "Working on now").strip():
+        status = "working"
+    if status not in ("working", "blocked"):
+        return ""
+    return "Driver progress unchanged for " + str(age_minutes) + " min during a task."
+
+
 def status_lines(board: Path, project: str) -> list[str]:
     """Return the Working on now and Blocked lines for status."""
     path = latest_progress(board, project)
@@ -451,6 +482,8 @@ def _file_task_line(who: str, path: Path, clock: datetime, stale_after: int) -> 
     status = str(fields.get("Status") or "working")
     if status == "done" and age > 86400:
         return ""
+    if status == "working" and age >= stale_after // 2:
+        status = "idle, turn ended"
     now = str(fields.get("Now") or "") or section_text(text, "Working on now").replace("\n", " ").strip()
     return _format_task_line(
         who,
