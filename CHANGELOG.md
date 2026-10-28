@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Unit tests run on a pull request. A merge to main does not run them again. A tag builds the zipapp and the binaries and smoke-tests those files.
+
 ## 0.2.10 - 2026-10-28
 
 - The local viewer can read the board as a timeline. `agentcoop ui` still serves the current page. New read-only routes under `/api/v2/` need the viewer token.
