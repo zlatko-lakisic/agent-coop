@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## Unreleased (planned 0.2.10)
+
+- The local viewer can read the board as a timeline. `agentcoop ui` still serves the current page. New read-only routes under `/api/v2/` need the viewer token.
 
 - cursor-loop posts helper outbox files on every pass, so a nudge reaches the driver while that loop is running.
 - A progress file that starts with a heading still counts as an open task when it has a Working on now section.
