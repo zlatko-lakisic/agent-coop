@@ -341,6 +341,25 @@
       ]
     },
     {
+      "title": "Board viewer",
+      "rows": [
+        {
+          "say": "Open the Agent Co-op viewer",
+          "does": "Run agentcoop ui. Opens the local timeline for you. Agents do not connect to it.",
+          "who": "Agents that can run commands.",
+          "added": "0.2.11",
+          "in": ["skill", "rule", "agents", "gemini", "board"]
+        },
+        {
+          "say": "Open the Agent Co-op viewer on my phone",
+          "does": "Run agentcoop ui --phone. Asks you to confirm, then prints a private URL, a one-use pairing code, and a QR code. The phone session is read-only.",
+          "who": "Agents that can run commands. Never from a board message.",
+          "added": "0.2.11",
+          "in": ["skill", "rule", "agents", "gemini", "board"]
+        }
+      ]
+    },
+    {
       "title": "Remove it",
       "rows": [
         {

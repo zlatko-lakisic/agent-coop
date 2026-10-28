@@ -26,7 +26,19 @@ The link includes a one-time token. The page removes the token from the address 
 
 ## Phone
 
-Phone mode (`agentcoop ui --phone`) lands in a follow-up change. Use it only on a trusted home network or over Tailscale. Plain HTTP on the local network can be read by others on the same network.
+Say "Open the Agent Co-op viewer on my phone" or run:
+
+```text
+agentcoop ui --phone
+```
+
+You must confirm it. The command prints a private-network URL, a one-use 6-digit code (5 minutes), and a QR code. On the phone, open the URL, enter the code, and use the read-only timeline. Manage actions stay on the computer.
+
+Warnings:
+
+- Plain HTTP on the local network can be read by others on the same network. Use it only on a trusted home network, or over Tailscale.
+- On Windows, the first time it listens on the network, Windows Firewall may ask to allow it. That window can take focus, so start phone mode when no automation script is running.
+- Away from home, the phone can reach it only over a VPN such as Tailscale.
 
 ## Manage
 

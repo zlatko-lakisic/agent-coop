@@ -145,6 +145,7 @@ export function App({ token }: { token: string }) {
   const [sheet, setSheet] = useState<"agents" | "rules" | "files" | null>(null);
   const [pendingNew, setPendingNew] = useState(0);
   const [rawOpen, setRawOpen] = useState(false);
+  const [readonly, setReadonly] = useState(false);
   const socketRef = useRef<ViewerSocket | null>(null);
   const timelineRef = useRef<HTMLElement | null>(null);
   const [winStyle, setWinStyle] = useState({ top: "0%", height: "20%" });
@@ -157,7 +158,8 @@ export function App({ token }: { token: string }) {
     if (!token) return;
     const sock = new ViewerSocket(token, {
       onState: setConn,
-      onHello: () => {
+      onHello: (_fileSession, isReadonly) => {
+        setReadonly(isReadonly);
         void bootstrap(sock);
       },
       onPush: (msg) => handlePush(msg),
@@ -419,7 +421,9 @@ export function App({ token }: { token: string }) {
         </div>
         <button type="button" class="btn ghost hide-phone">Filters</button>
         <button type="button" class="btn icon ghost" aria-label="Switch light or dark" onClick={() => setDark((v) => !v)}>☾</button>
-        <button type="button" class="btn ghost" onClick={() => setManageOpen(true)}>Manage</button>
+        {!readonly && (
+          <button type="button" class="btn ghost" onClick={() => setManageOpen(true)}>Manage</button>
+        )}
       </header>
 
       <div class="attention" ref={(n) => n && document.documentElement.style.setProperty("--attn-h", n.offsetHeight + "px")}>

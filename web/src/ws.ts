@@ -4,7 +4,7 @@ export type ConnState = "connecting" | "live" | "reconnecting" | "lost";
 
 export type WsHandlers = {
   onState: (state: ConnState) => void;
-  onHello: (fileSession: string) => void;
+  onHello: (fileSession: string, readonly: boolean) => void;
   onPush: (message: Record<string, unknown>) => void;
   onReply: (message: Record<string, unknown>) => void;
 };
@@ -74,7 +74,7 @@ export class ViewerSocket {
       if (message.type === "hello.ok") {
         this.attempt = 0;
         this.handlers.onState("live");
-        this.handlers.onHello(String(message.file_session || ""));
+        this.handlers.onHello(String(message.file_session || ""), Boolean(message.readonly));
         if (this.lastSeq > 0) {
           void this.request("resume", { seq: this.lastSeq }).then((data) => {
             const payload = data as { messages?: Record<string, unknown>[] };

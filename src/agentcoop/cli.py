@@ -298,6 +298,11 @@ def build_parser() -> argparse.ArgumentParser:
     project_set.set_defaults(func=cmd_project_set)
 
     ui_cmd = sub.add_parser("ui", help="Open the local viewer")
+    ui_cmd.add_argument(
+        "--phone",
+        action="store_true",
+        help="Also listen on a private network address so a phone can open a read-only viewer",
+    )
     ui_cmd.set_defaults(func=cmd_ui)
 
     show_cmd = sub.add_parser("show-board", help="Open the board folder")
@@ -1962,9 +1967,9 @@ def cmd_project_review(args: argparse.Namespace) -> int:
     return 0
 
 
-def cmd_ui(_args: argparse.Namespace) -> int:
+def cmd_ui(args: argparse.Namespace) -> int:
     """Open the local viewer."""
-    return serve()
+    return serve(phone=bool(getattr(args, "phone", False)))
 
 
 def cmd_show_board(_args: argparse.Namespace) -> int:

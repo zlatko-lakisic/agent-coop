@@ -30,19 +30,39 @@ from agentcoop.wsserver import (
 
 _SKIP_DIRS = {"Library", "Applications", "node_modules", "Pictures", "Movies", "Music"}
 _FILE_COOKIE = "agentcoop_files"
+_PHONE_COOKIE = "agentcoop_phone"
 
 
 class ViewerServer(ThreadingHTTPServer):
     """HTTP server bound to this computer only."""
 
-    def __init__(self, board: Path, token: str, host: str = "127.0.0.1", port: int = 0) -> None:
+    def __init__(
+        self,
+        board: Path,
+        token: str,
+        host: str = "127.0.0.1",
+        port: int = 0,
+        *,
+        phone: bool = False,
+        live: LiveHub | None = None,
+        pairing=None,
+        phone_sessions: dict | None = None,
+    ) -> None:
+        from agentcoop.phone import is_private_ip, refuse_public
+
         if host != "127.0.0.1":
-            raise CoopError("The viewer only runs on 127.0.0.1.")
+            refuse_public(host)
+            if not is_private_ip(host):
+                raise CoopError("The viewer only runs on 127.0.0.1 or a private address.")
         self.board = board
         self.token = token
+        self.phone = phone
+        self.host = host
         self.idle_at = time.time()
-        self.live = LiveHub(board, token)
+        self.live = live or LiveHub(board, token)
         self.live.server = self
+        self.pairing = pairing
+        self.phone_sessions: dict[str, object] = phone_sessions if phone_sessions is not None else {}
         super().__init__((host, port), ViewerHandler)
 
     def server_bind(self) -> None:
@@ -51,7 +71,7 @@ class ViewerServer(ThreadingHTTPServer):
             self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         self.socket.bind(self.server_address)
         self.server_address = self.socket.getsockname()
-        self.server_name = "127.0.0.1"
+        self.server_name = self.host
         self.server_port = self.server_address[1]
 
     def server_activate(self) -> None:
@@ -84,13 +104,34 @@ class ViewerHandler(BaseHTTPRequestHandler):
             self._websocket()
             return
         path = urlparse(self.path).path
+        if path == "/pair" or path == "/pair/":
+            self._pair_page()
+            return
+        if path == "/pair/qr.svg":
+            self._pair_qr()
+            return
         if path.startswith("/files/"):
             if not self._file_allowed():
                 self._send(403, b"This page needs the token from the agentcoop ui command.\n")
                 return
             self._shared_file(path)
             return
-        if not self._allowed():
+        if path.startswith("/assets/") or path.startswith("/images/"):
+            if not (self._allowed() or self._phone_session()):
+                self._send(403, b"This page needs the token from the agentcoop ui command.\n")
+                return
+            data = _viewer_bytes(path.lstrip("/"))
+            if data is None:
+                self._send(404, b"Not found.\n")
+                return
+            self._send(200, data, _media_type(path))
+            return
+        if not (self._allowed() or self._phone_session()):
+            if self.server.phone and path in ("/", "/index.html"):
+                self.send_response(302)
+                self.send_header("Location", "/pair")
+                self.end_headers()
+                return
             self._send(403, b"This page needs the token from the agentcoop ui command.\n")
             return
         if path in ("/", "/index.html"):
@@ -99,13 +140,6 @@ class ViewerHandler(BaseHTTPRequestHandler):
                 self._send(500, b"The viewer app is missing from this build.\n")
                 return
             self._send(200, page, "text/html; charset=utf-8")
-            return
-        if path.startswith("/assets/") or path.startswith("/images/"):
-            data = _viewer_bytes(path.lstrip("/"))
-            if data is None:
-                self._send(404, b"Not found.\n")
-                return
-            self._send(200, data, _media_type(path))
             return
         if path == "/api/state":
             # Kept for scripts. The app uses the WebSocket.
@@ -127,10 +161,13 @@ class ViewerHandler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:  # noqa: N802
         self.server.touch()
+        path = urlparse(self.path).path
+        if path == "/pair":
+            self._pair_submit()
+            return
         if not self._allowed():
             self._send(403, b"This page needs the token from the agentcoop ui command.\n")
             return
-        path = urlparse(self.path).path
         if path == "/api/shutdown":
             self._send(200, b"Closing.\n")
             threading.Thread(target=self.server.shutdown, daemon=True).start()
@@ -170,7 +207,7 @@ class ViewerHandler(BaseHTTPRequestHandler):
         """Upgrade this request to the viewer live socket."""
         headers = parse_upgrade_headers(self.headers)
         origin = headers.get("origin", "")
-        expected = "http://127.0.0.1:" + str(self.server.server_port)
+        expected = self._page_origin()
         if origin != expected:
             self._send(403, b"Origin is not allowed.\n")
             return
@@ -201,16 +238,118 @@ class ViewerHandler(BaseHTTPRequestHandler):
             file_session=file_session,
             origin=origin,
             on_activity=self.server.touch,
+            readonly=False,
+            auth_tokens=self._auth_tokens(),
+            phone_tokens=self._phone_tokens(),
         )
         # Stay on this request thread until the socket closes. ThreadingHTTPServer
         # already gives one thread per connection.
         session.run()
 
+    def _page_origin(self) -> str:
+        host = self.headers.get("Host") or (self.server.host + ":" + str(self.server.server_port))
+        return "http://" + host
+
+    def _auth_tokens(self) -> set[str]:
+        tokens = {self.server.token}
+        tokens |= self._phone_tokens()
+        return tokens
+
+    def _phone_tokens(self) -> set[str]:
+        tokens: set[str] = set()
+        for session in self.server.phone_sessions.values():
+            if getattr(session, "alive", lambda: False)():
+                tokens.add(str(getattr(session, "token", "")))
+        return tokens
+
     def _allowed(self) -> bool:
         query = parse_qs(urlparse(self.path).query)
         supplied = (query.get("t") or [""])[0]
         header = self.headers.get("X-Agentcoop-Token", "")
-        return supplied == self.server.token or header == self.server.token
+        if supplied == self.server.token or header == self.server.token:
+            return True
+        phone = self._phone_session()
+        return phone is not None
+
+    def _phone_session(self):
+        raw = self.headers.get("Cookie", "")
+        if not raw:
+            return None
+        jar = SimpleCookie()
+        try:
+            jar.load(raw)
+        except (TypeError, ValueError):
+            return None
+        morsel = jar.get(_PHONE_COOKIE)
+        if morsel is None:
+            return None
+        session = self.server.phone_sessions.get(morsel.value)
+        if session is None or not getattr(session, "alive", lambda: False)():
+            return None
+        return session
+
+    def _pair_page(self) -> None:
+        if not self.server.phone:
+            self._send(404, b"Not found.\n")
+            return
+        html = """<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Pair Agent Co-op</title>
+<style>
+body{margin:0;font:16px/1.45 system-ui,-apple-system,sans-serif;background:#12111C;color:#ECEAF6;
+padding:24px;padding-bottom:calc(24px + env(safe-area-inset-bottom))}
+label{display:block;margin:16px 0 8px}
+input{font:inherit;width:100%;max-width:280px;height:48px;padding:0 12px;border-radius:8px;
+border:1px solid #2E2B46;background:#211F31;color:inherit;letter-spacing:0.2em;font-size:22px}
+button{margin-top:16px;min-height:48px;padding:0 18px;border-radius:8px;border:0;background:#F2A33A;color:#1E1B4B;font-weight:650}
+img{margin-top:20px;background:#fff;padding:12px;border-radius:12px;max-width:220px}
+p{color:#A9A6C2}
+</style></head><body>
+<h1>Agent Co-op on your phone</h1>
+<p>Enter the 6-digit code shown on your computer. Read-only. Manage actions stay on the desktop.</p>
+<form method="post" action="/pair">
+<label for="code">Pairing code</label>
+<input id="code" name="code" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" required autocomplete="one-time-code">
+<button type="submit">Open viewer</button>
+</form>
+<img src="/pair/qr.svg" width="220" height="220" alt="QR code for this address">
+</body></html>"""
+        self._send(200, html.encode("utf-8"), "text/html; charset=utf-8")
+
+    def _pair_qr(self) -> None:
+        if not self.server.phone:
+            self._send(404, b"Not found.\n")
+            return
+        from agentcoop.phone import pairing_svg
+
+        url = self._page_origin() + "/pair"
+        self._send(200, pairing_svg(url).encode("utf-8"), "image/svg+xml")
+
+    def _pair_submit(self) -> None:
+        if not self.server.phone or self.server.pairing is None:
+            self._send(404, b"Not found.\n")
+            return
+        length = int(self.headers.get("Content-Length") or "0")
+        raw = self.rfile.read(length) if length else b""
+        form = parse_qs(raw.decode("utf-8", "replace"))
+        code = (form.get("code") or [""])[0]
+        pairing = self.server.pairing
+        if not pairing.ok(code):
+            self._send(403, b"That code is wrong, used, or expired.\n")
+            return
+        pairing.used = True
+        from agentcoop.phone import new_phone_session
+
+        session = new_phone_session()
+        self.server.phone_sessions[session.token] = session
+        self.send_response(302)
+        self.send_header(
+            "Set-Cookie",
+            _PHONE_COOKIE + "=" + session.token + "; HttpOnly; SameSite=Strict; Path=/",
+        )
+        # One-shot token in the URL so the app can hello on the WebSocket, then strip it.
+        self.send_header("Location", "/?t=" + session.token)
+        self.end_headers()
 
     def _file_allowed(self) -> bool:
         if self._allowed():
@@ -243,13 +382,16 @@ class ViewerHandler(BaseHTTPRequestHandler):
         self.send_header("Cache-Control", "no-store")
         self.send_header("X-Content-Type-Options", "nosniff")
         self.send_header("Referrer-Policy", "no-referrer")
-        ws_origin = "ws://127.0.0.1:" + str(self.server.server_port)
+        host = self.headers.get("Host") or (self.server.host + ":" + str(self.server.server_port))
+        ws_origin = "ws://" + host
         policy = (
             "default-src 'self'; script-src 'self'; style-src 'self'; "
             "img-src 'self' data: blob:; connect-src 'self' "
             + ws_origin
             + "; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"
         )
+        if content_type.startswith("text/html") and urlparse(self.path).path.startswith("/pair"):
+            policy = policy.replace("style-src 'self'", "style-src 'self' 'unsafe-inline'", 1)
         self.send_header("Content-Security-Policy", policy)
         self.end_headers()
         self.wfile.write(body)
@@ -632,37 +774,111 @@ def suggest_repos(home: Path, limit: int = 20) -> list[str]:
     return found[:limit]
 
 
-def make_server(board: Path, token: str, host: str = "127.0.0.1", port: int = 0) -> ViewerServer:
-    """Create the viewer server. Any host other than 127.0.0.1 is refused."""
-    return ViewerServer(board, token, host=host, port=port)
+def make_server(
+    board: Path,
+    token: str,
+    host: str = "127.0.0.1",
+    port: int = 0,
+    *,
+    phone: bool = False,
+    live: LiveHub | None = None,
+    pairing=None,
+    phone_sessions: dict | None = None,
+) -> ViewerServer:
+    """Create the viewer server on loopback, or a private address in phone mode."""
+    return ViewerServer(
+        board,
+        token,
+        host=host,
+        port=port,
+        phone=phone,
+        live=live,
+        pairing=pairing,
+        phone_sessions=phone_sessions,
+    )
 
 
-def serve(*, open_browser: bool = True, idle_seconds: int = 1800) -> int:
+def serve(*, open_browser: bool = True, idle_seconds: int = 1800, phone: bool = False) -> int:
     """Run the viewer until it is closed, stopped, or left idle."""
     board = board_root()
     require_board(board)
     token = secrets.token_urlsafe(24)
-    server = make_server(board, token)
-    port = server.server_address[1]
+    pairing = None
+    phone_sessions: dict = {}
+    local = make_server(board, token)
+    servers = [local]
+    if phone:
+        from agentcoop.confirm import confirm_person
+        from agentcoop.phone import new_pairing_code, pairing_banner, pick_phone_host
+
+        confirm_person(
+            "Open the Agent Co-op viewer on the local network for your phone.\n"
+            "Plain HTTP on that network can be read by others on the same network.",
+            expected="review",
+            kind="review",
+        )
+        primary, others = pick_phone_host()
+        pairing = new_pairing_code()
+        try:
+            phone_server = make_server(
+                board,
+                token,
+                host=primary,
+                port=local.server_address[1],
+                phone=True,
+                live=local.live,
+                pairing=pairing,
+                phone_sessions=phone_sessions,
+            )
+        except OSError:
+            phone_server = make_server(
+                board,
+                token,
+                host=primary,
+                port=0,
+                phone=True,
+                live=local.live,
+                pairing=pairing,
+                phone_sessions=phone_sessions,
+            )
+        local.phone = True
+        local.pairing = pairing
+        local.phone_sessions = phone_sessions
+        servers.append(phone_server)
+        phone_url = "http://" + primary + ":" + str(phone_server.server_address[1]) + "/pair"
+        print(pairing_banner(phone_url, pairing.code, others), flush=True)
+
+    port = local.server_address[1]
     url = "http://127.0.0.1:" + str(port) + "/?t=" + token
 
     def idle() -> None:
         while True:
             time.sleep(5)
-            if time.time() - server.idle_at > idle_seconds:
-                server.shutdown()
+            if time.time() - local.idle_at > idle_seconds:
+                for srv in servers:
+                    srv.shutdown()
                 return
 
     threading.Thread(target=idle, daemon=True).start()
     print(url, flush=True)
     print("This page is for you. Agents do not connect to it.", flush=True)
     print("Press Ctrl+C to stop. It also stops after 30 minutes with no requests.", flush=True)
-    if open_browser:
+    if open_browser and not phone:
         webbrowser.open(url)
+    for srv in servers[1:]:
+        threading.Thread(target=srv.serve_forever, daemon=True).start()
     try:
-        server.serve_forever()
+        local.serve_forever()
     except KeyboardInterrupt:
         pass
     finally:
-        server.server_close()
+        for srv in servers:
+            try:
+                srv.shutdown()
+            except Exception:
+                pass
+            try:
+                srv.server_close()
+            except Exception:
+                pass
     return 0
