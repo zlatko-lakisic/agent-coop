@@ -75,6 +75,9 @@ class ViewerHandler(BaseHTTPRequestHandler):
             text = format_doctor(run_doctor(self.server.board, project=project))
             self._send(200, text.encode("utf-8"), "text/plain; charset=utf-8")
             return
+        if path.startswith("/api/v2/"):
+            self._v2(path)
+            return
         if path.startswith("/files/"):
             self._shared_file(path)
             return
@@ -140,6 +143,17 @@ class ViewerHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", "no-store")
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("Referrer-Policy", "no-referrer")
+        policy = (
+            "default-src 'self'; script-src 'self'; style-src 'self'; "
+            "img-src 'self' data: blob:; connect-src 'self'; frame-ancestors 'none'; "
+            "base-uri 'none'; form-action 'self'"
+        )
+        if content_type.startswith("text/html"):
+            policy = policy.replace("script-src 'self'", "script-src 'self' 'unsafe-inline'", 1)
+            policy = policy.replace("style-src 'self'", "style-src 'self' 'unsafe-inline'", 1)
+        self.send_header("Content-Security-Policy", policy)
         self.end_headers()
         self.wfile.write(body)
 
@@ -175,13 +189,98 @@ class ViewerHandler(BaseHTTPRequestHandler):
             return
         import mimetypes
 
-        media = mimetypes.guess_type(real.name)[0] or "application/octet-stream"
+        suffix = real.suffix.lower()
+        download = suffix in (".svg", ".html", ".htm")
+        from agentcoop.share import is_program, load_pending
+
+        held = {str(item.get("name") or "") for item in load_pending(self.server.board, project)}
+        if real.name in held or is_program(real):
+            self._send(403, b"That file is held.\n")
+            return
+        media = "application/octet-stream" if download else (mimetypes.guess_type(real.name)[0] or "application/octet-stream")
         try:
             data = real.read_bytes()
         except OSError:
             self._send(404, b"Not found.\n")
             return
+        if download:
+            self.send_response(200)
+            self.send_header("Content-Type", media)
+            self.send_header("Content-Length", str(len(data)))
+            self.send_header("Content-Disposition", 'attachment; filename="' + real.name.replace('"', "") + '"')
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("X-Content-Type-Options", "nosniff")
+            self.send_header("Referrer-Policy", "no-referrer")
+            self.send_header(
+                "Content-Security-Policy",
+                "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; "
+                "connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'",
+            )
+            self.end_headers()
+            self.wfile.write(data)
+            return
         self._send(200, data, media)
+
+    def _v2(self, path: str) -> None:
+        from agentcoop.timeline import (
+            agents_view,
+            changes_since,
+            event_detail,
+            histogram,
+            projects_view,
+            query_events,
+            rules_view,
+            status_view,
+        )
+
+        query = parse_qs(urlparse(self.path).query)
+        project = (query.get("project") or [None])[0]
+        try:
+            if path == "/api/v2/projects":
+                payload = {"projects": projects_view(self.server.board)}
+            elif path == "/api/v2/events":
+                payload = query_events(
+                    self.server.board,
+                    project=project,
+                    start=(query.get("from") or [None])[0],
+                    end=(query.get("to") or [None])[0],
+                    actors=query.get("actors"),
+                    kinds=query.get("kinds"),
+                    query=(query.get("q") or [None])[0],
+                    severity=(query.get("severity") or [None])[0],
+                    cursor=(query.get("cursor") or [None])[0],
+                    limit=int((query.get("limit") or ["50"])[0]),
+                    include_low=(query.get("low") or ["0"])[0] == "1",
+                )
+            elif path == "/api/v2/histogram":
+                payload = histogram(
+                    self.server.board,
+                    project=project,
+                    start=(query.get("from") or [None])[0],
+                    end=(query.get("to") or [None])[0],
+                    buckets=int((query.get("buckets") or ["24"])[0]),
+                )
+            elif path.startswith("/api/v2/event/"):
+                detail = event_detail(self.server.board, path.split("/")[-1])
+                if detail is None:
+                    self._send(404, b"Not found.\n")
+                    return
+                payload = detail
+            elif path == "/api/v2/agents":
+                payload = {"agents": agents_view(self.server.board, project or "")}
+            elif path == "/api/v2/rules":
+                payload = rules_view(self.server.board, project or "")
+            elif path == "/api/v2/status":
+                payload = status_view(self.server.board)
+            elif path == "/api/v2/changes":
+                payload = changes_since(self.server.board, (query.get("since") or ["0"])[0])
+            else:
+                self._send(404, b"Not found.\n")
+                return
+        except (CoopError, ValueError) as exc:
+            self._send(400, str(exc).encode("utf-8"), "text/plain; charset=utf-8")
+            return
+        self._send(200, json.dumps(payload).encode("utf-8"), "application/json")
 
     def _state(self) -> dict:
         board = self.server.board
