@@ -10,7 +10,7 @@ from pathlib import Path
 import support
 
 ROOT = support.ROOT
-SKIP = {".git", "__pycache__", "dist", "build", ".venv"}
+SKIP = {".git", "__pycache__", "dist", "build", ".venv", "node_modules"}
 BAD = ("\u2014", "\u2013")
 
 
