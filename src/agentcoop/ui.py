@@ -31,6 +31,7 @@ from agentcoop.wsserver import (
 _SKIP_DIRS = {"Library", "Applications", "node_modules", "Pictures", "Movies", "Music"}
 _FILE_COOKIE = "agentcoop_files"
 _PHONE_COOKIE = "agentcoop_phone"
+_UI_COOKIE = "agentcoop_ui"
 
 
 class ViewerServer(ThreadingHTTPServer):
@@ -139,7 +140,19 @@ class ViewerHandler(BaseHTTPRequestHandler):
             if page is None:
                 self._send(500, b"The viewer app is missing from this build.\n")
                 return
-            self._send(200, page, "text/html; charset=utf-8")
+            # Desktop opens /?t=<token>. The page then requests ./assets without
+            # the query, so set a session cookie the asset handler can accept.
+            cookies: list[str] = []
+            query = parse_qs(urlparse(self.path).query)
+            supplied = (query.get("t") or [""])[0]
+            if supplied == self.server.token:
+                cookies.append(
+                    _UI_COOKIE
+                    + "="
+                    + self.server.token
+                    + "; HttpOnly; SameSite=Strict; Path=/"
+                )
+            self._send(200, page, "text/html; charset=utf-8", set_cookies=cookies)
             return
         if path == "/api/state":
             # Kept for scripts. The app uses the WebSocket.
@@ -268,10 +281,12 @@ class ViewerHandler(BaseHTTPRequestHandler):
         header = self.headers.get("X-Agentcoop-Token", "")
         if supplied == self.server.token or header == self.server.token:
             return True
+        if self._ui_session():
+            return True
         phone = self._phone_session()
         return phone is not None
 
-    def _phone_session(self):
+    def _cookie_value(self, name: str) -> str | None:
         raw = self.headers.get("Cookie", "")
         if not raw:
             return None
@@ -280,10 +295,20 @@ class ViewerHandler(BaseHTTPRequestHandler):
             jar.load(raw)
         except (TypeError, ValueError):
             return None
-        morsel = jar.get(_PHONE_COOKIE)
+        morsel = jar.get(name)
         if morsel is None:
             return None
-        session = self.server.phone_sessions.get(morsel.value)
+        return morsel.value
+
+    def _ui_session(self) -> bool:
+        value = self._cookie_value(_UI_COOKIE)
+        return value is not None and value == self.server.token
+
+    def _phone_session(self):
+        value = self._cookie_value(_PHONE_COOKIE)
+        if value is None:
+            return None
+        session = self.server.phone_sessions.get(value)
         if session is None or not getattr(session, "alive", lambda: False)():
             return None
         return session
@@ -375,7 +400,14 @@ p{color:#A9A6C2}
             raise CoopError("The request was not a JSON object.")
         return data
 
-    def _send(self, status: int, body: bytes, content_type: str = "text/plain; charset=utf-8") -> None:
+    def _send(
+        self,
+        status: int,
+        body: bytes,
+        content_type: str = "text/plain; charset=utf-8",
+        *,
+        set_cookies: list[str] | None = None,
+    ) -> None:
         self.send_response(status)
         self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(body)))
@@ -393,6 +425,8 @@ p{color:#A9A6C2}
         if content_type.startswith("text/html") and urlparse(self.path).path.startswith("/pair"):
             policy = policy.replace("style-src 'self'", "style-src 'self' 'unsafe-inline'", 1)
         self.send_header("Content-Security-Policy", policy)
+        for cookie in set_cookies or []:
+            self.send_header("Set-Cookie", cookie)
         self.end_headers()
         self.wfile.write(body)
 
