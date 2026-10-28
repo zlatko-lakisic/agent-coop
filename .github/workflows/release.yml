@@ -57,9 +57,9 @@ jobs:
         run: |
           mkdir -p dist/out
           if [ "$RUNNER_OS" = "Windows" ]; then
-            DATA="--add-data src/agentcoop/templates;templates --add-data src/agentcoop/gitshim.py;agentcoop --add-data skills/agent-coop;skills/agent-coop"
+            DATA="--add-data src/agentcoop/templates;templates --add-data src/agentcoop/data/viewer;viewer --add-data src/agentcoop/gitshim.py;agentcoop --add-data skills/agent-coop;skills/agent-coop"
           else
-            DATA="--add-data src/agentcoop/templates:templates --add-data src/agentcoop/gitshim.py:agentcoop --add-data skills/agent-coop:skills/agent-coop"
+            DATA="--add-data src/agentcoop/templates:templates --add-data src/agentcoop/data/viewer:viewer --add-data src/agentcoop/gitshim.py:agentcoop --add-data skills/agent-coop:skills/agent-coop"
           fi
           TK=""
           if [ "$RUNNER_OS" = "Windows" ] || [ "$RUNNER_OS" = "macOS" ]; then

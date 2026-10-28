@@ -562,6 +562,73 @@ def _helpers_smoke(command: Path, env: dict, demo: Path, message_id: str) -> int
     return 0
 
 
+def _viewer_smoke(command: Path, env: dict) -> int:
+    """Prove the installed build ships the viewer and serves its assets."""
+    import re
+    import urllib.error
+    import urllib.request
+    from http.cookiejar import CookieJar
+
+    proc = subprocess.Popen(
+        [str(command), "ui"],
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    url = ""
+    try:
+        deadline = time.time() + 30
+        while time.time() < deadline:
+            line = proc.stdout.readline() if proc.stdout else ""
+            if not line and proc.poll() is not None:
+                break
+            if "/?t=" in line:
+                url = line.strip()
+                break
+        if not url:
+            err = proc.stderr.read() if proc.stderr else ""
+            sys.stderr.write("ui did not print a URL\n" + err)
+            return 1
+        jar = CookieJar()
+        opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(jar))
+        with opener.open(url, timeout=10) as response:
+            html = response.read().decode("utf-8")
+        if "The viewer app is missing" in html:
+            sys.stderr.write("The viewer app is missing from this build.\n")
+            return 1
+        assets = re.findall(r'(?:src|href)="(\./assets/[^"]+)"', html)
+        if len(assets) < 2:
+            sys.stderr.write("index.html has no asset links\n")
+            return 1
+        base = url.split("/?t=")[0]
+        token = url.split("?t=", 1)[1]
+        for relative in assets:
+            path = "/" + relative.lstrip("./")
+            with opener.open(base + path, timeout=10) as asset:
+                if asset.status != 200:
+                    sys.stderr.write("asset failed: " + path + "\n")
+                    return 1
+                asset.read()
+        try:
+            urllib.request.urlopen(base + "/api/shutdown?t=" + token, timeout=10).close()
+        except urllib.error.URLError:
+            pass
+        try:
+            proc.wait(timeout=20)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.wait(timeout=5)
+        return 0
+    finally:
+        if proc.poll() is None:
+            proc.kill()
+            try:
+                proc.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                pass
+
+
 def _payload_from(starter: list[str]) -> Path | None:
     """Return the built file smoke was given, when it is a real file."""
     for item in starter:
@@ -674,6 +741,8 @@ def main() -> int:
                 return 1
         sys.stdout.write(text)
         if _watch_smoke(command, env, Path(raw)) != 0:
+            return 1
+        if _viewer_smoke(command, env) != 0:
             return 1
         if _update_smoke(command, starter, env, Path(raw)) != 0:
             return 1
