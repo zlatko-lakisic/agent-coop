@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import secrets
 import socket
+import sys
 import threading
 import time
 import webbrowser
@@ -628,6 +629,15 @@ def files_view(board: Path, project: str, token: str) -> list[dict]:
 
 def _viewer_root() -> Path | None:
     """Return the built viewer folder inside the package, or None."""
+    # PyInstaller onefile: release.yml ships the folder as MEIPASS/viewer.
+    if getattr(sys, "frozen", False):
+        meipass = Path(getattr(sys, "_MEIPASS", "") or "")
+        for candidate in (
+            meipass / "viewer",
+            meipass / "agentcoop" / "data" / "viewer",
+        ):
+            if candidate.is_dir():
+                return candidate
     try:
         from importlib import resources
 
