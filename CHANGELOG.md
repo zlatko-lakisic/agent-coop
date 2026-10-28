@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased (planned 0.2.10)
+## 0.2.10 - 2026-10-28
 
 - The local viewer can read the board as a timeline. `agentcoop ui` still serves the current page. New read-only routes under `/api/v2/` need the viewer token.
 
