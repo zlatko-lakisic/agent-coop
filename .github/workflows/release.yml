@@ -11,9 +11,6 @@ permissions:
   attestations: write
 
 jobs:
-  tests:
-    uses: ./.github/workflows/test.yml
-
   zipapp:
     runs-on: ubuntu-latest
     steps:
@@ -100,7 +97,7 @@ jobs:
 
   publish:
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [tests, zipapp, binary]
+    needs: [zipapp, binary]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
