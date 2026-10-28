@@ -16,10 +16,20 @@ from agentcoop.errors import CoopError
 from agentcoop.projects import atomic_write_bytes, dump_json, validate_agent_name
 
 
+# The Cursor loop and a helper watch heartbeat are not a new driver turn.
+LOOP_SOURCES = {"cursor-loop", "watch"}
+
+
 def activity_path(board: Path, agent: str) -> Path:
     """Return the activity file for one agent."""
     validate_agent_name(agent)
     return board / ".state" / "activity" / (agent + ".json")
+
+
+def turn_path(board: Path, agent: str) -> Path:
+    """Return the turn-state file for one agent."""
+    validate_agent_name(agent)
+    return board / ".state" / "turn" / (agent + ".json")
 
 
 def note_activity(
@@ -62,6 +72,7 @@ def note_prompt(board: Path, agent: str, raw: str) -> None:
         generation_id=generation if isinstance(generation, str) else None,
         conversation_id=conversation if isinstance(conversation, str) else None,
     )
+    note_turn(board, agent, "running", "prompt")
 
 
 def note_attention(
@@ -100,13 +111,48 @@ def load_activity(board: Path, agent: str) -> dict:
     return _read_json(path)
 
 
+def note_turn(
+    board: Path,
+    agent: str,
+    state: str,
+    source: str,
+    *,
+    now: datetime | None = None,
+) -> None:
+    """Record whether this driver's turn is running or has ended."""
+    if state not in ("running", "ended"):
+        return
+    try:
+        validate_agent_name(agent)
+        moment = _aware(now or datetime.now(timezone.utc))
+        atomic_write_bytes(
+            turn_path(board, agent),
+            dump_json({"state": state, "source": source, "at": _stamp(moment)}),
+        )
+    except Exception:
+        return
+
+
+def turn_phase(board: Path, agent: str) -> str:
+    """Return running, ended, or empty when this agent has no turn record."""
+    try:
+        data = _read_json(turn_path(board, agent))
+    except CoopError:
+        return ""
+    state = data.get("state")
+    if state in ("running", "ended"):
+        return str(state)
+    return ""
+
+
 def turn_moved(board: Path, agent: str, started: datetime, generation_id: str = "") -> bool:
     """Return True when this agent did something after the hook started.
 
     Cursor's stop hook sees stdin only once. loop_count cannot change while
-    the hook waits. A later command, heartbeat, progress write, or prompt
-    updates this file. A prompt can also store a new generation_id. That id
-    changes on every user message, so a different one means a newer turn.
+    the hook waits.     A later command, progress write, or prompt updates this file.
+    A cursor-loop heartbeat does not. A prompt can also store a new
+    generation_id. That id changes on every user message, so a different one
+    means a newer turn.
     """
     data = load_activity(board, agent)
     last = _parse_stamp(data.get("last_at"))
@@ -140,6 +186,12 @@ def _write_activity(
 ) -> None:
     previous = load_activity(board, agent)
     moment = _aware(now or datetime.now(timezone.utc))
+    if source in LOOP_SOURCES:
+        payload = dict(previous)
+        payload["loop_at"] = _stamp(moment)
+        atomic_write_bytes(activity_path(board, agent), dump_json(payload))
+        return
+    note_turn(board, agent, "running", source, now=moment)
     payload = {"last_at": _stamp(moment), "source": source}
     generation = generation_id if isinstance(generation_id, str) and generation_id else ""
     if not generation and isinstance(previous.get("generation_id"), str):
@@ -151,6 +203,8 @@ def _write_activity(
         conversation = previous["conversation_id"]
     if conversation:
         payload["conversation_id"] = conversation
+    if isinstance(previous.get("loop_at"), str):
+        payload["loop_at"] = previous["loop_at"]
     atomic_write_bytes(activity_path(board, agent), dump_json(payload))
 
 

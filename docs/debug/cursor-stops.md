@@ -4,7 +4,7 @@ This page is the record of the 0.2.8 investigation. It uses a separate test boar
 
 ## What was tested
 
-The scripted CLI scenarios were not run. `agent` and `cursor-agent` are not installed on this PC, and installing them was not allowed. The fake driver still covers s3, s4, s10, s12, and s13 in CI. s13 checks that a heartbeat during the wait makes the stop hook send nothing.
+The scripted CLI scenarios were not run. `agent` and `cursor-agent` are not installed on this PC, and installing them was not allowed. The fake driver still covers s3, s4, s10, s12, and s13 in CI. s13 checks that a real command during the wait makes the stop hook send nothing. A cursor-loop heartbeat does not.
 
 A real Cursor app chat on this project ran a temporary stop hook. The command was Python, timeout 600, `loop_limit` null. It did not use the Comstar project or the real board.
 
@@ -76,7 +76,7 @@ The 0.2.8 hook could still be running when a new turn started. When it timed out
 
 Cursor's stop hook reads stdin once. The fields are `status`, `loop_count`, and the common fields `conversation_id` and `generation_id`. Docs: https://cursor.com/docs/hooks. `loop_count` does not change while that process waits, and this app has seen it missing, so it cannot show that a newer turn started. `generation_id` changes on every user message. `beforeSubmitPrompt` runs when a prompt is sent and records that id. https://cursor.com/docs/hooks
 
-The hook also reads `.state/activity/<agent>.json`. These write it: an agentcoop command run by this agent, a cursor-loop heartbeat, a cursor-loop tick, a progress write, and the prompt hook. The stop hook command does not write it. If the file is newer than the hook's start, or a prompt stored a different `generation_id`, the hook prints nothing and exits.
+The hook also reads `.state/activity/<agent>.json`. These write a turn signal: an agentcoop command run by this agent, a progress write, and the prompt hook. A cursor-loop heartbeat stores `loop_at` only, and it does not cancel the follow-up. The stop hook command does not write a turn signal. If the turn signal is newer than the hook's start, or a prompt stored a different `generation_id`, the hook prints nothing and exits.
 
 No mail now sends: Agent Co-op keep-awake. If you are working on anything, ignore this and keep going. Otherwise end your turn.
 
@@ -93,7 +93,11 @@ Date: 2026-10-25. Board and project were under the temp folder. Not Comstar. Not
 | After 3 seconds the hook was still waiting. Then `agentcoop check --as cursor` ran. | The hook exited in 4.3 seconds, code 0, and printed nothing. |
 | A progress file named the work. A new hook waited 3 seconds. Then `cursor-loop` printed `AGENT_LOOP_TICK_board` for that work. | The hook exited in 4.5 seconds, code 0, and printed nothing. The tick was `continue your current task: Count to a large number.` |
 
-`agent` and `cursor-agent` are not on PATH, so this was not a second Cursor window. The app test from 0.2.8 is still the last one that typed into a chat. What this run shows is the hook process: when a command or a tick lands during the wait, there is no follow-up for Cursor to submit.
+`agent` and `cursor-agent` are not on PATH, so this was not a second Cursor window. The app test from 0.2.8 is still the last one that typed into a chat. What this run shows is the hook process on that date: a tick wrote activity, and the hook printed nothing. A cursor-loop tick no longer writes that turn signal.
+
+### Tick window on 2026-10-27 evening
+
+`cursor -n --chat` opened a window on `%TEMP%\coop-tick-probe\project`. That folder held `hook.py` and `tick.py`. The command exited 0. `hook-log.txt` and `tick-log.txt` were not created. Computer use did not start, so nothing was typed in that chat. No trace line was written. This run did not see a tick start a turn, and it did not see the older macOS wake.
 
 ### App chat on 2026-10-27
 

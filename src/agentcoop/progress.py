@@ -448,7 +448,7 @@ def task_lines(board: Path, project: str, now: datetime | None = None) -> list[s
     driver = str(record.get("driver") or "")
     latest = latest_progress(board, project)
     if latest is not None and driver:
-        line = _file_task_line(driver, latest, clock, stale_after)
+        line = _file_task_line(board, driver, latest, clock, stale_after)
         if line:
             lines.append(line)
     for task in helper_tasks(board, project, now=clock):
@@ -467,7 +467,8 @@ def task_lines(board: Path, project: str, now: datetime | None = None) -> list[s
     return lines
 
 
-def _file_task_line(who: str, path: Path, clock: datetime, stale_after: int) -> str:
+def _file_task_line(board: Path, who: str, path: Path, clock: datetime, stale_after: int) -> str:
+    from agentcoop.activity import turn_phase
     from agentcoop.progressmeta import parse_fields
 
     try:
@@ -482,7 +483,7 @@ def _file_task_line(who: str, path: Path, clock: datetime, stale_after: int) -> 
     status = str(fields.get("Status") or "working")
     if status == "done" and age > 86400:
         return ""
-    if status == "working" and age >= stale_after // 2:
+    if status in ("working", "blocked") and turn_phase(board, who) == "ended":
         status = "idle, turn ended"
     now = str(fields.get("Now") or "") or section_text(text, "Working on now").replace("\n", " ").strip()
     return _format_task_line(

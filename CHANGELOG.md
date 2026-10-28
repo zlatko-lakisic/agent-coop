@@ -6,10 +6,11 @@
 
 - cursor-loop posts helper outbox files on every pass, so a nudge reaches the driver while that loop is running.
 - A progress file that starts with a heading still counts as an open task when it has a Working on now section.
-- STATUS.md says `idle, turn ended` when a working update is older than the progress interval. NEW.md adds `Driver progress unchanged for N min during a task.`
+- STATUS.md says `idle, turn ended` when the stop hook has seen the turn end and the task is still working or blocked. A quiet progress file alone does not say that. NEW.md adds `Driver progress unchanged for N min during a task.`
+- When a task is still open, the stop hook sends `Agent Co-op continue` instead of telling the driver it may end the turn. A cursor-loop heartbeat does not cancel that follow-up. After the turn has ended, cursor-loop still posts helper files and does not print a continue tick.
+- The Claude desktop task prompt is one fixed sentence, Prompt v2. The check steps are only in the skill. A cursor-loop tick was not observed to start a new turn after the driver has ended it.
 - STATUS.md says the background round is late when Last round is older than three schedule intervals, and names `agentcoop start`.
 - `agentcoop rejected clear` moves old rejected answers aside so NEW.md stops listing them.
-- The Claude desktop task prompt tells the helper to read the progress age and nudge when it stalls. A cursor-loop tick cannot start a new turn after the driver has ended it.
 
 ## 0.2.9 - 2026-10-25
 

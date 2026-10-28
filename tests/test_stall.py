@@ -82,6 +82,38 @@ class StallTests(unittest.TestCase):
             messages, _issues = new_messages(env.board, "demo", "cursor")
             self.assertTrue(any(item.type == "nudge" for item in messages))
 
+    def test_an_ended_turn_posts_mail_and_does_not_tick(self) -> None:
+        with support.TempEnv() as env:
+            _ready(env)
+            from agentcoop.activity import note_turn
+
+            write_progress(
+                env.board,
+                "demo",
+                "cursor",
+                "Status: working\nNow: Phase D. No click yet.\n",
+            )
+            note_turn(env.board, "cursor", "ended", "hook")
+            ensure_outbox_dirs(env.board, "demo", "claude_desktop")
+            box = outbox_dir(env.board, "demo", "claude_desktop")
+            path = box / "nudge.20261028T003122Z.md"
+            path.write_text("Phase D stopped after the first frame.\n", encoding="utf-8")
+            when = time.time() - 30
+            os.utime(path, (when, when))
+            out = io.StringIO()
+            code = run_cursor_loop(
+                env.board,
+                "demo",
+                "cursor",
+                sleep=lambda _seconds: None,
+                out=out,
+                max_passes=1,
+            )
+            self.assertEqual(code, 0)
+            self.assertNotIn("continue your current task", out.getvalue())
+            messages, _issues = new_messages(env.board, "demo", "cursor")
+            self.assertTrue(any(item.type == "nudge" for item in messages))
+
     def test_a_heading_progress_file_still_wakes_the_task(self) -> None:
         with support.TempEnv() as env:
             _ready(env)
@@ -118,9 +150,16 @@ class StallTests(unittest.TestCase):
             path = env.board / "projects" / "demo" / "progress" / name
             old = time.time() - 15 * 60
             os.utime(path, (old, old))
+            from agentcoop.activity import note_turn
+
+            note_turn(env.board, "cursor", "ended", "hook")
             text = render_status(env.board)
             self.assertIn("idle, turn ended", text)
             self.assertIn("Phase D", text)
+            note_turn(env.board, "cursor", "running", "prompt")
+            fresh = render_status(env.board)
+            self.assertNotIn("idle, turn ended", fresh)
+            self.assertIn("working", fresh)
 
     def test_new_md_names_a_quiet_driver(self) -> None:
         with support.TempEnv() as env:

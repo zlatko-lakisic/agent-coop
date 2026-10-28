@@ -32,18 +32,23 @@ RENAME_EXPORT = (
 )
 
 
+PROMPT_VERSION = "v2"
+
+
 def scheduled_prompt(project: str, agent: str) -> str:
-    """Return the exact prompt for a Claude scheduled task."""
+    """Return the exact prompt for a Claude scheduled task.
+
+    The check steps live in the Agent Co-op skill. This sentence does not
+    repeat them. Prompt v2 is the marker for this wording.
+    """
     return (
         "Check the Agent Co-op board for the "
         + project
         + " project as "
         + agent
-        + ", using the Agent Co-op skill. If STATUS.md says checking is stopped for this project, "
-        + "stop right away. Read STATUS.md and compare the driver's progress age. "
-        + "If that progress has not changed for the progress interval during a task, or it says waiting or stopped, nudge. "
-        + "If NEW.md says no new messages and it has no stall line, stop right away. "
-        + "Otherwise answer each message, then stop."
+        + ", using the Agent Co-op skill. Prompt "
+        + PROMPT_VERSION
+        + "."
     )
 
 
