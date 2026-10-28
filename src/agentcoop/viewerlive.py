@@ -235,12 +235,18 @@ class LiveSession:
         file_session: str,
         origin: str,
         on_activity,
+        readonly: bool = False,
+        auth_tokens: set[str] | None = None,
+        phone_tokens: set[str] | None = None,
     ) -> None:
         self.hub = hub
         self.conn = conn
         self.file_session = file_session
         self.origin = origin
         self.on_activity = on_activity
+        self.readonly = readonly
+        self.auth_tokens = auth_tokens or {hub.token}
+        self.phone_tokens = phone_tokens or set()
         self.authed = False
         self.closed = False
         self.subscription: dict[str, Any] | None = None
@@ -311,12 +317,21 @@ class LiveSession:
             if not isinstance(message, dict) or message.get("type") != "hello":
                 self.close(CLOSE_POLICY, "hello required")
                 return False
-            if message.get("token") != self.hub.token:
+            token = str(message.get("token") or "")
+            if token not in self.auth_tokens:
                 self.close(CLOSE_POLICY, "bad token")
                 return False
+            if token in self.phone_tokens:
+                self.readonly = True
             self.authed = True
             self.hub.activate_file_session(self.file_session)
-            self._send_json({"type": "hello.ok", "file_session": self.file_session})
+            self._send_json(
+                {
+                    "type": "hello.ok",
+                    "file_session": self.file_session,
+                    "readonly": self.readonly,
+                }
+            )
             return True
         self.close(CLOSE_POLICY, "hello timeout")
         return False
@@ -448,6 +463,9 @@ class LiveSession:
             if reason is not None:
                 raise CoopError(reason)
             return {"messages": missed, "seq": self.hub.seq}
+        if op in ("driver", "helper_add", "helper_remove", "project_add", "shutdown"):
+            if self.readonly:
+                raise CoopError("Phone sessions are read-only. Use Manage on the computer.")
         if op == "driver":
             text = change_driver(params["project"], params["agent"], yes=True)
             return {"text": text}

@@ -57,6 +57,12 @@ File access never comes from Agent Co-op. It comes from each app's own permissio
 
 Once a day, check, watch, or the background round may ask GitHub whether a newer release exists. That is one GET to `https://api.github.com/repos/zlatko-lakisic/agent-coop/releases/latest`. It sends no board data. It does not open a port. Nothing else opens a port.
 
+## Local viewer
+
+`agentcoop ui` binds to 127.0.0.1. The page token stays out of the WebSocket URL: the first socket message is `hello` with the token. The upgrade refuses a foreign `Origin`. After hello, shared file bytes can use an HttpOnly `SameSite=Strict` cookie on `/files/`.
+
+Phone mode also listens on one private address (home LAN or Tailscale). A public address is refused. The phone must enter a one-use pairing code. Phone sessions are read-only: Manage actions are hidden and refused. Plain HTTP on the local network can be read by others on the same network.
+
 ## Roles file
 
 `projects.json` is hashed. If something edits it outside `agentcoop`, check and doctor say so and tell the agent to ask the human before trusting a role change. That is detection. It is not a lock.
