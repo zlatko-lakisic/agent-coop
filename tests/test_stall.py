@@ -171,14 +171,15 @@ class StallTests(unittest.TestCase):
                 "Status: working\nNow: Phase D. No click yet.\n",
             )
             path = env.board / "projects" / "demo" / "progress" / name
-            old = time.time() - 24 * 60
+            moment = datetime.now(timezone.utc).replace(microsecond=0)
+            old = moment.timestamp() - (24 * 60 + 30)
             os.utime(path, (old, old))
-            write_new_md(env.board, "demo", "claude_desktop")
+            write_new_md(env.board, "demo", "claude_desktop", now=moment)
             text = inbox_new_md(env.board, "demo", "claude_desktop").read_text(encoding="utf-8")
+            line = stall_line(env.board, "demo", now=moment)
+            self.assertEqual(line, "Driver progress unchanged for 24 min during a task.")
             self.assertIn("No new messages.", text)
-            self.assertIn("Driver progress unchanged for", text)
-            self.assertIn("min during a task.", text)
-            self.assertIn(stall_line(env.board, "demo"), text)
+            self.assertIn(line, text)
 
     def test_a_late_round_is_named_on_the_status_page(self) -> None:
         with support.TempEnv() as env:
