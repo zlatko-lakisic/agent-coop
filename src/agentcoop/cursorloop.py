@@ -29,6 +29,10 @@ KEEP_AWAKE = (
     "Agent Co-op keep-awake. If you are working on anything, ignore this and keep going. "
     "Otherwise end your turn."
 )
+CONTINUE = (
+    "Agent Co-op continue. A task is still open. Do not end this turn. "
+    "Keep going, and start cursor-loop again if it is not running."
+)
 MAIL_TAIL_OLD = "Handle these, mark them done, then continue."
 MAIL_TAIL = (
     "Handle these, mark them done, then continue what you were doing. "
@@ -364,6 +368,9 @@ def run_cursor_loop(
             write_heartbeat(board, project, agent, since=since, seen=current, how="cursor-loop")
             last_beat = current
         _sync_waiting(board, [project], current)
+        if _turn_ended(board, agent):
+            pause(POLL_SECONDS)
+            continue
         prompt, ids = _mail_prompt(board, project, agent)
         fresh = ids - announced
         if fresh and prompt:
@@ -441,6 +448,9 @@ def cursor_stop_followup(
             projects.append(name)
     if not projects:
         return {}
+    from agentcoop.activity import note_turn
+
+    note_turn(board, agent, "ended", "hook", now=started)
     active = [
         name
         for name in projects
@@ -451,6 +461,7 @@ def cursor_stop_followup(
     for name in active:
         note_hook(board, name, agent, now=started)
     deadline = started + timedelta(seconds=max(0, timeout_seconds - reserve_seconds))
+    gave_the_task_a_moment = False
     while True:
         current = _aware(clock())
         if _hold_back(board, agent, started, generation, transcript, transcript_size, current):
@@ -463,6 +474,17 @@ def cursor_stop_followup(
             prompt, _ids = _mail_prompt(board, name, agent)
             if prompt:
                 chunks.append(_hook_mail(prompt))
+        if _task_is_open(board, active):
+            if _hold_back(board, agent, started, generation, transcript, transcript_size, current):
+                return {}
+            if not gave_the_task_a_moment and current < deadline:
+                gave_the_task_a_moment = True
+                remaining = (deadline - current).total_seconds()
+                pause(min(POLL_SECONDS, remaining) if remaining > 0 else 0)
+                continue
+            parts = list(chunks)
+            parts.append(CONTINUE)
+            return _follow(board, agent, "\n".join(parts), current)
         if chunks:
             if _hold_back(board, agent, started, generation, transcript, transcript_size, current):
                 return {}
@@ -490,10 +512,25 @@ def _note_loop(board: Path, agent: str, moment: datetime) -> None:
 
 
 def _follow(board: Path, agent: str, text: str, when: datetime) -> dict:
-    from agentcoop.activity import note_attention
+    from agentcoop.activity import note_attention, note_turn
 
     note_attention(board, agent, "follow-up", now=when)
+    note_turn(board, agent, "running", "follow-up", now=when)
     return {"followup_message": text}
+
+
+def _turn_ended(board: Path, agent: str) -> bool:
+    from agentcoop.activity import turn_phase
+
+    return turn_phase(board, agent) == "ended"
+
+
+def _task_is_open(board: Path, projects: list[str]) -> bool:
+    for name in projects:
+        status, now_line = _task_now(board, name)
+        if _keep_task(status, now_line):
+            return True
+    return False
 
 
 def _hold_back(

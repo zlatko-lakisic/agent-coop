@@ -226,7 +226,7 @@ class SimTests(unittest.TestCase):
                 ("s4", ("standing",)),
                 ("s12", ("ticked",)),
                 ("s10", ("exit",)),
-                ("s13", ("silent", "keep_awake")),
+                ("s13", ("loop_heartbeat", "keep_awake")),
                 ("s14", ("resumed", "keeps_done")),
             ):
                 report = report_dir / (scenario + ".json")
@@ -264,7 +264,7 @@ class SimTests(unittest.TestCase):
             s10 = json.loads((report_dir / "s10.json").read_text(encoding="utf-8"))
             self.assertEqual(s10["exit"], 5)
             s13 = json.loads((report_dir / "s13.json").read_text(encoding="utf-8"))
-            self.assertTrue(s13["silent"])
+            self.assertTrue(s13["loop_heartbeat"])
             self.assertTrue(s13["keep_awake"])
             s14 = json.loads((report_dir / "s14.json").read_text(encoding="utf-8"))
             self.assertTrue(s14["resumed"])

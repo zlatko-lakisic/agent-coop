@@ -148,9 +148,9 @@ def fake_driver(board: Path, scenario_id: str) -> dict:
             timeout_seconds=6,
             reserve_seconds=5,
         )
-        report["silent"] = silent == {}
+        report["loop_heartbeat"] = silent.get("followup_message") == KEEP_AWAKE
         report["keep_awake"] = idle.get("followup_message") == KEEP_AWAKE
-        report["events"].append({"kind": "stale-hook", "silent": report["silent"]})
+        report["events"].append({"kind": "stale-hook", "loop_heartbeat": report["loop_heartbeat"]})
         return report
     if scenario_id == "s12":
         folder = progress_dir(board, "demo")

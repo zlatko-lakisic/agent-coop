@@ -118,7 +118,10 @@ TOOLS: tuple[Tool, ...] = (
             "A tick wakes the chat only when the agent is watching AGENT_LOOP_TICK_board. "
             "A finished background command wakes the agent while a turn is still running. "
             "After the turn ends the shell can die, and a Cursor restart kills it, so the stop hook is the other wake. "
-            "One 60 second tick woke a macOS chat after the turn ended. "
+            "On 2026-10-27, cursor -n --chat was opened on a throwaway folder on this Windows PC. "
+            "No command ran in that chat, the stop hook wrote no log line, and no AGENT_LOOP_TICK_board line was printed. "
+            "Computer use could not type into that window. "
+            "This session did not see a tick start a turn, and it did not see the older macOS wake either. "
             "The Start working flow in an existing Cursor window is untested on macOS and Linux. "
             "When the chat is not watching, Cursor waits for Start working. "
             "Other tools still run in the background. "
@@ -156,10 +159,11 @@ TOOLS: tuple[Tool, ...] = (
             "Headless agent -p can abort leftover background commands after the turn when you pass "
             "--background-shell-timeout. https://cursor.com/docs/cli/changelog "
             "Terminal tool: https://cursor.com/docs/agent/tools/terminal "
-            "A cursor-loop tick cannot start a new turn after the driver has ended it. "
+            "A cursor-loop tick was not observed to start a new turn in the app chat on this Windows PC. "
             "Do not end the turn while a task is open. "
-            "The stop hook can hand over mail only while it is still waiting. "
-            "cursor-loop posts helper outbox files on each pass, so a nudge can become mail while the loop is running."
+            "The stop hook can hand over mail, or a continue follow-up when a task is still open, only while it is still waiting. "
+            "A cursor-loop heartbeat does not cancel that follow-up. "
+            "After the turn has ended, cursor-loop still posts helper files and does not print a continue tick. "
         ),
         helper_note="edits the project and asks helpers",
         headless={

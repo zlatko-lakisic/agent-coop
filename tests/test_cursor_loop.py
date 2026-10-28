@@ -15,6 +15,7 @@ import support
 from agentcoop.cli import main
 from agentcoop.activity import load_activity, note_activity
 from agentcoop.cursorloop import (
+    CONTINUE,
     KEEP_AWAKE,
     MAIL_TAIL,
     TICK_PREFIX,
@@ -407,7 +408,7 @@ class HookTests(unittest.TestCase):
             )
             self.assertEqual(result, {})
 
-    def test_a_heartbeat_during_the_wait_sends_nothing(self) -> None:
+    def test_a_loop_heartbeat_does_not_block_the_follow_up(self) -> None:
         with support.TempEnv() as env:
             _ready(env)
             clock = _Clock()
@@ -434,7 +435,35 @@ class HookTests(unittest.TestCase):
                 timeout_seconds=30,
                 reserve_seconds=5,
             )
-            self.assertEqual(result, {})
+            self.assertEqual(result, {"followup_message": KEEP_AWAKE})
+
+    def test_an_open_task_gets_a_continue_follow_up(self) -> None:
+        with support.TempEnv() as env:
+            _ready(env)
+            from agentcoop.progress import write_progress
+
+            clock = _Clock()
+            write_progress(
+                env.board,
+                "demo",
+                "cursor",
+                "Status: working\nNow: Phase D. No click yet.\n",
+                now=clock(),
+            )
+            result = cursor_stop_followup(
+                env.board,
+                "cursor",
+                json.dumps({"status": "completed", "loop_count": 0}),
+                now=clock,
+                sleep=lambda seconds: clock.advance(seconds),
+                timeout_seconds=3600,
+                reserve_seconds=5,
+            )
+            self.assertEqual(result, {"followup_message": CONTINUE})
+            self.assertLess(
+                (clock() - datetime(2026, 10, 23, 12, 0, tzinfo=timezone.utc)).total_seconds(),
+                10,
+            )
 
     def test_a_newer_generation_sends_nothing(self) -> None:
         with support.TempEnv() as env:
@@ -461,6 +490,35 @@ class HookTests(unittest.TestCase):
                 ),
                 now=clock,
                 sleep=lambda seconds: clock.advance(seconds),
+                timeout_seconds=30,
+                reserve_seconds=5,
+            )
+            self.assertEqual(result, {})
+
+    def test_a_command_during_an_open_task_sends_nothing(self) -> None:
+        with support.TempEnv() as env:
+            _ready(env)
+            from agentcoop.progress import write_progress
+
+            clock = _Clock()
+            write_progress(
+                env.board,
+                "demo",
+                "cursor",
+                "Status: working\nNow: Phase D. No click yet.\n",
+                now=clock(),
+            )
+
+            def nap(seconds: float) -> None:
+                clock.advance(seconds)
+                note_activity(env.board, "cursor", "check", now=clock())
+
+            result = cursor_stop_followup(
+                env.board,
+                "cursor",
+                json.dumps({"status": "completed", "loop_count": 0}),
+                now=clock,
+                sleep=nap,
                 timeout_seconds=30,
                 reserve_seconds=5,
             )
