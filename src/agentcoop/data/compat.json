@@ -23,7 +23,7 @@
       "board_changes": "Nothing",
       "settings_changes": "None",
       "downgrade_loses": "A downgrade loses the new timeline viewer, phone mode, and the WebSocket. The older serif HTML page returns if that build still ships it. The /api/v2/ HTTP routes remain on 0.2.10. Live pushes and the file cookie from the socket upgrade are gone.",
-      "desktop_skill": "Same",
+      "desktop_skill": "Changed",
       "upgrade_from": "0.2.0"
     },
     {
