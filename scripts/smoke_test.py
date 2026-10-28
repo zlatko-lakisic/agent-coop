@@ -592,8 +592,13 @@ def _viewer_smoke(command: Path, env: dict) -> int:
             return 1
         jar = CookieJar()
         opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(jar))
-        with opener.open(url, timeout=10) as response:
-            html = response.read().decode("utf-8")
+        try:
+            with opener.open(url, timeout=10) as response:
+                html = response.read().decode("utf-8")
+        except urllib.error.HTTPError as exc:
+            body = exc.read().decode("utf-8", "replace")
+            sys.stderr.write("ui index failed: " + str(exc.code) + " " + body + "\n")
+            return 1
         if "The viewer app is missing" in html:
             sys.stderr.write("The viewer app is missing from this build.\n")
             return 1
@@ -605,20 +610,26 @@ def _viewer_smoke(command: Path, env: dict) -> int:
         token = url.split("?t=", 1)[1]
         for relative in assets:
             path = "/" + relative.lstrip("./")
-            with opener.open(base + path, timeout=10) as asset:
-                if asset.status != 200:
-                    sys.stderr.write("asset failed: " + path + "\n")
-                    return 1
-                asset.read()
+            try:
+                with opener.open(base + path, timeout=10) as asset:
+                    if asset.status != 200:
+                        sys.stderr.write("asset failed: " + path + "\n")
+                        return 1
+                    asset.read()
+            except urllib.error.HTTPError as exc:
+                sys.stderr.write("asset failed: " + path + " " + str(exc.code) + "\n")
+                return 1
         try:
             urllib.request.urlopen(base + "/api/shutdown?t=" + token, timeout=10).close()
-        except urllib.error.URLError:
+        except (urllib.error.URLError, urllib.error.HTTPError):
             pass
         try:
             proc.wait(timeout=20)
         except subprocess.TimeoutExpired:
             proc.kill()
             proc.wait(timeout=5)
+        # Give Windows time to release the installed exe handle.
+        time.sleep(1)
         return 0
     finally:
         if proc.poll() is None:
@@ -627,6 +638,7 @@ def _viewer_smoke(command: Path, env: dict) -> int:
                 proc.wait(timeout=5)
             except subprocess.TimeoutExpired:
                 pass
+            time.sleep(1)
 
 
 def _payload_from(starter: list[str]) -> Path | None:
@@ -676,7 +688,7 @@ def _update_smoke(command: Path, starter: list[str], env: dict, root: Path) -> i
 def main() -> int:
     root = Path(__file__).resolve().parents[1]
     src = root / "src"
-    with tempfile.TemporaryDirectory(prefix="agentcoop-smoke-") as raw:
+    with tempfile.TemporaryDirectory(prefix="agentcoop-smoke-", ignore_cleanup_errors=True) as raw:
         home = Path(raw) / "home"
         home.mkdir()
         env = dict(os.environ)
@@ -742,8 +754,6 @@ def main() -> int:
         sys.stdout.write(text)
         if _watch_smoke(command, env, Path(raw)) != 0:
             return 1
-        if _viewer_smoke(command, env) != 0:
-            return 1
         if _update_smoke(command, starter, env, Path(raw)) != 0:
             return 1
         prepare = subprocess.run(
@@ -761,6 +771,9 @@ def main() -> int:
             code = _run_version([str(quiet_installed), "version"], env, tk=_wants_tk(quiet_installed))
             if code != 0:
                 return code
+        # After update, so the binary under test is the one the release ships.
+        if _viewer_smoke(command, env) != 0:
+            return 1
     return 0
 
 

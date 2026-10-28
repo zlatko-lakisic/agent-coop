@@ -627,8 +627,16 @@ def files_view(board: Path, project: str, token: str) -> list[dict]:
     return _shared_rows(board, project, token)
 
 
+def _viewer_parts(relative: str) -> list[str] | None:
+    """Split a viewer-relative path. Refuse escape."""
+    parts = [part for part in relative.replace("\\", "/").split("/") if part and part != "."]
+    if any(part == ".." for part in parts):
+        return None
+    return parts
+
+
 def _viewer_root() -> Path | None:
-    """Return the built viewer folder inside the package, or None."""
+    """Return a real viewer folder when one stays on disk."""
     # PyInstaller onefile: release.yml ships the folder as MEIPASS/viewer.
     if getattr(sys, "frozen", False):
         meipass = Path(getattr(sys, "_MEIPASS", "") or "")
@@ -638,32 +646,11 @@ def _viewer_root() -> Path | None:
         ):
             if candidate.is_dir():
                 return candidate
-    try:
-        from importlib import resources
-
-        root = resources.files("agentcoop").joinpath("data").joinpath("viewer")
-        if hasattr(root, "joinpath"):
-            # Prefer a real path when available (source tree / extracted).
-            try:
-                with resources.as_file(root) as path:
-                    if path.is_dir():
-                        return path
-            except (FileNotFoundError, OSError, TypeError):
-                pass
-    except Exception:
-        pass
     fallback = Path(__file__).resolve().parent / "data" / "viewer"
     return fallback if fallback.is_dir() else None
 
 
-def _viewer_bytes(relative: str) -> bytes | None:
-    """Read one file from the built viewer. Refuse path escape."""
-    root = _viewer_root()
-    if root is None:
-        return None
-    parts = [part for part in relative.replace("\\", "/").split("/") if part and part != "."]
-    if any(part == ".." for part in parts):
-        return None
+def _read_under(root: Path, parts: list[str]) -> bytes | None:
     target = root.joinpath(*parts)
     try:
         real = target.resolve()
@@ -677,6 +664,29 @@ def _viewer_bytes(relative: str) -> bytes | None:
     try:
         return real.read_bytes()
     except OSError:
+        return None
+
+
+def _viewer_bytes(relative: str) -> bytes | None:
+    """Read one file from the built viewer. Refuse path escape."""
+    parts = _viewer_parts(relative)
+    if parts is None:
+        return None
+    root = _viewer_root()
+    if root is not None:
+        data = _read_under(root, parts)
+        if data is not None:
+            return data
+    # Zipapp and other importlib loaders: read the member directly. Do not use
+    # resources.as_file() and keep the path, or the extract folder is deleted.
+    try:
+        from importlib import resources
+
+        node = resources.files("agentcoop").joinpath("data").joinpath("viewer")
+        for part in parts:
+            node = node.joinpath(part)
+        return node.read_bytes()
+    except (FileNotFoundError, OSError, TypeError, AttributeError, IsADirectoryError, ValueError, KeyError):
         return None
 
 
