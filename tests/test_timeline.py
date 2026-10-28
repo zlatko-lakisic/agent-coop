@@ -23,11 +23,13 @@ from agentcoop.core import send
 from agentcoop.timeline import agents_view, clear_cache, event_detail, events_for, histogram, query_events, rules_view, status_view
 from agentcoop.ui import make_server
 
-CSP = (
-    "default-src 'self'; script-src 'self'; style-src 'self'; "
-    "img-src 'self' data: blob:; connect-src 'self'; frame-ancestors 'none'; "
-    "base-uri 'none'; form-action 'self'"
-)
+def _csp(port: int) -> str:
+    return (
+        "default-src 'self'; script-src 'self'; style-src 'self'; "
+        "img-src 'self' data: blob:; connect-src 'self' ws://127.0.0.1:"
+        + str(port)
+        + "; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"
+    )
 
 
 def _kinds(board: Path) -> set[str]:
@@ -155,7 +157,7 @@ class TimelineTests(unittest.TestCase):
                     self.assertEqual(response.status, 200)
                     self.assertEqual(response.headers["X-Content-Type-Options"], "nosniff")
                     self.assertEqual(response.headers["Referrer-Policy"], "no-referrer")
-                    self.assertEqual(response.headers["Content-Security-Policy"], CSP)
+                    self.assertEqual(response.headers["Content-Security-Policy"], _csp(port))
                     payload = json.loads(response.read().decode("utf-8"))
                     self.assertTrue(payload["events"])
                 with urllib.request.urlopen(base + "/?t=secret", timeout=5) as response:

@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## Unreleased (planned 0.2.11)
+
+- The local viewer accepts one WebSocket per browser tab. After a hello message with the page token, the socket serves the timeline ops and pushes live board changes. Shared files can use an HttpOnly cookie set on the upgrade. The old HTML page and `/api/v2/` routes still work.
 
 - Unit tests run on a pull request. A merge to main does not run them again. A tag builds the zipapp and the binaries and smoke-tests those files.
 
