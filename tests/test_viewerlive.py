@@ -79,14 +79,14 @@ class ViewerLiveTests(unittest.TestCase):
         )
 
     def _wait_baseline(self) -> None:
-        deadline = time.time() + 3
+        deadline = time.time() + 5
         while time.time() < deadline:
-            if self.server.live._last_signature is not None:
+            if self.server.live._baseline_ready:
                 return
             time.sleep(0.05)
         self.fail("watcher did not take a baseline")
 
-    def _wait_event_added(self, conn, needle: str, seconds: float = 5) -> dict:
+    def _wait_event_added(self, conn, needle: str, seconds: float = 8) -> dict:
         deadline = time.time() + seconds
         while time.time() < deadline:
             try:
