@@ -1,13 +1,12 @@
 # Changelog
 
-## Unreleased (planned 0.2.11)
+## Unreleased
 
-- `agentcoop ui --phone` listens on a private network address after confirmation, prints a pairing code and QR, and serves a read-only phone layout. Public addresses are refused.
+## 0.2.11 - 2026-10-28
 
 - `agentcoop ui` serves the new board timeline app (Vite + Preact) from `data/viewer`. It talks only over the WebSocket. Manage holds the old driver, helper, project, and close actions. The `/api/v2/` HTTP routes stay for scripts and tests.
-
-- The local viewer accepts one WebSocket per browser tab. After a hello message with the page token, the socket serves the timeline ops and pushes live board changes. Shared files can use an HttpOnly cookie set on the upgrade. The old HTML page and `/api/v2/` routes still work.
-
+- The local viewer accepts one WebSocket per browser tab. After a hello message with the page token, the socket serves the timeline ops and pushes live board changes. Shared files can use an HttpOnly cookie set on the upgrade.
+- `agentcoop ui --phone` listens on a private network address after confirmation, prints a pairing code and QR, and serves a read-only phone layout. Public addresses are refused.
 - Unit tests run on a pull request. A merge to main does not run them again. A tag builds the zipapp and the binaries and smoke-tests those files.
 
 ## 0.2.10 - 2026-10-28
