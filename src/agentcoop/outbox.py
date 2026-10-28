@@ -119,13 +119,20 @@ def write_new_md(
         first = "1 new message." if len(visible) == 1 else str(len(visible)) + " new messages."
     else:
         first = "No new messages."
-    lines = [
-        first,
-        "",
-        "Written: " + format_ts(utc_now(now)),
-        "Latest context: " + ctx_text,
-        "Latest progress: " + prog_text,
-    ]
+    lines = [first, ""]
+    from agentcoop.progress import stall_line
+
+    stall = stall_line(board, project, now)
+    if stall:
+        lines.append(stall)
+        lines.append("")
+    lines.extend(
+        [
+            "Written: " + format_ts(utc_now(now)),
+            "Latest context: " + ctx_text,
+            "Latest progress: " + prog_text,
+        ]
+    )
     from agentcoop.grades import new_md_lines
 
     lines.extend(new_md_lines(board, project, agent))
@@ -838,6 +845,26 @@ def _finish(path: Path, dest_dir: Path) -> Path | None:
     if last is not None:
         raise last
     return None
+
+
+def clear_rejected(board: Path, project: str, agent: str) -> int:
+    """Move rejected answers aside so NEW.md stops listing them. Return how many moved."""
+    folder = outbox_rejected_dir(board, project, agent)
+    if not folder.is_dir():
+        return 0
+    dest = folder.parent / "cleared"
+    dest.mkdir(parents=True, exist_ok=True)
+    moved = 0
+    for path in list(folder.iterdir()):
+        if not path.is_file() or path.name.startswith("."):
+            continue
+        target = dest / path.name
+        if target.exists():
+            target = dest / (path.stem + ".2" + path.suffix)
+        path.replace(target)
+        moved += 1
+    refresh_new_md_for_agent(board, project, agent)
+    return moved
 
 
 def _delivery_lines(board: Path, project: str, agent: str) -> list[str]:

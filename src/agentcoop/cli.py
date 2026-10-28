@@ -393,6 +393,13 @@ def build_parser() -> argparse.ArgumentParser:
     _add_project(resume_cmd)
     resume_cmd.set_defaults(func=cmd_resume)
 
+    rejected_cmd = sub.add_parser("rejected", help="Clear old rejected answers")
+    rejected_sub = rejected_cmd.add_subparsers(dest="rejected_action", required=True)
+    rejected_clear = rejected_sub.add_parser("clear", help="Move rejected answers aside")
+    _add_as(rejected_clear)
+    _add_project(rejected_clear)
+    rejected_clear.set_defaults(func=cmd_rejected_clear)
+
     wait_cmd = sub.add_parser("wait", help="Wait for a reply")
     _add_as(wait_cmd)
     _add_project(wait_cmd)
@@ -1282,6 +1289,22 @@ def cmd_resume(args: argparse.Namespace) -> int:
     board = _board()
     project = resolve_project(board, explicit=args.project, cwd=Path.cwd(), agent=agent)
     print(resume_text(board, project, agent), end="")
+    return 0
+
+
+def cmd_rejected_clear(args: argparse.Namespace) -> int:
+    from agentcoop.outbox import clear_rejected
+
+    agent = _agent(args)
+    board = _board()
+    project = resolve_project(board, explicit=args.project, cwd=Path.cwd(), agent=agent)
+    count = clear_rejected(board, project, agent)
+    if count == 0:
+        print("No rejected answers to clear.")
+    elif count == 1:
+        print("Moved 1 rejected answer aside. NEW.md will not list it.")
+    else:
+        print("Moved " + str(count) + " rejected answers aside. NEW.md will not list them.")
     return 0
 
 

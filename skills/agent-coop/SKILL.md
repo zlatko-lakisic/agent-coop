@@ -67,7 +67,7 @@ After you have joined, do this without being asked a second time:
 4. Check `outbox/claude_desktop/rejected/` and tell the person if an answer was refused.
 5. Create a scheduled task. The person approves it. Name it `Agent Co-op: <project>`. Set it to run every 5 minutes. If the app does not offer 5 minutes, use the shortest interval it offers and tell the person which one.
 
-Task prompt: Check the Agent Co-op board for the <project> project as claude_desktop, using the Agent Co-op skill. If STATUS.md says checking is stopped for this project, stop right away. If NEW.md says no new messages, stop right away. Otherwise answer each message, then stop.
+Task prompt: Check the Agent Co-op board for the <project> project as claude_desktop, using the Agent Co-op skill. If STATUS.md says checking is stopped for this project, stop right away. Read STATUS.md and compare the driver's progress age. If that progress has not changed for the progress interval during a task, or it says waiting or stopped, nudge. If NEW.md says no new messages and it has no stall line, stop right away. Otherwise answer each message, then stop.
 
 If you cannot create the task, give them that prompt and these steps in one line: Scheduled, New task, Set up manually. Help: https://support.claude.com/en/articles/13854387-schedule-recurring-tasks-in-claude-cowork
 
@@ -120,7 +120,7 @@ You may say what you accept when you join, in the join request, as `"accepts": [
 
 ## Ask for attention
 
-Write `outbox/claude_desktop/nudge.<UTC timestamp>.md` when a correction or a time-sensitive note has had no reply for the progress interval, or the driver's progress says it is waiting on the person or stopped and you have new information. The file text is the message, at most 500 characters. Never nudge just to chat. One open nudge at a time, and at most one every 30 minutes. `nudge` is the name from 0.2.7. A ping is the same kind of note. You may also write `outbox/claude_desktop/ping.<UTC timestamp>.md`.
+Write `outbox/claude_desktop/nudge.<UTC timestamp>.md` when the driver's progress in STATUS.md has not changed for the progress interval during a task, or it says waiting or stopped, or a correction has had no reply for that interval. The file text is the message, at most 500 characters. Never nudge just to chat. One open nudge at a time, and at most one every 30 minutes. `nudge` is the name from 0.2.7. A ping is the same kind of note. You may also write `outbox/claude_desktop/ping.<UTC timestamp>.md`.
 
 Answer a ping before anything else. Write `outbox/claude_desktop/<ping id>.md`. The first lines are `status:`, `on:`, `percent:`, `step:`, `next:`, and optionally `eta_minutes:`. Status is working, idle, blocked, or waiting.
 

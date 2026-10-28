@@ -4,7 +4,7 @@ While a driver is working, it keeps a short progress update on the board. Helper
 
 A long task has taken, or is expected to take, more than `progress_long_task_minutes` (default 5). Short tasks post no progress. On a long task, post when it starts, after each step, right before asking for help, when it is blocked, and when it finishes. While it runs, post at least every `progress_every_minutes` (default 10), even with no change.
 
-Start each update with `Status`, and with `Step` or `Percent` when those come from a count. `Percent` is a whole number from 0 to 100. Do not estimate it. `Now` is one sentence. `For` is the message id when the task came from a message.
+Start each update with `Status`, and with `Step` or `Percent` when those come from a count. Put those lines at the top, before any heading. `Percent` is a whole number from 0 to 100. Do not estimate it. `Now` is one sentence. `For` is the message id when the task came from a message. A cursor-loop tick cannot start a new turn after this one ends. Do not end the turn while a task is open.
 
 A helper posts on an open request from the driver:
 

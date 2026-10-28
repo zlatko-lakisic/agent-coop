@@ -282,17 +282,24 @@ def _mail_prompt(board: Path, project: str, agent: str) -> tuple[str, set[str]]:
 
 
 def _task_now(board: Path, project: str) -> tuple[str, str]:
-    from agentcoop.progress import latest_progress
+    from agentcoop.progress import latest_progress, section_text
     from agentcoop.progressmeta import parse_fields
 
     path = latest_progress(board, project)
     if path is None:
         return "", ""
     try:
-        fields = parse_fields(path.read_text(encoding="utf-8"))
+        text = path.read_text(encoding="utf-8")
+        fields = parse_fields(text)
     except (OSError, CoopError):
         return "", ""
-    return str(fields.get("Status") or "").strip(), str(fields.get("Now") or "").strip()
+    status = str(fields.get("Status") or "").strip()
+    now_line = str(fields.get("Now") or "").strip()
+    if not now_line:
+        now_line = " ".join(section_text(text, "Working on now").split())
+    if now_line and not status:
+        status = "working"
+    return status, now_line
 
 
 def _keep_task(status: str, now_line: str) -> bool:
@@ -356,6 +363,7 @@ def run_cursor_loop(
         if last_beat is None or (current - last_beat).total_seconds() >= HEARTBEAT_SECONDS:
             write_heartbeat(board, project, agent, since=since, seen=current, how="cursor-loop")
             last_beat = current
+        _sync_waiting(board, [project], current)
         prompt, ids = _mail_prompt(board, project, agent)
         fresh = ids - announced
         if fresh and prompt:

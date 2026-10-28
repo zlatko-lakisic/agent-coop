@@ -43,6 +43,46 @@ def progress_headline(board: Path, project: str) -> str:
     return "No progress yet."
 
 
+def last_round_line(board: Path, now: datetime | None = None) -> str:
+    """Return the Last round line, and a fault when the schedule has gone quiet."""
+    from agentcoop.rounds import load_schedule
+
+    moment = now or datetime.now(timezone.utc)
+    if moment.tzinfo is None:
+        moment = moment.replace(tzinfo=timezone.utc)
+    record = load_schedule(board)
+    last_path = board / ".state" / "last-tick"
+    stamp = ""
+    if last_path.is_file():
+        try:
+            stamp = last_path.read_text(encoding="utf-8").strip()
+        except OSError:
+            stamp = ""
+    if not stamp:
+        base = "Last round: none yet."
+        if record:
+            return base + " The background round has not run. Say Start the co-op, or run agentcoop start."
+        return base
+    base = "Last round: " + stamp
+    if not record:
+        return base
+    try:
+        when = datetime.strptime(stamp, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+    except ValueError:
+        return base
+    interval = int(record.get("interval") or 5)
+    age = (moment - when).total_seconds()
+    if age > 3 * interval * 60:
+        late = int(age // 60)
+        return (
+            base
+            + ". The background round is late by "
+            + str(late)
+            + " min. Say Start the co-op, or run agentcoop start."
+        )
+    return base
+
+
 def render_status(board: Path, now: datetime | None = None) -> str:
     """Return the status page text."""
     from agentcoop.rounds import load_schedule
@@ -56,14 +96,7 @@ def render_status(board: Path, now: datetime | None = None) -> str:
         schedule = "Schedule: on, every " + str(record.get("interval")) + " minutes."
     else:
         schedule = "Schedule: off."
-    last_path = board / ".state" / "last-tick"
-    if last_path.is_file():
-        try:
-            last = "Last round: " + last_path.read_text(encoding="utf-8").strip()
-        except OSError:
-            last = "Last round: none yet."
-    else:
-        last = "Last round: none yet."
+    last = last_round_line(board, moment)
     lines = ["# Status", ""]
     from agentcoop.cursorloop import cursor_mail_line
 

@@ -155,7 +155,11 @@ TOOLS: tuple[Tool, ...] = (
             "A full path does not match the short name, so copy the exact command from a prompt into that file if one still appears. "
             "Headless agent -p can abort leftover background commands after the turn when you pass "
             "--background-shell-timeout. https://cursor.com/docs/cli/changelog "
-            "Terminal tool: https://cursor.com/docs/agent/tools/terminal"
+            "Terminal tool: https://cursor.com/docs/agent/tools/terminal "
+            "A cursor-loop tick cannot start a new turn after the driver has ended it. "
+            "Do not end the turn while a task is open. "
+            "The stop hook can hand over mail only while it is still waiting. "
+            "cursor-loop posts helper outbox files on each pass, so a nudge can become mail while the loop is running."
         ),
         helper_note="edits the project and asks helpers",
         headless={
