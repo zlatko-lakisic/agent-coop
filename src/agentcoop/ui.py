@@ -16,7 +16,6 @@ from urllib.parse import parse_qs, urlparse
 from agentcoop.core import log_messages
 from agentcoop.doctor import format_doctor, run_doctor
 from agentcoop.errors import CoopError
-from agentcoop.install import read_template
 from agentcoop.paths import board_root, home_dir
 from agentcoop.projects import INTEGRITY_WARNING, load_agents, read_projects_checked, require_board
 from agentcoop.tools import tool_can_drive
@@ -95,10 +94,21 @@ class ViewerHandler(BaseHTTPRequestHandler):
             self._send(403, b"This page needs the token from the agentcoop ui command.\n")
             return
         if path in ("/", "/index.html"):
-            page = read_template("ui.html").encode("utf-8")
+            page = _viewer_bytes("index.html")
+            if page is None:
+                self._send(500, b"The viewer app is missing from this build.\n")
+                return
             self._send(200, page, "text/html; charset=utf-8")
             return
+        if path.startswith("/assets/") or path.startswith("/images/"):
+            data = _viewer_bytes(path.lstrip("/"))
+            if data is None:
+                self._send(404, b"Not found.\n")
+                return
+            self._send(200, data, _media_type(path))
+            return
         if path == "/api/state":
+            # Kept for scripts. The app uses the WebSocket.
             self._send(200, json.dumps(self._state()).encode("utf-8"), "application/json")
             return
         if path == "/api/suggestions":
@@ -240,9 +250,6 @@ class ViewerHandler(BaseHTTPRequestHandler):
             + ws_origin
             + "; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"
         )
-        if content_type.startswith("text/html"):
-            policy = policy.replace("script-src 'self'", "script-src 'self' 'unsafe-inline'", 1)
-            policy = policy.replace("style-src 'self'", "style-src 'self' 'unsafe-inline'", 1)
         self.send_header("Content-Security-Policy", policy)
         self.end_headers()
         self.wfile.write(body)
@@ -441,6 +448,69 @@ class ViewerHandler(BaseHTTPRequestHandler):
 def files_view(board: Path, project: str, token: str) -> list[dict]:
     """Return shared files the viewer may show. Paths stay inside the shared folder."""
     return _shared_rows(board, project, token)
+
+
+def _viewer_root() -> Path | None:
+    """Return the built viewer folder inside the package, or None."""
+    try:
+        from importlib import resources
+
+        root = resources.files("agentcoop").joinpath("data").joinpath("viewer")
+        if hasattr(root, "joinpath"):
+            # Prefer a real path when available (source tree / extracted).
+            try:
+                with resources.as_file(root) as path:
+                    if path.is_dir():
+                        return path
+            except (FileNotFoundError, OSError, TypeError):
+                pass
+    except Exception:
+        pass
+    fallback = Path(__file__).resolve().parent / "data" / "viewer"
+    return fallback if fallback.is_dir() else None
+
+
+def _viewer_bytes(relative: str) -> bytes | None:
+    """Read one file from the built viewer. Refuse path escape."""
+    root = _viewer_root()
+    if root is None:
+        return None
+    parts = [part for part in relative.replace("\\", "/").split("/") if part and part != "."]
+    if any(part == ".." for part in parts):
+        return None
+    target = root.joinpath(*parts)
+    try:
+        real = target.resolve()
+        root_real = root.resolve()
+    except OSError:
+        return None
+    if root_real != real and root_real not in real.parents:
+        return None
+    if not real.is_file():
+        return None
+    try:
+        return real.read_bytes()
+    except OSError:
+        return None
+
+
+def _media_type(path: str) -> str:
+    lower = path.lower()
+    if lower.endswith(".html"):
+        return "text/html; charset=utf-8"
+    if lower.endswith(".js"):
+        return "application/javascript; charset=utf-8"
+    if lower.endswith(".css"):
+        return "text/css; charset=utf-8"
+    if lower.endswith(".svg"):
+        return "image/svg+xml"
+    if lower.endswith(".webp"):
+        return "image/webp"
+    if lower.endswith(".png"):
+        return "image/png"
+    if lower.endswith(".woff2"):
+        return "font/woff2"
+    return "application/octet-stream"
 
 
 def _shared_rows(board: Path, project: str, token: str) -> list[dict]:

@@ -162,7 +162,8 @@ class TimelineTests(unittest.TestCase):
                     self.assertTrue(payload["events"])
                 with urllib.request.urlopen(base + "/?t=secret", timeout=5) as response:
                     self.assertIn("no-referrer", response.headers["Referrer-Policy"])
-                    self.assertIn("unsafe-inline", response.headers["Content-Security-Policy"])
+                    self.assertIn("ws://127.0.0.1:" + str(port), response.headers["Content-Security-Policy"])
+                    self.assertIn("text/html", response.headers.get("Content-Type", ""))
                 for path in ("/files/demo/icon.svg?t=secret", "/files/demo/page.html?t=secret"):
                     with urllib.request.urlopen(base + path, timeout=5) as response:
                         self.assertIn("attachment", response.headers.get("Content-Disposition", ""))
