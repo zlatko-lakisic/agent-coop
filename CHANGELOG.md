@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### Planned 0.2.12
+
+- Viewer layout: desktop and tablet keep the page fixed; the left panel and timeline scroll on their own. The detail drawer is fixed on the right under the top bar. Phone still scrolls the page with a pinned rail.
+- Time range: presets roll their end to now; custom calendar ranges stay fixed. Prev and next shift the window. The chosen range is kept in the URL (no token) and on reconnect.
+- `query_events` returns the real total for the range and filters, plus day counts. The timeline loads more with the next cursor.
+- Events sort by time then send order. Day headers include the year so the same day never appears twice.
+- Stall events freeze minutes in `projects/<name>/progress/.stall.json` at detection. Waiting and blocked are waiting, not stalled. One severity table covers every kind; `update.installed` is info.
+- Board text is read as UTF-8 with replacement characters. The Files tab lists attachments, shared copies, drafts, outbox files, held, and outside paths for the selected range.
+
 ## 0.2.11 - 2026-10-28
 
 - `agentcoop ui` serves the new board timeline app (Vite + Preact) from `data/viewer`. It talks only over the WebSocket. Manage holds the old driver, helper, project, and close actions. The `/api/v2/` HTTP routes stay for scripts and tests.

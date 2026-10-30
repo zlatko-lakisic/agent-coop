@@ -143,6 +143,7 @@ def write_progress(
     from agentcoop.activity import note_activity
 
     note_activity(board, driver, "progress", now=moment)
+    clear_stall_snapshot(board, project)
     if fields_status == "done":
         from agentcoop.taskreview import finish_done
 
@@ -289,23 +290,22 @@ def reminder_line(board: Path, project: str, agent: str, *, now: datetime | None
     )
 
 
-def stall_line(board: Path, project: str, now: datetime | None = None) -> str:
-    """Return a NEW.md line when driver progress has gone quiet during a task."""
-    latest = latest_progress(board, project)
-    if latest is None:
-        return ""
+def stall_snapshot_path(board: Path, project: str) -> Path:
+    """Return the path of the one-shot stall snapshot for a project."""
+    return progress_dir(board, project) / ".stall.json"
+
+
+def clear_stall_snapshot(board: Path, project: str) -> None:
+    """Remove a stall snapshot after progress moves again."""
+    path = stall_snapshot_path(board, project)
     try:
-        when = datetime.fromtimestamp(latest.stat().st_mtime, timezone.utc)
-        text = latest.read_text(encoding="utf-8")
+        if path.is_file():
+            path.unlink()
     except OSError:
-        return ""
-    moment = now or datetime.now(timezone.utc)
-    if moment.tzinfo is None:
-        moment = moment.replace(tzinfo=timezone.utc)
-    every = int(load_config(board).get("progress_every_minutes") or 10)
-    age_minutes = int((moment - when).total_seconds() // 60)
-    if age_minutes < every:
-        return ""
+        pass
+
+
+def _progress_status(text: str) -> str:
     from agentcoop.progressmeta import parse_fields
 
     try:
@@ -315,9 +315,101 @@ def stall_line(board: Path, project: str, now: datetime | None = None) -> str:
     status = str(fields.get("Status") or "")
     if not status and section_text(text, "Working on now").strip():
         status = "working"
-    if status not in ("working", "blocked"):
+    return status
+
+
+def stall_snapshot(board: Path, project: str, now: datetime | None = None) -> dict | None:
+    """Return a frozen stall snapshot, writing it once when Status is working and quiet.
+
+    Waiting and blocked are not stalled. Minutes stay fixed from first detection.
+    """
+    latest = latest_progress(board, project)
+    if latest is None:
+        clear_stall_snapshot(board, project)
+        return None
+    try:
+        when = datetime.fromtimestamp(latest.stat().st_mtime, timezone.utc)
+        text = latest.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return None
+    moment = now or datetime.now(timezone.utc)
+    if moment.tzinfo is None:
+        moment = moment.replace(tzinfo=timezone.utc)
+    status = _progress_status(text)
+    if status != "working":
+        clear_stall_snapshot(board, project)
+        return None
+    every = int(load_config(board).get("progress_every_minutes") or 10)
+    age_minutes = int((moment - when).total_seconds() // 60)
+    if age_minutes < every:
+        clear_stall_snapshot(board, project)
+        return None
+    path = stall_snapshot_path(board, project)
+    progress_key = latest.name
+    if path.is_file():
+        try:
+            data = json.loads(path.read_text(encoding="utf-8", errors="replace"))
+        except (OSError, json.JSONDecodeError):
+            data = {}
+        if isinstance(data, dict) and str(data.get("progress") or "") == progress_key:
+            minutes = int(data.get("minutes") or age_minutes)
+            detected = str(data.get("detected_at") or "")
+            return {
+                "detected_at": detected,
+                "minutes": minutes,
+                "progress": progress_key,
+                "text": "Driver progress unchanged for " + str(minutes) + " min during a task.",
+            }
+    detected_at = moment.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    payload = {
+        "detected_at": detected_at,
+        "minutes": age_minutes,
+        "progress": progress_key,
+    }
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+    except OSError:
+        pass
+    return {
+        "detected_at": detected_at,
+        "minutes": age_minutes,
+        "progress": progress_key,
+        "text": "Driver progress unchanged for " + str(age_minutes) + " min during a task.",
+    }
+
+
+def waiting_line(board: Path, project: str) -> str:
+    """Return a short waiting line when Status is waiting or blocked, else empty."""
+    latest = latest_progress(board, project)
+    if latest is None:
         return ""
-    return "Driver progress unchanged for " + str(age_minutes) + " min during a task."
+    try:
+        text = latest.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return ""
+    from agentcoop.progressmeta import parse_fields
+
+    try:
+        fields = parse_fields(text)
+    except CoopError:
+        fields = {}
+    status = str(fields.get("Status") or "")
+    if status == "waiting":
+        now = str(fields.get("Now") or "").strip()
+        return "Waiting on " + (now or "a reply") + "."
+    if status == "blocked":
+        blocked = section_text(text, "Blocked or need help").strip()
+        return "Waiting on " + (blocked.splitlines()[0] if blocked else "help") + "."
+    return ""
+
+
+def stall_line(board: Path, project: str, now: datetime | None = None) -> str:
+    """Return a NEW.md line when driver progress has gone quiet during a task."""
+    snap = stall_snapshot(board, project, now=now)
+    if not snap:
+        return ""
+    return str(snap.get("text") or "")
 
 
 def status_lines(board: Path, project: str) -> list[str]:
