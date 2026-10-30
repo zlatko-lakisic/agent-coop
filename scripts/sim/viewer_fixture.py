@@ -328,14 +328,20 @@ def _files(board: Path) -> None:
     (shared / "tool.sh").write_text("#!/bin/sh\necho hi\n", encoding="utf-8")
     index = {
         "files": [
-            {"name": "shot.png", "kind": "image", "bytes": 8, "sender": "cursor", "message": "m1", "shared_on": "2026-10-26T12:00:00Z", "description": "a shot"},
-            {"name": "page.html", "kind": "document", "bytes": 10, "sender": "cursor", "shared_on": "2026-10-26T12:01:00Z"},
-            {"name": "icon.svg", "kind": "image", "bytes": 40, "sender": "cursor", "shared_on": "2026-10-26T12:02:00Z"},
-            {"name": "tool.sh", "kind": "program", "bytes": 20, "sender": "cursor", "shared_on": "2026-10-26T12:03:00Z", "held": True},
+            {"name": "shot.png", "kind": "image", "bytes": 8, "sender": "cursor", "message": "m1", "shared_on": "2026-10-26T12:00:00Z", "description": "a shot", "path": str(shared / "shot.png")},
+            {"name": "page.html", "kind": "document", "bytes": 10, "sender": "cursor", "shared_on": "2026-10-26T12:01:00Z", "path": str(shared / "page.html")},
+            {"name": "icon.svg", "kind": "image", "bytes": 40, "sender": "cursor", "shared_on": "2026-10-26T12:02:00Z", "path": str(shared / "icon.svg")},
+            {"name": "tool.sh", "kind": "program", "bytes": 20, "sender": "cursor", "shared_on": "2026-10-26T12:03:00Z", "held": True, "path": str(shared / "tool.sh")},
         ]
     }
     (shared / "index.json").write_text(json.dumps(index), encoding="utf-8")
     (shared / "pending.json").write_text(json.dumps([{"name": "tool.sh"}]), encoding="utf-8")
+    draft = board / "projects" / "demo" / "files" / "claude_desktop"
+    draft.mkdir(parents=True, exist_ok=True)
+    (draft / "draft-note.txt").write_text("helper draft\n", encoding="utf-8")
+    out_files = board / "projects" / "demo" / "outbox" / "claude_desktop" / "answer.files"
+    out_files.mkdir(parents=True, exist_ok=True)
+    (out_files / "extra.bin").write_bytes(b"outbox-bytes")
 
 
 def _outbox(root: Path) -> None:

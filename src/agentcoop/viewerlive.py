@@ -449,7 +449,15 @@ class LiveSession:
         if op == "status":
             return status_view(self.hub.board)
         if op == "files":
-            return {"files": files_view(self.hub.board, str(params.get("project") or ""), self.hub.token)}
+            return {
+                "files": files_view(
+                    self.hub.board,
+                    str(params.get("project") or ""),
+                    self.hub.token,
+                    start=params.get("from") or params.get("start"),
+                    end=params.get("to") or params.get("end"),
+                )
+            }
         if op == "subscribe":
             self.subscription = {
                 "project": params.get("project"),

@@ -9,6 +9,7 @@ import sys
 import threading
 import time
 import webbrowser
+from datetime import datetime, timezone
 from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -622,9 +623,16 @@ p{color:#A9A6C2}
         }
 
 
-def files_view(board: Path, project: str, token: str) -> list[dict]:
-    """Return shared files the viewer may show. Paths stay inside the shared folder."""
-    return _shared_rows(board, project, token)
+def files_view(
+    board: Path,
+    project: str,
+    token: str,
+    *,
+    start: str | None = None,
+    end: str | None = None,
+) -> list[dict]:
+    """Return every file tied to project events in the range, newest first."""
+    return _project_file_rows(board, project, token, start=start, end=end)
 
 
 def _viewer_parts(relative: str) -> list[str] | None:
@@ -711,44 +719,307 @@ def _media_type(path: str) -> str:
 
 def _shared_rows(board: Path, project: str, token: str) -> list[dict]:
     """Return shared files the viewer may show. Paths stay inside the shared folder."""
+    return _project_file_rows(board, project, token)
+
+
+def _project_file_rows(
+    board: Path,
+    project: str,
+    token: str,
+    *,
+    start: str | None = None,
+    end: str | None = None,
+) -> list[dict]:
+    """Collect attachments, shared copies, drafts, outbox files, held, and outside paths."""
     from urllib.parse import quote
 
-    from agentcoop.share import human_size, load_index, share_root
+    from agentcoop.core import log_messages
+    from agentcoop.share import human_size, load_index, load_pending, share_root
+    from agentcoop.timeline import _in_range, _stamp
 
     root = share_root(board, project)
-    rows = []
+    pending = {str(item.get("name") or "") for item in load_pending(board, project)}
+    by_key: dict[str, dict] = {}
+
+    def _bucket(kind: str) -> str:
+        lower = (kind or "").lower()
+        if lower.startswith("image") or lower in ("png", "jpg", "jpeg", "gif", "webp", "svg"):
+            return "image"
+        if lower in ("document", "pdf", "text", "markdown", "html", "md"):
+            return "document"
+        return "other"
+
+    def _add(
+        *,
+        key: str,
+        name: str,
+        kind: str,
+        bytes_count: int,
+        ts: str,
+        actor: str,
+        message_id: str,
+        source: str,
+        served: bool,
+        url: str = "",
+        path: str = "",
+        note: str = "",
+        media: str = "",
+        description: str = "",
+    ) -> None:
+        stamp = _stamp(ts) if ts else ""
+        if stamp and not _in_range(stamp, start, end):
+            return
+        if not stamp:
+            stamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        row = by_key.get(key)
+        message = {"id": message_id, "actor": actor, "ts": stamp} if message_id else None
+        if row is None:
+            by_key[key] = {
+                "id": key,
+                "name": name,
+                "kind": kind or "file",
+                "bucket": _bucket(kind),
+                "media": media,
+                "bytes": bytes_count,
+                "size": human_size(bytes_count) if bytes_count else "",
+                "url": url if served else "",
+                "path": path if served else "",
+                "served": served,
+                "source": source,
+                "note": note,
+                "description": description,
+                "ts": stamp,
+                "actor": actor,
+                "messages": [message] if message else [],
+            }
+            return
+        if stamp > str(row.get("ts") or ""):
+            row["ts"] = stamp
+            row["actor"] = actor or row.get("actor")
+        if message and all(item.get("id") != message_id for item in row["messages"]):
+            row["messages"].append(message)
+        if served and not row.get("url") and url:
+            row["url"] = url
+            row["path"] = path
+            row["served"] = True
+        if note and not row.get("note"):
+            row["note"] = note
+
+    def _file_url(relative: Path) -> tuple[str, str]:
+        parts = relative.parts
+        path = "/files/" + quote(project) + "/" + "/".join(quote(part) for part in parts)
+        url = path + "?t=" + quote(token)
+        return url, path
+
     for row in load_index(board, project).get("files") or []:
         if not isinstance(row, dict):
             continue
-        path = Path(str(row.get("path") or ""))
-        if not path.is_file() or path.is_symlink():
-            continue
-        try:
-            relative = path.resolve().relative_to(root.resolve())
-        except (OSError, ValueError):
-            continue
-        # Cookie-backed file requests omit the token query. The old page still uses ?t=.
-        url = (
-            "/files/"
-            + quote(project)
-            + "/"
-            + "/".join(quote(part) for part in relative.parts)
-            + "?t="
-            + quote(token)
+        name = str(row.get("name") or "")
+        held = bool(row.get("held")) or name in pending
+        path = Path(str(row.get("path") or (root / name)))
+        relative = None
+        url = ""
+        served_path = ""
+        if path.is_file() and not path.is_symlink():
+            try:
+                relative = path.resolve().relative_to(root.resolve())
+            except (OSError, ValueError):
+                relative = None
+        if relative is not None and not held:
+            url, served_path = _file_url(relative)
+        _add(
+            key="shared:" + name,
+            name=name or path.name,
+            kind=str(row.get("kind") or "file"),
+            bytes_count=int(row.get("bytes") or (path.stat().st_size if path.is_file() else 0)),
+            ts=str(row.get("shared_on") or ""),
+            actor=str(row.get("sender") or ""),
+            message_id=str(row.get("message") or ""),
+            source="held" if held else "shared",
+            served=bool(url),
+            url=url,
+            path=served_path,
+            note="Held, not served." if held else "",
+            media=str(row.get("media_type") or ""),
+            description=str(row.get("description") or ""),
         )
-        rows.append(
-            {
-                "name": str(row.get("name") or path.name),
-                "kind": str(row.get("kind") or "file"),
-                "media": str(row.get("media_type") or ""),
-                "bytes": int(row.get("bytes") or 0),
-                "size": human_size(int(row.get("bytes") or 0)),
-                "url": url,
-                "path": "/files/" + quote(project) + "/" + "/".join(quote(part) for part in relative.parts),
-                "description": str(row.get("description") or ""),
-            }
-        )
+
+    project_root = board / "projects" / project
+    files_root = project_root / "files"
+    if files_root.is_dir():
+        for agent_dir in sorted(files_root.iterdir()):
+            if not agent_dir.is_dir() or agent_dir.name == "shared":
+                continue
+            for path in sorted(agent_dir.rglob("*")):
+                if not path.is_file() or path.is_symlink() or path.name.startswith("."):
+                    continue
+                try:
+                    when = path.stat().st_mtime
+                    stamp = datetime.fromtimestamp(when, timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+                except OSError:
+                    continue
+                _add(
+                    key="draft:" + agent_dir.name + ":" + path.name,
+                    name=path.name,
+                    kind="draft",
+                    bytes_count=path.stat().st_size if path.is_file() else 0,
+                    ts=stamp,
+                    actor=agent_dir.name,
+                    message_id="",
+                    source="draft",
+                    served=False,
+                    note="Helper draft, not served.",
+                )
+
+    outbox = project_root / "outbox"
+    if outbox.is_dir():
+        for agent_dir in sorted(outbox.iterdir()):
+            if not agent_dir.is_dir():
+                continue
+            for files_dir in agent_dir.glob("*.files"):
+                if not files_dir.is_dir():
+                    continue
+                for path in sorted(files_dir.iterdir()):
+                    if not path.is_file() or path.is_symlink() or path.name == "files.json":
+                        continue
+                    try:
+                        stamp = datetime.fromtimestamp(path.stat().st_mtime, timezone.utc).strftime(
+                            "%Y-%m-%dT%H:%M:%SZ"
+                        )
+                        size = path.stat().st_size
+                    except OSError:
+                        continue
+                    _add(
+                        key="outbox:" + agent_dir.name + ":" + path.name,
+                        name=path.name,
+                        kind="outbox",
+                        bytes_count=size,
+                        ts=stamp,
+                        actor=agent_dir.name,
+                        message_id=files_dir.stem,
+                        source="outbox",
+                        served=False,
+                        note="Outbox file, not served until shared.",
+                    )
+
+    shareable = []
+    try:
+        shareable.append(root.resolve())
+    except OSError:
+        pass
+    try:
+        shareable.append(files_root.resolve())
+    except OSError:
+        pass
+
+    for message in log_messages(board, project):
+        stamp = message.ts if message.ts.endswith("Z") else message.ts + "Z"
+        infos = list(message.attachment_info or [])
+        if not infos and message.attachments:
+            for raw in message.attachments:
+                infos.append({"name": Path(str(raw)).name, "path": str(raw), "kind": "file"})
+        for info in infos:
+            name = str(info.get("name") or Path(str(info.get("path") or "")).name or "file")
+            held = bool(info.get("held")) or name in pending
+            disk = Path(str(info.get("path") or ""))
+            url = ""
+            served_path = ""
+            served = False
+            note = ""
+            source = "attachment"
+            if held:
+                source = "held"
+                note = "Held, not served."
+            elif disk.is_file() and not disk.is_symlink():
+                try:
+                    resolved = disk.resolve()
+                except OSError:
+                    resolved = None
+                if resolved is not None:
+                    try:
+                        relative = resolved.relative_to(root.resolve())
+                        url, served_path = _file_url(relative)
+                        served = True
+                        source = "shared"
+                    except (OSError, ValueError):
+                        inside = False
+                        for base in shareable:
+                            try:
+                                resolved.relative_to(base)
+                                inside = True
+                                break
+                            except (OSError, ValueError):
+                                continue
+                        if inside:
+                            source = "attachment"
+                            note = "Inside a shareable folder, not indexed."
+                        else:
+                            source = "outside"
+                            note = "Outside shareable folders, not served."
+            _add(
+                key="name:" + name.lower(),
+                name=name,
+                kind=str(info.get("kind") or "file"),
+                bytes_count=int(info.get("bytes") or 0),
+                ts=stamp,
+                actor=message.sender,
+                message_id=message.id,
+                source=source,
+                served=served,
+                url=url,
+                path=served_path,
+                note=note,
+                media=str(info.get("media_type") or ""),
+                description=str(info.get("description") or ""),
+            )
+        body = str(message.body or "")
+        for token_path in _absolute_paths_in_text(body):
+            disk = Path(token_path)
+            name = disk.name
+            note = "Outside shareable folders, not served."
+            source = "outside"
+            if disk.is_file() and not disk.is_symlink():
+                try:
+                    resolved = disk.resolve()
+                    for base in shareable:
+                        try:
+                            resolved.relative_to(base)
+                            source = "body"
+                            note = "Named in a message body."
+                            break
+                        except (OSError, ValueError):
+                            continue
+                except OSError:
+                    pass
+            _add(
+                key="body:" + name.lower(),
+                name=name,
+                kind="file",
+                bytes_count=disk.stat().st_size if disk.is_file() else 0,
+                ts=stamp,
+                actor=message.sender,
+                message_id=message.id,
+                source=source,
+                served=False,
+                note=note,
+            )
+
+    rows = list(by_key.values())
+    rows.sort(key=lambda row: (str(row.get("ts") or ""), str(row.get("name") or "")), reverse=True)
     return rows
+
+
+def _absolute_paths_in_text(text: str) -> list[str]:
+    """Return absolute path-looking tokens from a message body."""
+    import re
+
+    found = []
+    for match in re.finditer(r"(?:[A-Za-z]:\\|/)[^\s\"'<>|+]+", text or ""):
+        token = match.group(0).rstrip(".,);]")
+        if len(token) < 3:
+            continue
+        found.append(token)
+    return found
 
 
 def _review_line(board: Path, project: str, driver: str) -> str:

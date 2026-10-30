@@ -7,9 +7,9 @@
       "spec": "0.3",
       "board_format": 1,
       "oldest_reader": "0.2.0",
-      "board_changes": "Nothing",
+      "board_changes": "projects/<name>/progress/.stall.json freezes the stall minutes the viewer shows. Older programs ignore that file. query_events may include total and day_counts. The files view may list drafts, outbox files, held, and outside paths. Older clients ignore those fields.",
       "settings_changes": "None",
-      "downgrade_loses": "Nothing",
+      "downgrade_loses": "A downgrade no longer freezes stall minutes in .stall.json, so a quiet task can show a growing minute count again. The viewer loses rolling range restore, real totals, the richer Files tab, and the fixed drawer layout until that build is restored.",
       "desktop_skill": "Same",
       "upgrade_from": "0.2.0"
     },

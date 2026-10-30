@@ -1,6 +1,8 @@
 /** Map scroll position <-> time for the sticky overview rail. */
 
-export type TimeRange = { startMs: number; endMs: number };
+import type { TimeRange } from "./range";
+
+export type { TimeRange };
 
 export type VisibleWindow = { topMs: number; bottomMs: number };
 
@@ -60,6 +62,11 @@ export function windowStyle(
 export function reconnectDelay(attempt: number): number {
   const steps = [1000, 2000, 4000, 8000, 30000];
   return steps[Math.min(attempt, steps.length - 1)];
+}
+
+/** How many rail buckets fit in a column height. */
+export function bucketCountFromHeight(heightPx: number, rowPx = 25): number {
+  return Math.max(8, Math.min(200, Math.floor(Math.max(0, heightPx) / Math.max(12, rowPx))));
 }
 
 export function mergeLiveEvents<T extends { id: string; order?: number; ts?: string }>(

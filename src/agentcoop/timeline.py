@@ -30,6 +30,74 @@ MESSAGE_KINDS = {
     "cancel": "message.cancel",
 }
 
+# One severity table for every timeline kind. Keep design/viewer/SEVERITY.md in step.
+SEVERITY: dict[str, str] = {
+    "message.question": "info",
+    "message.answer": "info",
+    "message.task": "info",
+    "message.status": "info",
+    "message.ack": "info",
+    "message.patch": "info",
+    "message.context_request": "info",
+    "message.nudge": "attention",
+    "message.ping": "info",
+    "message.heartbeat": "info",
+    "message.decline": "attention",
+    "message.cancel": "attention",
+    "message.review_request": "info",
+    "message.review_verdict": "info",
+    "message.move": "info",
+    "message.unknown": "info",
+    "progress.update": "info",
+    "progress.review": "info",
+    "progress.waiting": "attention",
+    "progress.done": "info",
+    "context.version": "info",
+    "membership.join": "info",
+    "membership.driver": "info",
+    "membership.helper_add": "info",
+    "membership.helper_remove": "info",
+    "settings.watch": "attention",
+    "settings.review": "info",
+    "settings.notice": "info",
+    "settings.approval": "info",
+    "settings.override": "attention",
+    "file.shared": "info",
+    "file.held": "attention",
+    "outbox.sent": "info",
+    "outbox.rejected": "attention",
+    "grade.late": "attention",
+    "grade.answer": "info",
+    "round.log": "info",
+    "trace.line": "info",
+    "stall.mail": "attention",
+    "stall.progress": "problem",
+    "update.check": "info",
+    "update.installed": "info",
+    "review.metric": "info",
+}
+
+SYSTEM_ACTOR = "Agent Co-op"
+
+
+def severity_for(kind: str, *, verdict: str = "") -> str:
+    """Return the severity for one event kind. Verdict can raise a review to attention."""
+    level = SEVERITY.get(kind)
+    if level is None:
+        if kind.startswith("message."):
+            level = "info"
+        elif kind.startswith("stall."):
+            level = "problem"
+        elif kind.startswith("update."):
+            level = "info"
+        else:
+            level = "info"
+    if kind == "message.review_verdict" and verdict in ("changes", "cannot_verify"):
+        return "attention"
+    if kind == "review.metric" and verdict in ("changes", "cannot_verify"):
+        return "attention"
+    return level
+
 
 def clear_cache() -> None:
     """Drop the file cache. Tests use this between boards."""
@@ -89,7 +157,17 @@ def query_events(
                 break
     page = rows[begin : begin + max(1, min(limit, 200))]
     nxt = page[-1]["id"] if begin + len(page) < len(rows) and page else ""
-    return {"events": [_public(event) for event in page], "next": nxt}
+    day_counts: dict[str, int] = {}
+    for event in rows:
+        day = str(event.get("ts") or "")[:10]
+        if len(day) == 10:
+            day_counts[day] = day_counts.get(day, 0) + 1
+    return {
+        "events": [_public(event) for event in page],
+        "next": nxt,
+        "total": len(rows),
+        "day_counts": day_counts,
+    }
 
 
 def histogram(
@@ -196,13 +274,13 @@ def _project_events(board: Path, project: str, record: dict) -> list[dict]:
                 _stamp(str(record.get("created") or "")),
                 0,
                 project,
-                "board",
+                SYSTEM_ACTOR,
                 "settings.review",
                 "Review mode " + str(record.get("review")),
                 "Review is " + str(record.get("review")) + ".",
                 {},
                 [],
-                "info",
+                severity_for("settings.review"),
             )
         )
     for index, notice in enumerate(record.get("notices") or []):
@@ -214,13 +292,13 @@ def _project_events(board: Path, project: str, record: dict) -> list[dict]:
                 _stamp(str(record.get("created") or "")),
                 index,
                 project,
-                "board",
+                SYSTEM_ACTOR,
                 "settings.notice",
                 "Notice",
                 _plain(notice),
                 {},
                 [],
-                "info",
+                severity_for("settings.notice"),
             )
         )
     found.extend(_request_events(project, root / "requests"))
@@ -235,11 +313,11 @@ def _project_events(board: Path, project: str, record: dict) -> list[dict]:
             _file_event(
                 watch,
                 project,
-                "board",
+                SYSTEM_ACTOR,
                 "settings.watch",
                 "Checking stopped",
                 "Checking is stopped for this project.",
-                "attention",
+                severity_for("settings.watch"),
             )
         )
     return found
@@ -263,13 +341,21 @@ def _board_events(board: Path) -> list[dict]:
                 "stall.mail",
                 "Mail not picked up",
                 _read_text(mail)[:200],
-                "attention",
+                severity_for("stall.mail"),
             )
         )
     check = board / "update-check.json"
     if check.is_file():
         found.append(
-            _file_event(check, "", "board", "update.check", "Update check", "Update check ran.", "info")
+            _file_event(
+                check,
+                "",
+                SYSTEM_ACTOR,
+                "update.check",
+                "Update check",
+                "Update check ran.",
+                severity_for("update.check"),
+            )
         )
     previous = board / "bin" / "previous"
     if previous.is_dir():
@@ -279,11 +365,11 @@ def _board_events(board: Path) -> list[dict]:
                     _file_event(
                         path,
                         "",
-                        "board",
+                        SYSTEM_ACTOR,
                         "update.installed",
                         "Update " + path.name,
                         "An older installed copy was kept.",
-                        "info",
+                        severity_for("update.installed"),
                     )
                 )
     return found
@@ -295,11 +381,7 @@ def _message_event(board: Path, project: str, message) -> dict:
         kind = "message.review_verdict" if message.verdict else "message.review_request"
     if message.moved_from:
         kind = "message.move"
-    severity = "info"
-    if message.type in ("nudge", "decline", "cancel"):
-        severity = "attention"
-    if message.type == "review" and message.verdict in ("changes", "cannot_verify"):
-        severity = "attention"
+    severity = severity_for(kind, verdict=str(message.verdict or ""))
     title = message.subject or message.type
     summary = _plain(message.body)
     source = ""
@@ -363,7 +445,16 @@ def _progress_events(board: Path, project: str, folder: Path) -> list[dict]:
             title = title + ": " + now[:80]
         actor = path.stem.split("_", 1)[-1] if "_" in path.stem else ""
         found.append(
-            _file_event(path, project, actor, kind, title, _plain(text), "info", body=text)
+            _file_event(
+                path,
+                project,
+                actor,
+                kind,
+                title,
+                _plain(text),
+                severity_for(kind),
+                body=text,
+            )
         )
     return found
 
@@ -375,41 +466,57 @@ def _context_events(project: str, folder: Path) -> list[dict]:
     for path in folder.glob("*.md"):
         actor = path.stem.split("_", 1)[-1] if "_" in path.stem else ""
         found.append(
-            _file_event(path, project, actor, "context.version", "Context " + path.name, _plain(_cached_text(path)), "info", body=_cached_text(path))
+            _file_event(
+                path,
+                project,
+                actor,
+                "context.version",
+                "Context " + path.name,
+                _plain(_cached_text(path)),
+                severity_for("context.version"),
+                body=_cached_text(path),
+            )
         )
     return found
 
 
 def _with_stalls(board: Path, project: str | None, rows: list[dict]) -> list[dict]:
-    """Add a stall event when driver progress has gone quiet. This is not cached."""
-    from agentcoop.progress import stall_line
+    """Add a stall event from the frozen snapshot. This is not cached."""
+    from agentcoop.progress import stall_snapshot
 
     names = [project] if project else list(load_projects(board).get("projects") or {})
     extra = []
     for name in names:
         if not name:
             continue
-        line = stall_line(board, name)
-        if not line:
+        snap = stall_snapshot(board, name)
+        if not snap:
             continue
+        stamp = str(snap.get("detected_at") or "")
+        if not stamp.endswith("Z"):
+            stamp = _mtime_stamp(board / "projects" / name / "progress")
         extra.append(
             _event(
-                name + ":stall",
-                _mtime_stamp(board / "projects" / name / "progress"),
+                name + ":stall:" + str(snap.get("progress") or ""),
+                stamp,
                 0,
                 name,
-                "board",
+                SYSTEM_ACTOR,
                 "stall.progress",
                 "Driver stalled",
-                line,
+                str(snap.get("text") or ""),
                 {},
                 [],
-                "problem",
+                severity_for("stall.progress"),
             )
         )
     if not extra:
         return rows
-    return rows + extra
+    combined = list(rows) + extra
+    combined.sort(key=_oldest_key)
+    for index, event in enumerate(combined, start=1):
+        event["order"] = index
+    return combined
 
 
 def _history_events(project: str, record: dict) -> list[dict]:
@@ -429,13 +536,13 @@ def _history_events(project: str, record: dict) -> list[dict]:
                     since,
                     index,
                     project,
-                    driver or "board",
+                    driver or SYSTEM_ACTOR,
                     "membership.join",
                     "Driver " + driver,
                     "Helpers: " + ", ".join(sorted(helpers)),
                     {},
                     [],
-                    "info",
+                    severity_for("membership.join"),
                 )
             )
         elif driver != previous_driver:
@@ -445,13 +552,13 @@ def _history_events(project: str, record: dict) -> list[dict]:
                     since,
                     index,
                     project,
-                    driver or "board",
+                    driver or SYSTEM_ACTOR,
                     "membership.driver",
                     "Driver " + driver,
                     "Helpers: " + ", ".join(sorted(helpers)),
                     {},
                     [],
-                    "info",
+                    severity_for("membership.driver"),
                 )
             )
         for name in sorted(helpers - previous):
@@ -469,7 +576,7 @@ def _history_events(project: str, record: dict) -> list[dict]:
                     "Added as a helper.",
                     {},
                     [],
-                    "info",
+                    severity_for("membership.helper_add"),
                 )
             )
         for name in sorted(previous - helpers):
@@ -485,7 +592,7 @@ def _history_events(project: str, record: dict) -> list[dict]:
                     "Removed as a helper.",
                     {},
                     [],
-                    "info",
+                    severity_for("membership.helper_remove"),
                 )
             )
         previous = helpers
@@ -508,9 +615,17 @@ def _request_events(project: str, folder: Path) -> list[dict]:
             continue
         action = str(data.get("action") or path.stem)
         kind = "settings.watch" if action in ("stop_watching", "start_watching") else "membership." + action
-        actor = path.parent.name if path.parent.name not in ("requests", "done", "rejected") else "board"
+        actor = path.parent.name if path.parent.name not in ("requests", "done", "rejected") else SYSTEM_ACTOR
         found.append(
-            _file_event(path, project, actor, kind, action.replace("_", " "), action, "info")
+            _file_event(
+                path,
+                project,
+                actor,
+                kind,
+                action.replace("_", " "),
+                action,
+                severity_for(kind),
+            )
         )
     return found
 
@@ -530,11 +645,18 @@ def _review_events(project: str, folder: Path) -> list[dict]:
             continue
         if path.name == "override.json":
             found.append(
-                _file_event(path, project, str(data.get("by") or ""), "settings.override", "Review override", "The person marked the task done anyway.", "attention")
+                _file_event(
+                    path,
+                    project,
+                    str(data.get("by") or ""),
+                    "settings.override",
+                    "Review override",
+                    "The person marked the task done anyway.",
+                    severity_for("settings.override"),
+                )
             )
             continue
         verdict = str(data.get("verdict") or "")
-        severity = "attention" if verdict in ("changes", "cannot_verify") else "info"
         found.append(
             _file_event(
                 path,
@@ -543,7 +665,7 @@ def _review_events(project: str, folder: Path) -> list[dict]:
                 "review.metric",
                 "Review " + verdict,
                 verdict,
-                severity,
+                severity_for("review.metric", verdict=verdict),
             )
         )
     return found
@@ -575,12 +697,20 @@ def _approval_events(project: str, path: Path) -> list[dict]:
                 _plain(str(row.get("text") or row.get("phrase") or "Standing approval")),
                 {},
                 [],
-                "info",
+                severity_for("settings.approval"),
             )
         )
     if not found and path.is_file():
         found.append(
-            _file_event(path, project, "person", "settings.approval", "Standing approvals", "Standing approvals are saved.", "info")
+            _file_event(
+                path,
+                project,
+                "person",
+                "settings.approval",
+                "Standing approvals",
+                "Standing approvals are saved.",
+                severity_for("settings.approval"),
+            )
         )
     return found
 
@@ -596,7 +726,6 @@ def _share_events(board: Path, project: str) -> list[dict]:
             continue
         name = str(info.get("name") or "")
         kind = "file.held" if info.get("held") or name in held else "file.shared"
-        severity = "attention" if kind == "file.held" else "info"
         url = "" if kind == "file.held" else "/files/" + project + "/" + name
         found.append(
             _event(
@@ -610,7 +739,7 @@ def _share_events(board: Path, project: str) -> list[dict]:
                 str(info.get("description") or name),
                 {"thread": str(info.get("message") or "")},
                 [{"name": name, "kind": str(info.get("kind") or ""), "bytes": int(info.get("bytes") or 0), "url": url}],
-                severity,
+                severity_for(kind),
             )
         )
     return found
@@ -628,7 +757,16 @@ def _outbox_events(project: str, folder: Path) -> list[dict]:
         if sent.is_dir():
             for path in sent.glob("*.md"):
                 found.append(
-                    _file_event(path, project, agent_dir.name, "outbox.sent", "Sent " + path.name, _plain(_cached_text(path)), "info", body=_cached_text(path))
+                    _file_event(
+                        path,
+                        project,
+                        agent_dir.name,
+                        "outbox.sent",
+                        "Sent " + path.name,
+                        _plain(_cached_text(path)),
+                        severity_for("outbox.sent"),
+                        body=_cached_text(path),
+                    )
                 )
         if rejected.is_dir():
             for path in rejected.glob("*.md"):
@@ -644,7 +782,7 @@ def _outbox_events(project: str, folder: Path) -> list[dict]:
                         "outbox.rejected",
                         "Rejected " + path.name,
                         reason or "Rejected.",
-                        "problem",
+                        severity_for("outbox.rejected"),
                         body=_cached_text(path),
                     )
                 )
@@ -666,7 +804,6 @@ def _grade_events(project: str, folder: Path) -> list[dict]:
             continue
         score = str(data.get("score") or "")
         kind = "grade.late" if data.get("late") else "grade.answer"
-        severity = "attention" if data.get("late") else "info"
         found.append(
             _file_event(
                 path,
@@ -675,7 +812,7 @@ def _grade_events(project: str, folder: Path) -> list[dict]:
                 kind,
                 "Grade " + score,
                 str(data.get("note") or score),
-                severity,
+                severity_for(kind),
             )
         )
     return found
@@ -693,13 +830,13 @@ def _round_events(path: Path) -> list[dict]:
                 _stamp(stamp),
                 index,
                 "",
-                "board",
+                SYSTEM_ACTOR,
                 "round.log",
                 "Background round",
                 rest or line,
                 {},
                 [],
-                "info",
+                severity_for("round.log"),
                 low_level=False,
             )
         )
@@ -724,13 +861,13 @@ def _trace_events(path: Path) -> list[dict]:
                 _mtime_stamp(path),
                 index,
                 "",
-                "board",
+                SYSTEM_ACTOR,
                 "trace.line",
                 title,
                 _plain(line),
                 {},
                 [],
-                "info",
+                severity_for("trace.line"),
                 low_level=True,
             )
         )
@@ -848,10 +985,16 @@ def _in_range(ts: str, start: str | None, end: str | None) -> bool:
 
 
 def _oldest_key(event: dict) -> tuple:
+    """Sort by time, then send order (seq), then source. Same day never needs two keys."""
     seq = event.get("seq")
-    if seq is None:
-        return (event.get("ts") or "", 0, 0, event.get("source") or "")
-    return (event.get("ts") or "", 1, int(seq), event.get("source") or "")
+    send_order = int(seq) if seq is not None else 0
+    return (
+        event.get("ts") or "",
+        send_order,
+        int(event.get("order") or 0),
+        event.get("source") or "",
+        event.get("kind") or "",
+    )
 
 
 def _marker(kind: str) -> str:
@@ -931,7 +1074,7 @@ def _rel(board: Path, path: Path) -> str:
 
 def _read_text(path: Path) -> str:
     try:
-        return path.read_text(encoding="utf-8")
+        return path.read_text(encoding="utf-8", errors="replace")
     except OSError:
         return ""
 
@@ -1018,8 +1161,13 @@ def agents_view(board: Path, project: str) -> list[dict]:
             state = "stopped"
         elif heartbeat.get("last_seen"):
             state = "watching"
-        if role == "driver" and any(event.get("kind") == "stall.progress" for event in events_for(board, project)):
-            state = "stalled"
+        if role == "driver":
+            from agentcoop.progress import stall_snapshot, waiting_line
+
+            if waiting_line(board, project):
+                state = "waiting"
+            elif stall_snapshot(board, project):
+                state = "stalled"
         profile = profile_of(record, name)
         if isinstance(agent.get("accepts"), list):
             profile["accepts"] = [str(item) for item in agent["accepts"]]
@@ -1108,16 +1256,28 @@ def rules_view(board: Path, project: str) -> dict:
 def status_view(board: Path) -> dict:
     """Return the attention items a person would see on STATUS.md."""
     from agentcoop.cursorloop import cursor_mail_line
-    from agentcoop.progress import stall_line
+    from agentcoop.progress import stall_snapshot, waiting_line
 
     items = []
     mail = cursor_mail_line(board)
     if mail:
         items.append({"kind": "stall.mail", "text": mail})
     for name in load_projects(board).get("projects") or {}:
-        line = stall_line(board, name)
-        if line:
-            items.append({"kind": "stall.progress", "project": name, "text": line})
+        waiting = waiting_line(board, name)
+        if waiting:
+            items.append({"kind": "progress.waiting", "project": name, "text": waiting})
+            continue
+        snap = stall_snapshot(board, name)
+        if snap:
+            minutes = int(snap.get("minutes") or 0)
+            items.append(
+                {
+                    "kind": "stall.progress",
+                    "project": name,
+                    "text": "Driver stalled for " + str(minutes) + " min",
+                    "minutes": minutes,
+                }
+            )
     return {"items": items}
 
 
