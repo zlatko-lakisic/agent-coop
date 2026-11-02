@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
+import { AgentIcon } from "./agentIcons";
 import { KindIcon, iconForKind } from "./icons";
 import {
   dayKey,
@@ -66,6 +67,7 @@ type AgentRow = {
   last_seen?: string;
   activity?: { count?: number }[];
   display?: string;
+  tool?: string;
 };
 
 type ProjectRow = { name: string; path?: string; driver?: string };
@@ -88,7 +90,30 @@ type FileRow = {
   parent?: string;
   children?: FileRow[];
   messages?: { id?: string; actor?: string; ts?: string }[];
+  expandable?: boolean;
+  local_path?: string;
+  expanded?: boolean;
+  loading?: boolean;
 };
+
+function patchFileNode(nodes: FileRow[], id: string, patch: Partial<FileRow>): FileRow[] {
+  return nodes.map((node) => {
+    if ((node.id || node.name) === id) return { ...node, ...patch };
+    if (node.children?.length) {
+      return { ...node, children: patchFileNode(node.children, id, patch) };
+    }
+    return node;
+  });
+}
+
+function collectExpandable(nodes: FileRow[], onlyRoots = false): FileRow[] {
+  const out: FileRow[] = [];
+  for (const node of nodes) {
+    if (node.expandable && node.local_path && !node.expanded && !node.loading) out.push(node);
+    if (!onlyRoots && node.children?.length) out.push(...collectExpandable(node.children, false));
+  }
+  return out;
+}
 
 function applyTheme(c: Palette) {
   const root = document.documentElement;
@@ -316,19 +341,20 @@ export function App({ token }: { token: string }) {
           actors: filterActorRef.current ? [filterActorRef.current] : undefined,
         });
       }
-      // Files can be heavy; keep the timeline usable while they load.
+      // Files load as a shallow list first; linked levels fill in asynchronously.
       void sock
         .request("files", { project: name, from, to })
         .then((fi) => {
           if (gen !== loadGenRef.current) return;
-          setFiles(((fi as { files: FileRow[] }).files) || []);
+          const rows = ((fi as { files: FileRow[] }).files) || [];
+          setFiles(rows);
+          setLoadingFiles(false);
+          void expandFileLevels(sock, name, rows, gen, true);
         })
         .catch(() => {
           if (gen !== loadGenRef.current) return;
           setFiles([]);
-        })
-        .finally(() => {
-          if (gen === loadGenRef.current) setLoadingFiles(false);
+          setLoadingFiles(false);
         });
     } catch {
       if (gen === loadGenRef.current) {
@@ -336,6 +362,72 @@ export function App({ token }: { token: string }) {
         setLoadingFiles(false);
       }
     }
+  }
+
+  async function expandFileLevels(
+    sock: ViewerSocket,
+    projectName: string,
+    roots: FileRow[],
+    gen: number,
+    firstLevelOnly: boolean,
+  ) {
+    const targets = collectExpandable(roots, firstLevelOnly);
+    for (const target of targets) {
+      if (gen !== loadGenRef.current) return;
+      await loadFileChildren(sock, projectName, target, gen);
+    }
+  }
+
+  async function loadFileChildren(
+    sock: ViewerSocket,
+    projectName: string,
+    target: FileRow,
+    gen: number,
+  ) {
+    const id = target.id || target.name;
+    if (!target.local_path || !id) return;
+    setFiles((prev) => patchFileNode(prev, id, { loading: true }));
+    try {
+      const res = await sock.request("file_children", {
+        project: projectName,
+        local_path: target.local_path,
+        parent_id: id,
+        parent_name: target.name,
+      });
+      if (gen !== loadGenRef.current) return;
+      const children = ((res as { children: FileRow[] }).children) || [];
+      setFiles((prev) =>
+        patchFileNode(prev, id, {
+          children,
+          expanded: true,
+          loading: false,
+        }),
+      );
+    } catch {
+      if (gen !== loadGenRef.current) return;
+      setFiles((prev) =>
+        patchFileNode(prev, id, {
+          children: [],
+          expanded: true,
+          loading: false,
+        }),
+      );
+    }
+  }
+
+  async function toggleFileExpand(f: FileRow) {
+    const sock = socketRef.current;
+    const id = f.id || f.name;
+    if (!sock || !id) return;
+    if (f.expanded) {
+      setFiles((prev) => patchFileNode(prev, id, { expanded: false }));
+      return;
+    }
+    if ((f.children || []).length) {
+      setFiles((prev) => patchFileNode(prev, id, { expanded: true }));
+      return;
+    }
+    await loadFileChildren(sock, project, f, loadGenRef.current);
   }
 
   function handlePush(msg: Record<string, unknown>) {
@@ -596,8 +688,8 @@ export function App({ token }: { token: string }) {
   function flattenFileTree(nodes: FileRow[], depth = 0): { file: FileRow; depth: number }[] {
     const out: { file: FileRow; depth: number }[] = [];
     for (const f of nodes) {
-      const childRows = flattenFileTree(f.children || [], depth + 1);
-      if (fileFilter === "all" || fileMatches(f) || childRows.length) {
+      const childRows = f.expanded ? flattenFileTree(f.children || [], depth + 1) : [];
+      if (fileFilter === "all" || fileMatches(f) || childRows.length || f.loading || f.expandable) {
         out.push({ file: f, depth });
         out.push(...childRows);
       }
@@ -797,7 +889,7 @@ export function App({ token }: { token: string }) {
             return (
               <button type="button" class={"card" + (on ? " on" : "")} onClick={() => setFilterActor(on ? "" : a.name)}>
                 <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                  <span style={{ width: 28, height: 28, borderRadius: agentRadius(a.name, a.role), background: color, color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: 12 }}>{(a.name || "?").slice(0, 1).toUpperCase()}</span>
+                  <AgentIcon tool={a.tool} name={a.name} color={color} size={28} />
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontWeight: 600 }}>{a.display || a.name}</div>
                     <div style={{ fontSize: 12, color: c.muted }}>{a.role}</div>
@@ -843,22 +935,44 @@ export function App({ token }: { token: string }) {
               )}
               <div class="file-tree" role="list">
                 {shownFileTree.map(({ file: f, depth }) => (
-                  <button
-                    type="button"
-                    class={"file-row" + (depth ? " child" : "")}
+                  <div
+                    class={"file-row" + (depth ? " child" : "") + (f.loading ? " loading" : "")}
                     role="listitem"
                     style={{ marginLeft: depth ? depth * 14 : 0 }}
-                    onClick={() => void openListedFile(f)}
                   >
-                    <div class="file-thumb small">
-                      {f.url && (f.bucket === "image" || (f.kind || "").includes("image")) ? <img src={f.url} alt="" /> : <KindIcon name="file" color={c.muted} />}
-                    </div>
-                    <div class="file-meta">
-                      <div class="file-name">{f.name}</div>
-                      <div class="file-sub">{f.kind || f.source} · {f.size || f.meta || f.note || f.description || ""}</div>
-                      <div class="file-sub">{displayActor(f.actor)}{(f.messages || []).length > 1 ? " · " + (f.messages || []).length + " messages" : ""}{(f.children || []).length ? " · " + (f.children || []).length + " linked" : ""}</div>
-                    </div>
-                  </button>
+                    {f.expandable ? (
+                      <button
+                        type="button"
+                        class="file-twist"
+                        aria-label={f.expanded ? "Hide linked files" : "Show linked files"}
+                        aria-expanded={!!f.expanded}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          void toggleFileExpand(f);
+                        }}
+                      >
+                        {f.loading ? <span class="spinner" aria-hidden="true" /> : f.expanded ? "▾" : "▸"}
+                      </button>
+                    ) : (
+                      <span class="file-twist spacer" aria-hidden="true" />
+                    )}
+                    <button type="button" class="file-open" onClick={() => void openListedFile(f)}>
+                      <div class="file-thumb small">
+                        {f.url && (f.bucket === "image" || (f.kind || "").includes("image")) ? <img src={f.url} alt="" /> : <KindIcon name="file" color={c.muted} />}
+                      </div>
+                      <div class="file-meta">
+                        <div class="file-name">{f.name}</div>
+                        <div class="file-sub">{f.kind || f.source} · {f.size || f.meta || f.note || f.description || ""}</div>
+                        <div class="file-sub">
+                          {f.loading
+                            ? "Looking for linked files…"
+                            : displayActor(f.actor)
+                              + ((f.messages || []).length > 1 ? " · " + (f.messages || []).length + " messages" : "")
+                              + ((f.children || []).length ? " · " + (f.children || []).length + " linked" : f.expandable && f.expanded ? " · no linked files" : f.expandable ? " · may have linked files" : "")}
+                        </div>
+                      </div>
+                    </button>
+                  </div>
                 ))}
               </div>
             </div>

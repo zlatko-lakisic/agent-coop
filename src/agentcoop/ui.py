@@ -678,14 +678,68 @@ def files_view(
     start: str | None = None,
     end: str | None = None,
     local_open: bool = True,
+    expand_refs: bool = False,
 ) -> list[dict]:
     """Return every file tied to project events in the range, newest first.
 
     When local_open is True (desktop loopback), readable board and project files
     get a /local-file URL so the person can open them. Phone mode keeps shared-only.
+    Linked paths are not expanded here by default; the viewer loads each tree
+    level with file_children so long catalogs stay responsive.
     """
     return _project_file_rows(
-        board, project, token, start=start, end=end, local_open=local_open
+        board,
+        project,
+        token,
+        start=start,
+        end=end,
+        local_open=local_open,
+        expand_refs=expand_refs,
+    )
+
+
+def file_children(
+    board: Path,
+    project: str,
+    token: str,
+    local_path: str,
+    *,
+    local_open: bool = True,
+    parent_id: str = "",
+    parent_name: str = "",
+) -> list[dict]:
+    """Return one level of project files named inside local_path."""
+    disk = Path(local_path)
+    try:
+        if not disk.is_file() or disk.is_symlink():
+            return []
+        real = disk.resolve()
+    except OSError:
+        return []
+    if not _path_under_project(board, project, real):
+        return []
+    workspace = _project_workspace(board, project)
+    if workspace is None:
+        return []
+    from agentcoop.paths import project_dir
+    from agentcoop.share import human_size, is_program
+
+    allowed_roots = [project_dir(board, project), workspace]
+    return _children_one_level(
+        parent_disk=real,
+        parent_key=parent_id or ("file:" + real.name.lower()),
+        parent_name=parent_name or real.name,
+        parent_ts="",
+        parent_actor="",
+        parent_messages=[],
+        workspace=workspace,
+        allowed_roots=allowed_roots,
+        token=token,
+        project=project,
+        local_open=local_open,
+        exists_cache={},
+        is_program=is_program,
+        human_size=human_size,
     )
 
 
@@ -1015,6 +1069,129 @@ def _shared_rows(board: Path, project: str, token: str) -> list[dict]:
     return _project_file_rows(board, project, token)
 
 
+def _children_one_level(
+    *,
+    parent_disk: Path,
+    parent_key: str,
+    parent_name: str,
+    parent_ts: str,
+    parent_actor: str,
+    parent_messages: list,
+    workspace: Path,
+    allowed_roots: list[Path],
+    token: str,
+    project: str,
+    local_open: bool,
+    exists_cache: dict[str, bool],
+    is_program,
+    human_size,
+) -> list[dict]:
+    """Return only the direct referenced files under one parent file."""
+    from urllib.parse import quote
+
+    if parent_disk.suffix.lower() not in _TEXT_REF_SUFFIXES:
+        return []
+    max_bytes = 1_000_000 if parent_disk.suffix.lower() == ".json" else 256_000
+    try:
+        resolved_parent = parent_disk.resolve()
+        size = parent_disk.stat().st_size
+        if size > max_bytes:
+            return []
+        text = parent_disk.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return []
+
+    def _bucket(kind: str) -> str:
+        lower = (kind or "").lower()
+        if lower.startswith("image") or lower in ("png", "jpg", "jpeg", "gif", "webp", "svg"):
+            return "image"
+        if lower in ("document", "pdf", "text", "markdown", "html", "md", "json"):
+            return "document"
+        return "other"
+
+    def _local_file_url(abs_path: Path) -> tuple[str, str]:
+        path = "/local-file"
+        url = (
+            path
+            + "?project="
+            + quote(project)
+            + "&p="
+            + quote(str(abs_path))
+            + "&t="
+            + quote(token)
+        )
+        return url, path
+
+    children: list[dict] = []
+    seen_child: set[str] = set()
+    for token_path in _referenced_paths_from_file(parent_disk, text):
+        if len(children) >= 40:
+            break
+        target = _resolve_referenced_path(
+            token_path,
+            workspace=workspace,
+            parent_dir=parent_disk.parent,
+            exists_cache=exists_cache,
+        )
+        if target is None:
+            continue
+        if not _path_under_roots(target, allowed_roots):
+            continue
+        suffix = target.suffix.lower()
+        if suffix not in _SAFE_OPEN_SUFFIXES and is_program(target):
+            continue
+        try:
+            if target.resolve() == resolved_parent:
+                continue
+            child_id = str(target.resolve()).lower()
+            local_abs = str(target.resolve())
+        except OSError:
+            child_id = str(target).lower()
+            local_abs = str(target)
+        if child_id in seen_child:
+            continue
+        seen_child.add(child_id)
+        kind = _kind_from_name(target.name)
+        try:
+            child_size = target.stat().st_size
+        except OSError:
+            child_size = 0
+        served = False
+        url = ""
+        served_path = ""
+        if local_open:
+            url, served_path = _local_file_url(target)
+            served = True
+        expandable = local_open and target.suffix.lower() in _TEXT_REF_SUFFIXES
+        children.append(
+            {
+                "id": "ref:" + parent_key + ":" + target.name.lower(),
+                "name": target.name,
+                "kind": kind,
+                "bucket": _bucket(kind),
+                "media": "",
+                "bytes": child_size,
+                "size": human_size(child_size) if child_size else "",
+                "url": url if served else "",
+                "path": served_path if served else "",
+                "served": served,
+                "source": "reference",
+                "note": "Named in " + parent_name,
+                "description": token_path,
+                "ts": parent_ts,
+                "actor": parent_actor,
+                "messages": list(parent_messages or []),
+                "parent": parent_key,
+                "children": [],
+                "expandable": expandable,
+                "local_path": local_abs if expandable else "",
+                "expanded": False,
+            }
+        )
+    children.sort(key=lambda item: str(item.get("name") or "").lower())
+    return children
+
+
 def _project_file_rows(
     board: Path,
     project: str,
@@ -1023,6 +1200,7 @@ def _project_file_rows(
     start: str | None = None,
     end: str | None = None,
     local_open: bool = True,
+    expand_refs: bool = False,
 ) -> list[dict]:
     """Collect attachments, shared copies, drafts, outbox files, held, and outside paths."""
     from urllib.parse import quote
@@ -1095,6 +1273,9 @@ def _project_file_rows(
                 "actor": actor,
                 "messages": [message] if message else [],
                 "children": [],
+                "expandable": False,
+                "local_path": "",
+                "expanded": False,
             }
         else:
             if stamp > str(row.get("ts") or ""):
@@ -1111,7 +1292,12 @@ def _project_file_rows(
         if disk is not None:
             try:
                 if disk.is_file() and not disk.is_symlink():
-                    disk_by_key[key] = disk.resolve()
+                    resolved = disk.resolve()
+                    disk_by_key[key] = resolved
+                    if local_open and resolved.suffix.lower() in _TEXT_REF_SUFFIXES:
+                        row = by_key[key]
+                        row["expandable"] = True
+                        row["local_path"] = str(resolved)
             except OSError:
                 pass
 
@@ -1394,142 +1580,31 @@ def _project_file_rows(
                 disk=disk if disk.is_file() else None,
             )
 
-    if workspace is not None:
-        children_by_disk: dict[str, list[dict]] = {}
-
-        def _build_children(
-            parent_disk: Path,
-            parent_key: str,
-            parent_name: str,
-            parent_ts: str,
-            parent_actor: str,
-            parent_messages: list,
-            depth: int,
-            ancestry: set[str],
-        ) -> list[dict]:
-            if depth > 3:
-                return []
-            try:
-                resolved_parent = parent_disk.resolve()
-            except OSError:
-                return []
-            parent_id = str(resolved_parent).lower()
-            if parent_id in ancestry:
-                return []
-            if parent_disk.suffix.lower() not in _TEXT_REF_SUFFIXES:
-                return []
-            max_bytes = 1_000_000 if parent_disk.suffix.lower() == ".json" else 256_000
-            try:
-                size = parent_disk.stat().st_size
-                if size > max_bytes:
-                    return []
-                text = parent_disk.read_text(encoding="utf-8", errors="replace")
-            except OSError:
-                return []
-            next_ancestry = set(ancestry)
-            next_ancestry.add(parent_id)
-            children: list[dict] = []
-            seen_child: set[str] = set()
-            for token in _referenced_paths_from_file(parent_disk, text):
-                if len(children) >= 40:
-                    break
-                target = _resolve_referenced_path(
-                    token,
-                    workspace=workspace,
-                    parent_dir=parent_disk.parent,
-                    exists_cache=exists_cache,
-                )
-                if target is None:
-                    continue
-                if not _path_under_roots(target, allowed_roots):
-                    continue
-                suffix = target.suffix.lower()
-                if suffix not in _SAFE_OPEN_SUFFIXES and is_program(target):
-                    continue
-                try:
-                    if target.resolve() == resolved_parent:
-                        continue
-                    child_id = str(target.resolve()).lower()
-                except OSError:
-                    child_id = str(target).lower()
-                if child_id in seen_child or child_id in next_ancestry:
-                    continue
-                seen_child.add(child_id)
-                kind = _kind_from_name(target.name)
-                try:
-                    child_size = target.stat().st_size
-                except OSError:
-                    child_size = 0
-                served = False
-                url = ""
-                served_path = ""
-                if local_open:
-                    url, served_path = _local_file_url(target)
-                    served = True
-                child_key = "ref:" + parent_key + ":" + target.name.lower()
-                nested: list[dict] = []
-                if target.suffix.lower() in _TEXT_REF_SUFFIXES:
-                    nested = _build_children(
-                        target,
-                        child_key,
-                        target.name,
-                        parent_ts,
-                        parent_actor,
-                        parent_messages,
-                        depth + 1,
-                        next_ancestry,
-                    )
-                children.append(
-                    {
-                        "id": child_key,
-                        "name": target.name,
-                        "kind": kind,
-                        "bucket": _bucket(kind),
-                        "media": "",
-                        "bytes": child_size,
-                        "size": human_size(child_size) if child_size else "",
-                        "url": url if served else "",
-                        "path": served_path if served else "",
-                        "served": served,
-                        "source": "reference",
-                        "note": "Named in " + parent_name,
-                        "description": token,
-                        "ts": parent_ts,
-                        "actor": parent_actor,
-                        "messages": list(parent_messages or []),
-                        "parent": parent_key,
-                        "children": nested,
-                    }
-                )
-            children.sort(key=lambda item: str(item.get("name") or "").lower())
-            return children
-
+    if expand_refs and workspace is not None:
+        # Tests and callers that want one eager level can pass expand_refs=True.
         for key, row in list(by_key.items()):
             parent_disk = disk_by_key.get(key)
             if parent_disk is None:
                 continue
-            if parent_disk.suffix.lower() not in _TEXT_REF_SUFFIXES:
-                continue
-            try:
-                scan_key = str(parent_disk.resolve())
-            except OSError:
-                scan_key = str(parent_disk)
-            cached_children = children_by_disk.get(scan_key)
-            if cached_children is not None:
-                row["children"] = cached_children
-                continue
-            children = _build_children(
-                parent_disk,
-                key,
-                str(row.get("name") or "file"),
-                str(row.get("ts") or ""),
-                str(row.get("actor") or ""),
-                list(row.get("messages") or []),
-                0,
-                set(),
+            children = _children_one_level(
+                parent_disk=parent_disk,
+                parent_key=key,
+                parent_name=str(row.get("name") or "file"),
+                parent_ts=str(row.get("ts") or ""),
+                parent_actor=str(row.get("actor") or ""),
+                parent_messages=list(row.get("messages") or []),
+                workspace=workspace,
+                allowed_roots=allowed_roots,
+                token=token,
+                project=project,
+                local_open=local_open,
+                exists_cache=exists_cache,
+                is_program=is_program,
+                human_size=human_size,
             )
-            children_by_disk[scan_key] = children
             row["children"] = children
+            if children:
+                row["expanded"] = True
 
     rows = list(by_key.values())
     rows.sort(key=lambda row: (str(row.get("ts") or ""), str(row.get("name") or "")), reverse=True)

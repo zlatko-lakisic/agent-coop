@@ -23,7 +23,7 @@ import viewer_fixture
 from agentcoop.core import send
 from agentcoop.progress import stall_line, stall_snapshot, waiting_line, write_progress
 from agentcoop.timeline import SEVERITY, clear_cache, events_for, histogram, query_events, severity_for, status_view
-from agentcoop.ui import files_view, make_server
+from agentcoop.ui import file_children, files_view, make_server
 
 
 class ViewerRealUseTests(unittest.TestCase):
@@ -339,7 +339,18 @@ class ViewerRealUseTests(unittest.TestCase):
             )
             rows = files_view(env.board, "demo", "tok", local_open=True)
             parent = next(row for row in rows if row["name"] == "catalog.md")
-            children = parent.get("children") or []
+            self.assertTrue(parent.get("expandable"))
+            self.assertTrue(parent.get("local_path"))
+            self.assertEqual(parent.get("children") or [], [])
+            children = file_children(
+                env.board,
+                "demo",
+                "tok",
+                str(parent["local_path"]),
+                local_open=True,
+                parent_id=str(parent["id"]),
+                parent_name=str(parent["name"]),
+            )
             self.assertEqual(len(children), 1)
             child = children[0]
             self.assertEqual(child["name"], "r12-campaign-open.png")
@@ -347,6 +358,9 @@ class ViewerRealUseTests(unittest.TestCase):
             self.assertEqual(child["bucket"], "image")
             self.assertTrue(child["served"])
             self.assertIn("/local-file", child["url"])
+            eager = files_view(env.board, "demo", "tok", local_open=True, expand_refs=True)
+            eager_parent = next(row for row in eager if row["name"] == "catalog.md")
+            self.assertEqual(len(eager_parent.get("children") or []), 1)
 
     def test_files_view_nests_json_manifest_paths_recursively(self) -> None:
         with support.TempEnv() as env:
@@ -395,11 +409,33 @@ class ViewerRealUseTests(unittest.TestCase):
             )
             rows = files_view(env.board, "demo", "tok", local_open=True)
             parent = next(row for row in rows if row["name"] == "note.md")
-            children = parent.get("children") or []
-            self.assertEqual(len(children), 1)
-            manifest = children[0]
+            self.assertTrue(parent.get("expandable"))
+            level1 = file_children(
+                env.board,
+                "demo",
+                "tok",
+                str(parent["local_path"]),
+                local_open=True,
+                parent_id=str(parent["id"]),
+                parent_name=str(parent["name"]),
+            )
+            self.assertEqual(len(level1), 1)
+            manifest = level1[0]
             self.assertEqual(manifest["name"], "frame_manifest.json")
-            nested = {child["name"] for child in (manifest.get("children") or [])}
+            self.assertTrue(manifest.get("expandable"))
+            self.assertEqual(manifest.get("children") or [], [])
+            nested = {
+                child["name"]
+                for child in file_children(
+                    env.board,
+                    "demo",
+                    "tok",
+                    str(manifest["local_path"]),
+                    local_open=True,
+                    parent_id=str(manifest["id"]),
+                    parent_name=str(manifest["name"]),
+                )
+            }
             self.assertIn("r11-a.png", nested)
             self.assertIn("r11-b.png", nested)
 

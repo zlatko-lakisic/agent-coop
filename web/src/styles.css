@@ -371,10 +371,10 @@ a { color: #7B5CD6; }
 .file-row {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 6px;
   width: 100%;
   text-align: left;
-  padding: 8px;
+  padding: 6px 8px;
   border-radius: 10px;
   border: 1px solid var(--border);
   background: var(--surface2);
@@ -383,6 +383,39 @@ a { color: #7B5CD6; }
 .file-row.child {
   border-style: dashed;
   background: var(--surface);
+}
+.file-row.loading {
+  border-color: var(--accent);
+}
+.file-twist {
+  flex: 0 0 22px;
+  width: 22px;
+  height: 22px;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  font-size: 12px;
+  cursor: pointer;
+}
+.file-twist.spacer {
+  cursor: default;
+}
+.file-open {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  padding: 2px 0;
+  cursor: pointer;
 }
 .file-thumb {
   flex: 0 0 56px;
