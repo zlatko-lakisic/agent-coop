@@ -4,18 +4,43 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 import unittest
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 import support
 
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "scripts" / "sim"))
+
+import viewer_fixture
+
 from agentcoop.core import send
 from agentcoop.progress import stall_line, stall_snapshot, waiting_line, write_progress
-from agentcoop.timeline import SEVERITY, clear_cache, events_for, query_events, severity_for, status_view
+from agentcoop.timeline import SEVERITY, clear_cache, events_for, histogram, query_events, severity_for, status_view
 from agentcoop.ui import files_view
 
 
 class ViewerRealUseTests(unittest.TestCase):
+    def test_histogram_spans_full_range_including_empty_days(self) -> None:
+        with support.TempEnv() as env:
+            viewer_fixture.build_demo(env.board, env.workspace)
+            clear_cache()
+            start = "2026-10-22T00:00:00Z"
+            end = "2026-11-01T23:59:59Z"
+            result = histogram(env.board, project="demo", start=start, end=end, buckets=20)
+            buckets = result["buckets"]
+            self.assertEqual(len(buckets), 20)
+            self.assertEqual(buckets[0]["start"], "2026-10-22T00:00:00Z")
+            self.assertTrue(buckets[-1]["end"] >= "2026-11-01T00:00:00Z")
+            # Empty hours stay; not every slot needs events.
+            self.assertTrue(any(not slot["actors"] for slot in buckets))
+            self.assertTrue(any(slot["actors"] for slot in buckets))
+            days = {slot["start"][:10] for slot in buckets}
+            self.assertIn("2026-10-22", days)
+            self.assertIn("2026-11-01", days)
+
     def test_every_kind_has_severity(self) -> None:
         for kind in SEVERITY:
             self.assertIn(severity_for(kind), ("info", "attention", "problem"), kind)

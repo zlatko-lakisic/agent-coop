@@ -134,7 +134,16 @@ export function App({ token }: { token: string }) {
   const [fileFilter, setFileFilter] = useState<"all" | "image" | "document" | "other">("all");
   const [lightbox, setLightbox] = useState<number | null>(null);
   const [statusItems, setStatusItems] = useState<{ kind: string; text: string; project?: string }[]>([]);
-  const [histogram, setHistogram] = useState<{ buckets?: { start?: string; end?: string; actors?: Record<string, number>; counts?: Record<string, number>; markers?: string[] }[] }>({});
+  const [histogram, setHistogram] = useState<{
+    buckets?: {
+      start?: string;
+      end?: string;
+      actors?: Record<string, number>;
+      counts?: Record<string, number>;
+      markers?: string[];
+      day_break?: boolean;
+    }[];
+  }>({});
   const [tab, setTab] = useState<"agents" | "rules" | "files">("agents");
   const [filterActor, setFilterActor] = useState("");
   const [query, setQuery] = useState(initialUrl.q || "");
@@ -153,14 +162,13 @@ export function App({ token }: { token: string }) {
   const [pendingNew, setPendingNew] = useState(0);
   const [rawOpen, setRawOpen] = useState(false);
   const [readonly, setReadonly] = useState(false);
+  const [coopVersion, setCoopVersion] = useState("");
   const [loadingMore, setLoadingMore] = useState(false);
   const socketRef = useRef<ViewerSocket | null>(null);
   const timelineRef = useRef<HTMLElement | null>(null);
   const railRef = useRef<HTMLElement | null>(null);
   const focusCardRef = useRef<HTMLButtonElement | null>(null);
   const [winStyle, setWinStyle] = useState({ top: "0%", height: "20%" });
-  const [railDayTop, setRailDayTop] = useState("");
-  const [railDayBottom, setRailDayBottom] = useState("");
   const [bucketCount, setBucketCount] = useState(24);
   const atTopRef = useRef(true);
   const preserveScrollRef = useRef(true);
@@ -187,8 +195,9 @@ export function App({ token }: { token: string }) {
     if (!token) return;
     const sock = new ViewerSocket(token, {
       onState: setConn,
-      onHello: (_fileSession, isReadonly) => {
+      onHello: (_fileSession, isReadonly, version) => {
         setReadonly(isReadonly);
+        if (version) setCoopVersion(version);
         void bootstrap(sock);
       },
       onPush: (msg) => handlePush(msg),
@@ -330,13 +339,6 @@ export function App({ token }: { token: string }) {
       const win = windowFromScroll(el.scrollTop, el.clientHeight, el.scrollHeight, range);
       setWinStyle(windowStyle(win, range));
       atTopRef.current = el.scrollTop < 40;
-      const visible = events.find((e) => {
-        const t = e.ts ? Date.parse(e.ts) : 0;
-        return t <= win.topMs && t >= win.bottomMs;
-      });
-      setRailDayTop(visible?.ts ? new Date(visible.ts).toLocaleDateString(undefined, { weekday: "short", day: "numeric", timeZone: tz }) : "");
-      const oldest = events[events.length - 1];
-      setRailDayBottom(oldest?.ts ? new Date(oldest.ts).toLocaleDateString(undefined, { weekday: "short", day: "numeric", timeZone: tz }) : "");
     };
     const onScroll = () => {
       if (!raf) raf = requestAnimationFrame(update);
@@ -486,7 +488,18 @@ export function App({ token }: { token: string }) {
     );
   }
 
-  const buckets = histogram.buckets || [];
+  // Newest at the top of the rail, continuous across the whole selected range.
+  const buckets = [...(histogram.buckets || [])].reverse();
+  const railDayTop = new Date(range.endMs).toLocaleDateString(undefined, {
+    weekday: "short",
+    day: "numeric",
+    timeZone: tz,
+  });
+  const railDayBottom = new Date(range.startMs).toLocaleDateString(undefined, {
+    weekday: "short",
+    day: "numeric",
+    timeZone: tz,
+  });
 
   return (
     <div class="app">
@@ -494,6 +507,11 @@ export function App({ token }: { token: string }) {
         <div class="brand">
           <RobotMark c={c} />
           <span>Agent Co-op</span>
+          {coopVersion && (
+            <span class="version" title={"Installed Agent Co-op " + coopVersion}>
+              {coopVersion}
+            </span>
+          )}
         </div>
         <label class="btn" aria-label="Choose project">
           <span class="dot" style={{ background: c.driver, borderRadius: 2 }} />
@@ -720,15 +738,32 @@ export function App({ token }: { token: string }) {
             <span class="rail-window" style={winStyle} aria-label="Shown in the timeline" />
             {buckets.map((b, i) => {
               const counts = b.actors || b.counts || {};
-              const total = Object.values(counts).reduce((a, n) => a + n, 0) || 1;
-              const label = b.start ? new Date(b.start).getHours().toString().padStart(2, "0") : "";
+              const total = Object.values(counts).reduce((a, n) => a + n, 0);
+              const when = b.start ? new Date(b.start) : null;
+              const hour = when ? when.toLocaleTimeString(undefined, { hour: "2-digit", hour12: false, timeZone: tz }).slice(0, 2) : "";
+              const day = when
+                ? when.toLocaleDateString(undefined, { weekday: "short", day: "numeric", timeZone: tz })
+                : "";
+              const prev = i > 0 && buckets[i - 1].start ? new Date(buckets[i - 1].start as string) : null;
+              const prevDay = prev
+                ? prev.toLocaleDateString(undefined, { weekday: "short", day: "numeric", timeZone: tz })
+                : "";
+              const showDay = Boolean(day) && (i === 0 || day !== prevDay);
+              const showHour =
+                Boolean(when) &&
+                (i === 0 || showDay || when!.getMinutes() === 0 || i % Math.max(1, Math.floor(buckets.length / 12)) === 0);
               return (
-                <div style={{ position: "relative", display: "flex", alignItems: "center", gap: 4, height: 25 }}>
-                  <span class={"mono hour"} style={{ width: 18, fontSize: 10, textAlign: "right", color: c.muted }}>{i % 1 === 0 ? label : ""}</span>
+                <div class={"rail-row" + (showDay && i > 0 ? " day-break" : "")} key={(b.start || "") + "-" + i}>
+                  {showDay && <span class="rail-day">{day}</span>}
+                  <span class={"mono hour"} style={{ width: 18, fontSize: 10, textAlign: "right", color: c.muted }}>
+                    {showHour ? hour : ""}
+                  </span>
                   <span style={{ flex: 1, display: "flex", height: 12, borderRadius: 3, overflow: "hidden", background: c.surface2 }}>
-                    {Object.entries(counts).map(([actor, n]) => (
-                      <span style={{ width: (100 * n) / total + "%", background: actorTone(c, actor) }} />
-                    ))}
+                    {total > 0
+                      ? Object.entries(counts).map(([actor, n]) => (
+                          <span style={{ width: (100 * n) / total + "%", background: actorTone(c, actor) }} />
+                        ))
+                      : null}
                   </span>
                   <span style={{ width: 6, height: 6, borderRadius: "50%", background: (b.markers || []).length ? c.problem : "transparent" }} />
                 </div>

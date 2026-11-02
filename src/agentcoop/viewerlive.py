@@ -331,11 +331,14 @@ class LiveSession:
                 self.readonly = True
             self.authed = True
             self.hub.activate_file_session(self.file_session)
+            from agentcoop import __version__
+
             self._send_json(
                 {
                     "type": "hello.ok",
                     "file_session": self.file_session,
                     "readonly": self.readonly,
+                    "version": __version__,
                 }
             )
             return True

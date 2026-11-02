@@ -178,35 +178,51 @@ def histogram(
     end: str | None = None,
     buckets: int = 24,
 ) -> dict:
-    """Return counts per time bucket, plus markers."""
+    """Return one continuous rail of buckets for the selected range.
+
+    Empty days stay in the list so the overview covers the whole filter, not
+    only hours that have events. Buckets are oldest-first; the viewer reverses
+    them so newest sits at the top of the rail.
+    """
     rows = [
         event
         for event in events_for(board, project)
         if _in_range(event["ts"], start, end) and not event.get("low_level")
     ]
     count = max(1, min(int(buckets or 24), 200))
-    if not rows:
+    first = _parse(start or "")
+    last = _parse(end or "")
+    times = [item for item in (_parse(event["ts"]) for event in rows) if item is not None]
+    if first is None and times:
+        first = min(times)
+    if last is None and times:
+        last = max(times)
+    if first is None or last is None:
         return {"buckets": []}
-    times = [_parse(event["ts"]) for event in rows]
-    times = [item for item in times if item is not None]
-    if not times:
-        return {"buckets": []}
-    first = min(times)
-    last = max(times)
+    if last <= first:
+        last = first + timedelta(seconds=1)
     span = max((last - first).total_seconds(), 1.0)
     width = span / count
-    slots = [
-        {"start": "", "actors": {}, "severity": {}, "markers": []}
-        for _ in range(count)
-    ]
+    slots = []
+    for index in range(count):
+        slot_start = first + timedelta(seconds=width * index)
+        slot_end = first + timedelta(seconds=width * (index + 1))
+        slots.append(
+            {
+                "start": _iso(slot_start),
+                "end": _iso(slot_end),
+                "actors": {},
+                "severity": {},
+                "markers": [],
+                "day_break": False,
+            }
+        )
     for event in rows:
         when = _parse(event["ts"])
         if when is None:
             continue
-        index = min(count - 1, int((when - first).total_seconds() / width))
+        index = min(count - 1, max(0, int((when - first).total_seconds() / width)))
         slot = slots[index]
-        if not slot["start"]:
-            slot["start"] = event["ts"]
         actor = str(event.get("actor") or "")
         slot["actors"][actor] = int(slot["actors"].get(actor) or 0) + 1
         level = str(event.get("severity") or "info")
@@ -214,7 +230,10 @@ def histogram(
         marker = _marker(str(event.get("kind") or ""))
         if marker and marker not in slot["markers"]:
             slot["markers"].append(marker)
-    return {"buckets": [slot for slot in slots if slot["start"]]}
+    for index in range(1, len(slots)):
+        if slots[index]["start"][:10] != slots[index - 1]["start"][:10]:
+            slots[index]["day_break"] = True
+    return {"buckets": slots}
 
 
 def event_detail(board: Path, event_id: str) -> dict | None:
@@ -1031,10 +1050,20 @@ def _parse(value: str):
     text = (value or "").strip()
     if text.endswith("Z"):
         text = text[:-1]
+    if "." in text:
+        text = text.split(".", 1)[0]
     try:
         return datetime.strptime(text, "%Y-%m-%dT%H:%M:%S").replace(tzinfo=timezone.utc)
     except ValueError:
-        return None
+        try:
+            return datetime.strptime(text, "%Y-%m-%dT%H:%M").replace(tzinfo=timezone.utc)
+        except ValueError:
+            return None
+
+
+def _iso(value: datetime) -> str:
+    moment = value.astimezone(timezone.utc) if value.tzinfo else value.replace(tzinfo=timezone.utc)
+    return moment.strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def _stamp(value: str) -> str:
