@@ -119,6 +119,12 @@ class ViewerHandler(BaseHTTPRequestHandler):
                 return
             self._shared_file(path)
             return
+        if path == "/local-file":
+            if not self._local_file_allowed():
+                self._send(403, b"This page needs the token from the agentcoop ui command.\n")
+                return
+            self._local_file()
+            return
         if path.startswith("/assets/") or path.startswith("/images/"):
             if not (self._allowed() or self._phone_session()):
                 self._send(403, b"This page needs the token from the agentcoop ui command.\n")
@@ -432,6 +438,44 @@ p{color:#A9A6C2}
         self.end_headers()
         self.wfile.write(body)
 
+    def _local_file_allowed(self) -> bool:
+        """Desktop loopback may open board-local files. Phone mode may not."""
+        if self.server.host not in ("127.0.0.1", "::1", "localhost"):
+            return False
+        if self._phone_session() is not None:
+            return False
+        return self._allowed() or self._file_allowed()
+
+    def _local_file(self) -> None:
+        """Serve one readable file under the board or project folder on this computer."""
+        query = parse_qs(urlparse(self.path).query)
+        raw = (query.get("p") or [""])[0]
+        project = (query.get("project") or [""])[0]
+        if not raw or not project:
+            self._send(404, b"Not found.\n")
+            return
+        target = Path(raw)
+        if target.is_symlink():
+            self._send(403, b"That file is not available.\n")
+            return
+        try:
+            real = target.resolve()
+        except OSError:
+            self._send(404, b"Not found.\n")
+            return
+        if not real.is_file() or real.name.startswith("."):
+            self._send(404, b"Not found.\n")
+            return
+        if not _path_under_project(self.server.board, project, real):
+            self._send(403, b"That file is not available.\n")
+            return
+        from agentcoop.share import is_program
+
+        if is_program(real):
+            self._send(403, b"That file is a program and is not opened here.\n")
+            return
+        self._write_file_bytes(real)
+
     def _shared_file(self, path: str) -> None:
         """Serve one file from a project's shared folder, and nowhere else."""
         parts = [part for part in path.split("/") if part and part != "."]
@@ -462,16 +506,19 @@ p{color:#A9A6C2}
         if not real.is_file() or real.name.startswith(".") or real.name in ("index.json", "pending.json"):
             self._send(404, b"Not found.\n")
             return
-        import mimetypes
-
-        suffix = real.suffix.lower()
-        download = suffix in (".svg", ".html", ".htm")
         from agentcoop.share import is_program, load_pending
 
         held = {str(item.get("name") or "") for item in load_pending(self.server.board, project)}
         if real.name in held or is_program(real):
             self._send(403, b"That file is held.\n")
             return
+        self._write_file_bytes(real)
+
+    def _write_file_bytes(self, real: Path) -> None:
+        import mimetypes
+
+        suffix = real.suffix.lower()
+        download = suffix in (".svg", ".html", ".htm")
         media = "application/octet-stream" if download else (mimetypes.guess_type(real.name)[0] or "application/octet-stream")
         try:
             data = real.read_bytes()
@@ -630,9 +677,39 @@ def files_view(
     *,
     start: str | None = None,
     end: str | None = None,
+    local_open: bool = True,
 ) -> list[dict]:
-    """Return every file tied to project events in the range, newest first."""
-    return _project_file_rows(board, project, token, start=start, end=end)
+    """Return every file tied to project events in the range, newest first.
+
+    When local_open is True (desktop loopback), readable board and project files
+    get a /local-file URL so the person can open them. Phone mode keeps shared-only.
+    """
+    return _project_file_rows(
+        board, project, token, start=start, end=end, local_open=local_open
+    )
+
+
+def _path_under_project(board: Path, project: str, real: Path) -> bool:
+    """Return True when real sits under the board project folder or the project path."""
+    from agentcoop.paths import is_same_or_inside, project_dir
+
+    roots = [project_dir(board, project)]
+    try:
+        data, _ok = read_projects_checked(board)
+        entry = (data.get("projects") or {}).get(project) or {}
+        raw = entry.get("path") if isinstance(entry, dict) else None
+        if raw:
+            roots.append(Path(str(raw)))
+    except (OSError, CoopError, TypeError, ValueError):
+        pass
+    for root in roots:
+        try:
+            root_real = root.resolve()
+        except OSError:
+            continue
+        if is_same_or_inside(real, root_real):
+            return True
+    return False
 
 
 def _viewer_parts(relative: str) -> list[str] | None:
@@ -729,12 +806,13 @@ def _project_file_rows(
     *,
     start: str | None = None,
     end: str | None = None,
+    local_open: bool = True,
 ) -> list[dict]:
     """Collect attachments, shared copies, drafts, outbox files, held, and outside paths."""
     from urllib.parse import quote
 
     from agentcoop.core import log_messages
-    from agentcoop.share import human_size, load_index, load_pending, share_root
+    from agentcoop.share import human_size, is_program, load_index, load_pending, share_root
     from agentcoop.timeline import _in_range, _stamp
 
     root = share_root(board, project)
@@ -811,6 +889,36 @@ def _project_file_rows(
         url = path + "?t=" + quote(token)
         return url, path
 
+    def _local_file_url(abs_path: Path) -> tuple[str, str]:
+        path = "/local-file"
+        url = (
+            path
+            + "?project="
+            + quote(project)
+            + "&p="
+            + quote(str(abs_path))
+            + "&t="
+            + quote(token)
+        )
+        return url, path
+
+    def _try_local(disk: Path) -> tuple[str, str, bool, str]:
+        """Return url, path, served, note when desktop may open this disk file."""
+        if not local_open:
+            return "", "", False, ""
+        if not disk.is_file() or disk.is_symlink():
+            return "", "", False, ""
+        try:
+            resolved = disk.resolve()
+        except OSError:
+            return "", "", False, ""
+        if is_program(resolved):
+            return "", "", False, "Program, not opened here."
+        if not _path_under_project(board, project, resolved):
+            return "", "", False, ""
+        url, served_path = _local_file_url(resolved)
+        return url, served_path, True, ""
+
     for row in load_index(board, project).get("files") or []:
         if not isinstance(row, dict):
             continue
@@ -820,6 +928,7 @@ def _project_file_rows(
         relative = None
         url = ""
         served_path = ""
+        note = ""
         if path.is_file() and not path.is_symlink():
             try:
                 relative = path.resolve().relative_to(root.resolve())
@@ -827,6 +936,13 @@ def _project_file_rows(
                 relative = None
         if relative is not None and not held:
             url, served_path = _file_url(relative)
+        elif held or relative is None:
+            local_url, local_path, local_ok, local_note = _try_local(path)
+            if local_ok:
+                url, served_path = local_url, local_path
+                note = "Held on the board; opened on this computer only." if held else ""
+            else:
+                note = local_note or ("Held, not served." if held else "")
         _add(
             key="shared:" + name,
             name=name or path.name,
@@ -839,7 +955,7 @@ def _project_file_rows(
             served=bool(url),
             url=url,
             path=served_path,
-            note="Held, not served." if held else "",
+            note=note,
             media=str(row.get("media_type") or ""),
             description=str(row.get("description") or ""),
         )
@@ -858,6 +974,7 @@ def _project_file_rows(
                     stamp = datetime.fromtimestamp(when, timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
                 except OSError:
                     continue
+                url, served_path, served, local_note = _try_local(path)
                 _add(
                     key="draft:" + agent_dir.name + ":" + path.name,
                     name=path.name,
@@ -867,8 +984,10 @@ def _project_file_rows(
                     actor=agent_dir.name,
                     message_id="",
                     source="draft",
-                    served=False,
-                    note="Helper draft, not served.",
+                    served=served,
+                    url=url,
+                    path=served_path,
+                    note=local_note or ("" if served else "Helper draft, not served."),
                 )
 
     outbox = project_root / "outbox"
@@ -889,6 +1008,7 @@ def _project_file_rows(
                         size = path.stat().st_size
                     except OSError:
                         continue
+                    url, served_path, served, local_note = _try_local(path)
                     _add(
                         key="outbox:" + agent_dir.name + ":" + path.name,
                         name=path.name,
@@ -898,8 +1018,11 @@ def _project_file_rows(
                         actor=agent_dir.name,
                         message_id=files_dir.stem,
                         source="outbox",
-                        served=False,
-                        note="Outbox file, not served until shared.",
+                        served=served,
+                        url=url,
+                        path=served_path,
+                        note=local_note
+                        or ("" if served else "Outbox file, not served until shared."),
                     )
 
     shareable = []
@@ -929,7 +1052,12 @@ def _project_file_rows(
             source = "attachment"
             if held:
                 source = "held"
-                note = "Held, not served."
+                local_url, local_path, local_ok, local_note = _try_local(disk)
+                if local_ok:
+                    url, served_path, served = local_url, local_path, True
+                    note = "Held on the board; opened on this computer only."
+                else:
+                    note = local_note or "Held, not served."
             elif disk.is_file() and not disk.is_symlink():
                 try:
                     resolved = disk.resolve()
@@ -952,10 +1080,20 @@ def _project_file_rows(
                                 continue
                         if inside:
                             source = "attachment"
-                            note = "Inside a shareable folder, not indexed."
+                            local_url, local_path, local_ok, local_note = _try_local(disk)
+                            if local_ok:
+                                url, served_path, served = local_url, local_path, True
+                                note = "Inside a shareable folder, not indexed."
+                            else:
+                                note = local_note or "Inside a shareable folder, not indexed."
                         else:
                             source = "outside"
-                            note = "Outside shareable folders, not served."
+                            local_url, local_path, local_ok, local_note = _try_local(disk)
+                            if local_ok:
+                                url, served_path, served = local_url, local_path, True
+                                note = "Opened on this computer only."
+                            else:
+                                note = local_note or "Outside shareable folders, not served."
             _add(
                 key="name:" + name.lower(),
                 name=name,
@@ -978,6 +1116,9 @@ def _project_file_rows(
             name = disk.name
             note = "Outside shareable folders, not served."
             source = "outside"
+            url = ""
+            served_path = ""
+            served = False
             if disk.is_file() and not disk.is_symlink():
                 try:
                     resolved = disk.resolve()
@@ -991,6 +1132,15 @@ def _project_file_rows(
                             continue
                 except OSError:
                     pass
+                local_url, local_path, local_ok, local_note = _try_local(disk)
+                if local_ok:
+                    url, served_path, served = local_url, local_path, True
+                    if source == "outside":
+                        note = "Opened on this computer only."
+                    elif not note:
+                        note = "Named in a message body."
+                elif local_note:
+                    note = local_note
             _add(
                 key="body:" + name.lower(),
                 name=name,
@@ -1000,7 +1150,9 @@ def _project_file_rows(
                 actor=message.sender,
                 message_id=message.id,
                 source=source,
-                served=False,
+                served=served,
+                url=url,
+                path=served_path,
                 note=note,
             )
 

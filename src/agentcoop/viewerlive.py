@@ -452,6 +452,10 @@ class LiveSession:
         if op == "status":
             return status_view(self.hub.board)
         if op == "files":
+            server = self.hub.server
+            host = str(getattr(server, "host", "127.0.0.1") or "127.0.0.1")
+            phone = bool(getattr(server, "phone", False))
+            local_open = host in ("127.0.0.1", "::1", "localhost") and not phone
             return {
                 "files": files_view(
                     self.hub.board,
@@ -459,6 +463,7 @@ class LiveSession:
                     self.hub.token,
                     start=params.get("from") or params.get("start"),
                     end=params.get("to") or params.get("end"),
+                    local_open=local_open,
                 )
             }
         if op == "subscribe":

@@ -5,7 +5,11 @@ from __future__ import annotations
 import json
 import os
 import sys
+import threading
 import unittest
+import urllib.error
+import urllib.parse
+import urllib.request
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -19,7 +23,7 @@ import viewer_fixture
 from agentcoop.core import send
 from agentcoop.progress import stall_line, stall_snapshot, waiting_line, write_progress
 from agentcoop.timeline import SEVERITY, clear_cache, events_for, histogram, query_events, severity_for, status_view
-from agentcoop.ui import files_view
+from agentcoop.ui import files_view, make_server
 
 
 class ViewerRealUseTests(unittest.TestCase):
@@ -276,7 +280,7 @@ class ViewerRealUseTests(unittest.TestCase):
             out = env.board / "projects" / "demo" / "outbox" / "cursor" / "answer.files"
             out.mkdir(parents=True, exist_ok=True)
             (out / "extra.txt").write_text("outbox\n", encoding="utf-8")
-            rows = files_view(env.board, "demo", "tok")
+            rows = files_view(env.board, "demo", "tok", local_open=True)
             names = {row["name"] for row in rows}
             self.assertIn("shot.png", names)
             self.assertIn("tool.sh", names)
@@ -285,9 +289,78 @@ class ViewerRealUseTests(unittest.TestCase):
             held = next(row for row in rows if row["name"] == "tool.sh")
             self.assertFalse(held["served"])
             self.assertEqual(held["source"], "held")
+            self.assertIn("Program", held["note"])
             served = next(row for row in rows if row["name"] == "shot.png")
             self.assertTrue(served["served"])
             self.assertTrue(served["url"])
+            draft = next(row for row in rows if row["name"] == "note.txt")
+            self.assertTrue(draft["served"])
+            self.assertIn("/local-file", draft["url"])
+            outbox = next(row for row in rows if row["name"] == "extra.txt")
+            self.assertTrue(outbox["served"])
+            self.assertIn("/local-file", outbox["url"])
+            phone_rows = files_view(env.board, "demo", "tok", local_open=False)
+            phone_draft = next(row for row in phone_rows if row["name"] == "note.txt")
+            self.assertFalse(phone_draft["served"])
+
+    def test_local_file_serves_draft_refuses_program(self) -> None:
+        with support.TempEnv() as env:
+            from agentcoop.cli import main
+
+            assert main(["setup", "--connect", "cursor", "--schedule", "no", "--yes"]) == 0
+            folder = env.workspace / "demo"
+            folder.mkdir()
+            assert (
+                main(
+                    [
+                        "project",
+                        "add",
+                        str(folder),
+                        "--name",
+                        "demo",
+                        "--driver",
+                        "cursor",
+                        "--gitignore",
+                        "no",
+                        "--yes",
+                    ]
+                )
+                == 0
+            )
+            draft = env.board / "projects" / "demo" / "files" / "cursor"
+            draft.mkdir(parents=True, exist_ok=True)
+            note = draft / "note.txt"
+            note.write_bytes(b"draft\n")
+            script = draft / "run.sh"
+            script.write_bytes(b"#!/bin/sh\n")
+            server = make_server(env.board, "secret")
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            port = server.server_address[1]
+            base = "http://127.0.0.1:" + str(port)
+            try:
+                ok = (
+                    base
+                    + "/local-file?project=demo&p="
+                    + urllib.parse.quote(str(note))
+                    + "&t=secret"
+                )
+                with urllib.request.urlopen(ok, timeout=5) as response:
+                    self.assertEqual(response.status, 200)
+                    self.assertEqual(response.read(), b"draft\n")
+                blocked = (
+                    base
+                    + "/local-file?project=demo&p="
+                    + urllib.parse.quote(str(script))
+                    + "&t=secret"
+                )
+                with self.assertRaises(urllib.error.HTTPError) as refused:
+                    urllib.request.urlopen(blocked, timeout=5)
+                self.assertEqual(refused.exception.code, 403)
+                refused.exception.close()
+            finally:
+                server.shutdown()
+                server.server_close()
 
 
 if __name__ == "__main__":

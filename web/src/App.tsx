@@ -663,7 +663,13 @@ export function App({ token }: { token: string }) {
                     if (f.url && (f.bucket === "image" || (f.kind || "").includes("image"))) {
                       const idx = imageFiles.findIndex((img) => img.url === f.url);
                       setLightbox(idx >= 0 ? idx : 0);
-                    } else if (f.messages?.[0]?.id) {
+                      return;
+                    }
+                    if (f.url) {
+                      window.open(f.url, "_blank", "noopener,noreferrer");
+                      return;
+                    }
+                    if (f.messages?.[0]?.id) {
                       const hit = events.find((e) => e.id === f.messages?.[0]?.id);
                       if (hit) void openEvent(hit);
                     }
