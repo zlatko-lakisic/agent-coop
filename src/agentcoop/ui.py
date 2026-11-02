@@ -689,19 +689,28 @@ def files_view(
     )
 
 
+def _project_workspace(board: Path, project: str) -> Path | None:
+    """Return the project's working folder from projects.json when it exists."""
+    try:
+        data, _ok = read_projects_checked(board)
+        entry = (data.get("projects") or {}).get(project) or {}
+        raw = entry.get("path") if isinstance(entry, dict) else None
+        if not raw:
+            return None
+        path = Path(str(raw))
+        return path.resolve() if path.exists() else path
+    except (OSError, CoopError, TypeError, ValueError):
+        return None
+
+
 def _path_under_project(board: Path, project: str, real: Path) -> bool:
     """Return True when real sits under the board project folder or the project path."""
     from agentcoop.paths import is_same_or_inside, project_dir
 
     roots = [project_dir(board, project)]
-    try:
-        data, _ok = read_projects_checked(board)
-        entry = (data.get("projects") or {}).get(project) or {}
-        raw = entry.get("path") if isinstance(entry, dict) else None
-        if raw:
-            roots.append(Path(str(raw)))
-    except (OSError, CoopError, TypeError, ValueError):
-        pass
+    workspace = _project_workspace(board, project)
+    if workspace is not None:
+        roots.append(workspace)
     for root in roots:
         try:
             root_real = root.resolve()
@@ -710,6 +719,107 @@ def _path_under_project(board: Path, project: str, real: Path) -> bool:
         if is_same_or_inside(real, root_real):
             return True
     return False
+
+
+_TEXT_REF_SUFFIXES = {
+    ".md",
+    ".markdown",
+    ".txt",
+    ".rst",
+    ".csv",
+    ".json",
+    ".yml",
+    ".yaml",
+    ".log",
+    ".html",
+    ".htm",
+}
+_REF_FILE_SUFFIXES = {
+    ".png",
+    ".jpg",
+    ".jpeg",
+    ".gif",
+    ".webp",
+    ".svg",
+    ".md",
+    ".txt",
+    ".pdf",
+    ".json",
+    ".html",
+    ".htm",
+    ".csv",
+}
+
+
+def _kind_from_name(name: str) -> str:
+    suffix = Path(name).suffix.lower().lstrip(".")
+    if suffix in ("png", "jpg", "jpeg", "gif", "webp", "svg"):
+        return "image"
+    if suffix in ("md", "markdown", "txt", "rst", "pdf", "html", "htm", "csv"):
+        return "document"
+    if suffix == "json":
+        return "document"
+    return "file"
+
+
+def _referenced_paths_in_text(text: str) -> list[str]:
+    """Return relative or absolute file paths named in helper notes and catalogs."""
+    import re
+
+    found: list[str] = []
+    seen: set[str] = set()
+
+    def add(token: str) -> None:
+        cleaned = (token or "").strip().strip("`\"'").rstrip(".,);]")
+        cleaned = cleaned.replace("\\", "/")
+        if not cleaned or cleaned in seen:
+            return
+        if "://" in cleaned or cleaned.startswith("#"):
+            return
+        parts = [part for part in cleaned.split("/") if part]
+        if not parts or any(part == ".." for part in parts):
+            return
+        suffix = Path(cleaned).suffix.lower()
+        if suffix and suffix not in _REF_FILE_SUFFIXES:
+            return
+        if "/" not in cleaned and not (cleaned[1:2] == ":" and cleaned[0].isalpha()):
+            if suffix not in _REF_FILE_SUFFIXES:
+                return
+        seen.add(cleaned)
+        found.append(cleaned)
+
+    for match in re.finditer(r"`([^`\n]{3,260})`", text or ""):
+        add(match.group(1))
+    for match in re.finditer(r"\[[^\]]*\]\(([^)\s]+)", text or ""):
+        add(match.group(1))
+    for match in re.finditer(
+        r"(?<![\w:/])((?:data|docs|src|tests|design|screenshots?|assets|runtime|board)"
+        r"(?:/[\w.+=\-]+)+\.[\w]{1,8})",
+        text or "",
+        re.I,
+    ):
+        add(match.group(1))
+    for abs_path in _absolute_paths_in_text(text or ""):
+        add(abs_path)
+    return found
+
+
+def _resolve_referenced_path(token: str, *, workspace: Path, parent_dir: Path) -> Path | None:
+    """Resolve a named path against the project folder or the parent file's folder."""
+    raw = Path(token)
+    candidates: list[Path] = []
+    if raw.is_absolute() or (len(token) > 2 and token[1] == ":"):
+        candidates.append(Path(token))
+    else:
+        candidates.append(workspace / token)
+        candidates.append(parent_dir / token)
+    for candidate in candidates:
+        try:
+            if candidate.is_file() and not candidate.is_symlink():
+                return candidate.resolve()
+        except OSError:
+            continue
+    return None
 
 
 def _viewer_parts(relative: str) -> list[str] | None:
@@ -818,6 +928,8 @@ def _project_file_rows(
     root = share_root(board, project)
     pending = {str(item.get("name") or "") for item in load_pending(board, project)}
     by_key: dict[str, dict] = {}
+    disk_by_key: dict[str, Path] = {}
+    workspace = _project_workspace(board, project)
 
     def _bucket(kind: str) -> str:
         lower = (kind or "").lower()
@@ -843,6 +955,7 @@ def _project_file_rows(
         note: str = "",
         media: str = "",
         description: str = "",
+        disk: Path | None = None,
     ) -> None:
         stamp = _stamp(ts) if ts else ""
         if stamp and not _in_range(stamp, start, end):
@@ -869,19 +982,26 @@ def _project_file_rows(
                 "ts": stamp,
                 "actor": actor,
                 "messages": [message] if message else [],
+                "children": [],
             }
-            return
-        if stamp > str(row.get("ts") or ""):
-            row["ts"] = stamp
-            row["actor"] = actor or row.get("actor")
-        if message and all(item.get("id") != message_id for item in row["messages"]):
-            row["messages"].append(message)
-        if served and not row.get("url") and url:
-            row["url"] = url
-            row["path"] = path
-            row["served"] = True
-        if note and not row.get("note"):
-            row["note"] = note
+        else:
+            if stamp > str(row.get("ts") or ""):
+                row["ts"] = stamp
+                row["actor"] = actor or row.get("actor")
+            if message and all(item.get("id") != message_id for item in row["messages"]):
+                row["messages"].append(message)
+            if served and not row.get("url") and url:
+                row["url"] = url
+                row["path"] = path
+                row["served"] = True
+            if note and not row.get("note"):
+                row["note"] = note
+        if disk is not None:
+            try:
+                if disk.is_file() and not disk.is_symlink():
+                    disk_by_key[key] = disk.resolve()
+            except OSError:
+                pass
 
     def _file_url(relative: Path) -> tuple[str, str]:
         parts = relative.parts
@@ -958,6 +1078,7 @@ def _project_file_rows(
             note=note,
             media=str(row.get("media_type") or ""),
             description=str(row.get("description") or ""),
+            disk=path if path.is_file() else None,
         )
 
     project_root = board / "projects" / project
@@ -988,6 +1109,7 @@ def _project_file_rows(
                     url=url,
                     path=served_path,
                     note=local_note or ("" if served else "Helper draft, not served."),
+                    disk=path,
                 )
 
     outbox = project_root / "outbox"
@@ -1023,6 +1145,7 @@ def _project_file_rows(
                         path=served_path,
                         note=local_note
                         or ("" if served else "Outbox file, not served until shared."),
+                        disk=path,
                     )
 
     shareable = []
@@ -1109,6 +1232,7 @@ def _project_file_rows(
                 note=note,
                 media=str(info.get("media_type") or ""),
                 description=str(info.get("description") or ""),
+                disk=disk if disk.is_file() else None,
             )
         body = str(message.body or "")
         for token_path in _absolute_paths_in_text(body):
@@ -1144,7 +1268,7 @@ def _project_file_rows(
             _add(
                 key="body:" + name.lower(),
                 name=name,
-                kind="file",
+                kind=_kind_from_name(name),
                 bytes_count=disk.stat().st_size if disk.is_file() else 0,
                 ts=stamp,
                 actor=message.sender,
@@ -1154,7 +1278,73 @@ def _project_file_rows(
                 url=url,
                 path=served_path,
                 note=note,
+                disk=disk if disk.is_file() else None,
             )
+
+    if workspace is not None:
+        for key, row in list(by_key.items()):
+            parent_disk = disk_by_key.get(key)
+            if parent_disk is None:
+                continue
+            if parent_disk.suffix.lower() not in _TEXT_REF_SUFFIXES:
+                continue
+            try:
+                if parent_disk.stat().st_size > 2_000_000:
+                    continue
+                text = parent_disk.read_text(encoding="utf-8", errors="replace")
+            except OSError:
+                continue
+            children: list[dict] = []
+            seen_child: set[str] = set()
+            for token in _referenced_paths_in_text(text):
+                target = _resolve_referenced_path(
+                    token, workspace=workspace, parent_dir=parent_disk.parent
+                )
+                if target is None:
+                    continue
+                if not _path_under_project(board, project, target):
+                    continue
+                if is_program(target):
+                    continue
+                try:
+                    if target == parent_disk.resolve():
+                        continue
+                except OSError:
+                    continue
+                child_key = str(target).lower()
+                if child_key in seen_child:
+                    continue
+                seen_child.add(child_key)
+                url, served_path, served, local_note = _try_local(target)
+                kind = _kind_from_name(target.name)
+                try:
+                    size = target.stat().st_size
+                except OSError:
+                    size = 0
+                children.append(
+                    {
+                        "id": "ref:" + key + ":" + target.name.lower(),
+                        "name": target.name,
+                        "kind": kind,
+                        "bucket": _bucket(kind),
+                        "media": "",
+                        "bytes": size,
+                        "size": human_size(size) if size else "",
+                        "url": url if served else "",
+                        "path": served_path if served else "",
+                        "served": served,
+                        "source": "reference",
+                        "note": local_note or ("Named in " + str(row.get("name") or "file")),
+                        "description": token,
+                        "ts": row.get("ts") or "",
+                        "actor": row.get("actor") or "",
+                        "messages": list(row.get("messages") or []),
+                        "parent": key,
+                        "children": [],
+                    }
+                )
+            children.sort(key=lambda item: str(item.get("name") or "").lower())
+            row["children"] = children
 
     rows = list(by_key.values())
     rows.sort(key=lambda row: (str(row.get("ts") or ""), str(row.get("name") or "")), reverse=True)

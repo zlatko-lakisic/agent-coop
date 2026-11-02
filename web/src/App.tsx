@@ -82,8 +82,11 @@ type FileRow = {
   ts?: string;
   actor?: string;
   note?: string;
+  description?: string;
   served?: boolean;
   source?: string;
+  parent?: string;
+  children?: FileRow[];
   messages?: { id?: string; actor?: string; ts?: string }[];
 };
 
@@ -511,8 +514,32 @@ export function App({ token }: { token: string }) {
 
   const connDot = conn === "live" ? c.teal : conn === "reconnecting" ? c.attention : c.problem;
   const presetLabel = rangeState.custom ? rangeState.label : PRESETS.find((p) => p[0] === rangeState.preset)?.[1] || rangeState.preset;
-  const imageFiles = files.filter((f) => (f.bucket || f.kind || "").includes("image") && f.url);
-  const shownFiles = files.filter((f) => fileFilter === "all" || f.bucket === fileFilter || (fileFilter === "image" && (f.kind || "").includes("image")));
+  const fileMatches = (f: FileRow) =>
+    fileFilter === "all" || f.bucket === fileFilter || (fileFilter === "image" && (f.kind || "").includes("image"));
+  const imageFiles = files.flatMap((f) => [f, ...(f.children || [])]).filter((f) => (f.bucket || f.kind || "").includes("image") && f.url);
+  const shownFileTree = files.flatMap((f) => {
+    const kids = (f.children || []).filter(fileMatches);
+    if (fileMatches(f) || kids.length) {
+      return [{ file: f, depth: 0 as const }, ...kids.map((child) => ({ file: child, depth: 1 as const }))];
+    }
+    return [];
+  });
+
+  function openListedFile(f: FileRow) {
+    if (f.url && (f.bucket === "image" || (f.kind || "").includes("image"))) {
+      const idx = imageFiles.findIndex((img) => img.url === f.url);
+      setLightbox(idx >= 0 ? idx : 0);
+      return;
+    }
+    if (f.url) {
+      window.open(f.url, "_blank", "noopener,noreferrer");
+      return;
+    }
+    if (f.messages?.[0]?.id) {
+      const hit = events.find((e) => e.id === f.messages?.[0]?.id);
+      if (hit) void openEvent(hit);
+    }
+  }
 
   if (!token) {
     return (
@@ -707,30 +734,22 @@ export function App({ token }: { token: string }) {
                   <button type="button" class={"chip" + (fileFilter === id ? " attention" : "")} onClick={() => setFileFilter(id)}>{id === "all" ? "All" : id[0].toUpperCase() + id.slice(1) + (id === "image" ? "s" : id === "document" ? "s" : "")}</button>
                 ))}
               </div>
-              <div class="file-grid">
-                {shownFiles.map((f) => (
-                  <button type="button" class="file-tile" onClick={() => {
-                    if (f.url && (f.bucket === "image" || (f.kind || "").includes("image"))) {
-                      const idx = imageFiles.findIndex((img) => img.url === f.url);
-                      setLightbox(idx >= 0 ? idx : 0);
-                      return;
-                    }
-                    if (f.url) {
-                      window.open(f.url, "_blank", "noopener,noreferrer");
-                      return;
-                    }
-                    if (f.messages?.[0]?.id) {
-                      const hit = events.find((e) => e.id === f.messages?.[0]?.id);
-                      if (hit) void openEvent(hit);
-                    }
-                  }}>
-                    <div class="file-thumb">
+              <div class="file-tree" role="list">
+                {shownFileTree.map(({ file: f, depth }) => (
+                  <button
+                    type="button"
+                    class={"file-row" + (depth ? " child" : "")}
+                    role="listitem"
+                    style={{ marginLeft: depth ? 16 : 0 }}
+                    onClick={() => openListedFile(f)}
+                  >
+                    <div class="file-thumb small">
                       {f.url && (f.bucket === "image" || (f.kind || "").includes("image")) ? <img src={f.url} alt="" /> : <KindIcon name="file" color={c.muted} />}
                     </div>
-                    <div style={{ padding: 8 }}>
-                      <div style={{ fontSize: 12, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{f.name}</div>
-                      <div style={{ fontSize: 11, color: c.muted }}>{f.kind || f.source} · {f.size || f.meta || f.note}</div>
-                      <div style={{ fontSize: 11, color: c.muted }}>{displayActor(f.actor)}{(f.messages || []).length > 1 ? " · " + (f.messages || []).length + " messages" : ""}</div>
+                    <div class="file-meta">
+                      <div class="file-name">{f.name}</div>
+                      <div class="file-sub">{f.kind || f.source} · {f.size || f.meta || f.note || f.description || ""}</div>
+                      {!depth && <div class="file-sub">{displayActor(f.actor)}{(f.messages || []).length > 1 ? " · " + (f.messages || []).length + " messages" : ""}{(f.children || []).length ? " · " + (f.children || []).length + " linked" : ""}</div>}
                     </div>
                   </button>
                 ))}

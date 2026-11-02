@@ -303,6 +303,51 @@ class ViewerRealUseTests(unittest.TestCase):
             phone_draft = next(row for row in phone_rows if row["name"] == "note.txt")
             self.assertFalse(phone_draft["served"])
 
+    def test_files_view_nests_referenced_project_paths(self) -> None:
+        with support.TempEnv() as env:
+            from agentcoop.cli import main
+
+            assert main(["setup", "--connect", "cursor", "--schedule", "no", "--yes"]) == 0
+            folder = env.workspace / "demo"
+            folder.mkdir()
+            assert (
+                main(
+                    [
+                        "project",
+                        "add",
+                        str(folder),
+                        "--name",
+                        "demo",
+                        "--driver",
+                        "cursor",
+                        "--gitignore",
+                        "no",
+                        "--yes",
+                    ]
+                )
+                == 0
+            )
+            screens = folder / "data" / "board" / "screens"
+            screens.mkdir(parents=True, exist_ok=True)
+            shot = screens / "r12-campaign-open.png"
+            shot.write_bytes(b"\x89PNG\r\n\x1a\n")
+            draft = env.board / "projects" / "demo" / "files" / "cursor"
+            draft.mkdir(parents=True, exist_ok=True)
+            (draft / "catalog.md").write_text(
+                "# Catalog\n\nOpen client was `data/board/screens/r12-campaign-open.png`.\n",
+                encoding="utf-8",
+            )
+            rows = files_view(env.board, "demo", "tok", local_open=True)
+            parent = next(row for row in rows if row["name"] == "catalog.md")
+            children = parent.get("children") or []
+            self.assertEqual(len(children), 1)
+            child = children[0]
+            self.assertEqual(child["name"], "r12-campaign-open.png")
+            self.assertEqual(child["source"], "reference")
+            self.assertEqual(child["bucket"], "image")
+            self.assertTrue(child["served"])
+            self.assertIn("/local-file", child["url"])
+
     def test_local_file_serves_draft_refuses_program(self) -> None:
         with support.TempEnv() as env:
             from agentcoop.cli import main

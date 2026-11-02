@@ -363,24 +363,32 @@ a { color: #7B5CD6; }
   overflow: hidden;
 }
 .pct-fill { display: block; height: 6px; border-radius: 999px; }
-.file-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
+.file-tree {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
 }
-.file-tile {
+.file-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  text-align: left;
+  padding: 8px;
   border-radius: 10px;
   border: 1px solid var(--border);
-  overflow: hidden;
   background: var(--surface2);
-  text-decoration: none;
   color: inherit;
-  text-align: left;
-  padding: 0;
-  width: 100%;
+}
+.file-row.child {
+  border-style: dashed;
+  background: var(--surface);
 }
 .file-thumb {
-  height: 76px;
+  flex: 0 0 56px;
+  width: 56px;
+  height: 56px;
+  border-radius: 8px;
   background: var(--surface);
   display: flex;
   align-items: center;
@@ -389,7 +397,23 @@ a { color: #7B5CD6; }
   font-size: 11px;
   overflow: hidden;
 }
+.file-thumb.small { flex-basis: 44px; width: 44px; height: 44px; }
 .file-thumb img { width: 100%; height: 100%; object-fit: cover; }
+.file-meta { flex: 1; min-width: 0; }
+.file-name {
+  font-size: 12px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.file-sub {
+  font-size: 11px;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .chips-row { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
 .range-panel {
   position: absolute;
