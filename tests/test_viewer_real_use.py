@@ -439,6 +439,95 @@ class ViewerRealUseTests(unittest.TestCase):
             self.assertIn("r11-a.png", nested)
             self.assertIn("r11-b.png", nested)
 
+    def test_files_view_nests_bare_filenames_from_labels_json(self) -> None:
+        with support.TempEnv() as env:
+            from agentcoop.cli import main
+
+            assert main(["setup", "--connect", "cursor", "--schedule", "no", "--yes"]) == 0
+            folder = env.workspace / "demo"
+            folder.mkdir()
+            assert (
+                main(
+                    [
+                        "project",
+                        "add",
+                        str(folder),
+                        "--name",
+                        "demo",
+                        "--driver",
+                        "cursor",
+                        "--gitignore",
+                        "no",
+                        "--yes",
+                    ]
+                )
+                == 0
+            )
+            labels_dir = folder / "data" / "runtime" / "negotiations"
+            labels_dir.mkdir(parents=True, exist_ok=True)
+            (labels_dir / "scroll-1100.png").write_bytes(b"\x89PNG\r\n\x1a\n")
+            (labels_dir / "scroll-2200.png").write_bytes(b"\x89PNG\r\n\x1a\n")
+            (labels_dir / "phasea-giveus-2500.png").write_bytes(b"\x89PNG\r\n\x1a\n")
+            (labels_dir / "labels.json").write_text(
+                json.dumps(
+                    {
+                        "arrow_step": 100,
+                        "note": "Nothing was sent with Make an offer.",
+                        "offer_scroll": [
+                            {
+                                "file": "scroll-1100.png",
+                                "line": "We will give 1100 denarii",
+                                "value": 1100,
+                            },
+                            {"file": "scroll-2200.png", "value": 2200},
+                        ],
+                        "request_scroll": [
+                            {
+                                "file": "phasea-giveus-2500.png",
+                                "line": "Give us 2500 denarii",
+                                "value": 2500,
+                            }
+                        ],
+                        "missing": "Digits are on the offer lines.",
+                    }
+                ),
+                encoding="utf-8",
+            )
+            draft = env.board / "projects" / "demo" / "files" / "cursor"
+            draft.mkdir(parents=True, exist_ok=True)
+            (draft / "labels-note.md").write_text(
+                "See `data/runtime/negotiations/labels.json`.\n",
+                encoding="utf-8",
+            )
+            rows = files_view(env.board, "demo", "tok", local_open=True)
+            note = next(row for row in rows if row["name"] == "labels-note.md")
+            level1 = file_children(
+                env.board,
+                "demo",
+                "tok",
+                str(note["local_path"]),
+                local_open=True,
+                parent_id=str(note["id"]),
+                parent_name=str(note["name"]),
+            )
+            labels = next(row for row in level1 if row["name"] == "labels.json")
+            self.assertTrue(labels.get("expandable"))
+            nested = {
+                child["name"]
+                for child in file_children(
+                    env.board,
+                    "demo",
+                    "tok",
+                    str(labels["local_path"]),
+                    local_open=True,
+                    parent_id=str(labels["id"]),
+                    parent_name=str(labels["name"]),
+                )
+            }
+            self.assertIn("scroll-1100.png", nested)
+            self.assertIn("scroll-2200.png", nested)
+            self.assertIn("phasea-giveus-2500.png", nested)
+
     def test_local_file_serves_draft_refuses_program(self) -> None:
         with support.TempEnv() as env:
             from agentcoop.cli import main

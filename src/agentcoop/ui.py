@@ -865,6 +865,13 @@ def _normalize_ref_token(token: str) -> str | None:
     return cleaned
 
 
+_BARE_FILE_NAME = (
+    r"[\w][\w.+=\-]*\.(?:"
+    + "|".join(sorted(s.lstrip(".") for s in _REF_FILE_SUFFIXES))
+    + r")"
+)
+
+
 def _referenced_paths_in_text(text: str) -> list[str]:
     """Return relative or absolute file paths named in helper notes and catalogs."""
     import re
@@ -890,34 +897,48 @@ def _referenced_paths_in_text(text: str) -> list[str]:
         re.I,
     ):
         add(match.group(1))
+    # Bare filenames such as scroll-1100.png or labels.json in free text / JSON strings.
+    for match in re.finditer(r'(?<![\w./\\-])(' + _BARE_FILE_NAME + r')(?![\w./\\-])', text or "", re.I):
+        add(match.group(1))
     for abs_path in _absolute_paths_in_text(text or ""):
         add(abs_path)
     return found
 
 
 def _referenced_paths_in_json_data(data: object) -> list[str]:
-    """Walk JSON values and collect strings that look like project file paths."""
+    """Walk JSON values and collect strings that look like project files or paths.
+
+    Accepts both path-like values (data/board/screens/a.png) and bare filenames
+    with a known suffix (scroll-1100.png), including values under keys like file.
+    """
     found: list[str] = []
     seen: set[str] = set()
+    file_keys = {"file", "path", "image", "screenshot", "shot", "src", "href", "url"}
 
-    def walk(node: object) -> None:
+    def add(token: str) -> None:
+        cleaned = _normalize_ref_token(token)
+        if cleaned is None or cleaned in seen:
+            return
+        seen.add(cleaned)
+        found.append(cleaned)
+
+    def walk(node: object, key: str = "") -> None:
         if isinstance(node, str):
             cleaned = _normalize_ref_token(node)
-            if cleaned is None or cleaned in seen:
+            if cleaned is None:
                 return
-            # Prefer path-like values (with slash or known screen/image name).
-            if "/" not in cleaned and not (len(cleaned) > 2 and cleaned[1] == ":"):
-                return
-            seen.add(cleaned)
-            found.append(cleaned)
+            has_path = "/" in cleaned or (len(cleaned) > 2 and cleaned[1] == ":")
+            has_suffix = Path(cleaned).suffix.lower() in _REF_FILE_SUFFIXES
+            if has_path or has_suffix or key.lower() in file_keys:
+                add(cleaned)
             return
         if isinstance(node, dict):
-            for value in node.values():
-                walk(value)
+            for child_key, value in node.items():
+                walk(value, str(child_key or ""))
             return
         if isinstance(node, list):
             for value in node:
-                walk(value)
+                walk(value, key)
 
     walk(data)
     return found
@@ -934,6 +955,10 @@ def _referenced_paths_from_file(path: Path, text: str) -> list[str]:
             data = None
         if data is not None:
             refs = _referenced_paths_in_json_data(data)
+            # Also scan string values as free text so notes that name files are kept.
+            for extra in _referenced_paths_in_text(text):
+                if extra not in refs:
+                    refs.append(extra)
             if refs:
                 return refs
     return _referenced_paths_in_text(text)
@@ -955,10 +980,14 @@ def _resolve_referenced_path(
     elif "/" in token:
         candidates.append(workspace.joinpath(*token.split("/")))
     else:
-        # Bare filenames from catalogs usually live under data/board/screens.
+        # Bare filenames from catalogs usually sit beside the parent or under screens.
         name = Path(token).name
-        candidates.append(workspace / "data" / "board" / "screens" / name)
         candidates.append(parent_dir / name)
+        candidates.append(workspace / "data" / "board" / "screens" / name)
+        candidates.append(workspace / "data" / "runtime" / name)
+        # Common campaign / labels folders next to the parent file.
+        for child in ("screens", "labels", "images", "frames"):
+            candidates.append(parent_dir / child / name)
 
     def _exists(path: Path) -> bool:
         key = str(path)
