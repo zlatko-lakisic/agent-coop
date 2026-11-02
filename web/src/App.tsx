@@ -7,6 +7,7 @@ import {
   drawerTimeLabel,
   ellipsisWords,
   eventCountLabel,
+  formatRawJson,
   kindLabel,
   parseProgressFields,
   timeLabel,
@@ -425,7 +426,7 @@ export function App({ token }: { token: string }) {
       const d = await socketRef.current?.request("event", { id: row.id });
       setDetail((d as Record<string, unknown>) || row);
     } catch {
-      setDetail(row);
+      setDetail(row as unknown as Record<string, unknown>);
     }
   }
 
@@ -547,6 +548,8 @@ export function App({ token }: { token: string }) {
     day: "numeric",
     timeZone: tz,
   });
+  const rawText = formatRawJson(detail);
+  const canShowRaw = Boolean(rawText);
 
   return (
     <div class="app">
@@ -839,45 +842,52 @@ export function App({ token }: { token: string }) {
 
         {selected && detail && (
           <section class="drawer" aria-label="Event details">
-            <div class="drawer-scroll">
-              <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 12, color: c.muted }} title={String(detail.ts || selected.ts || "") + " UTC"}>
-                    {drawerTimeLabel(String(detail.ts || selected.ts || ""), tz)}
-                  </div>
-                  <h2 style={{ margin: "4px 0 0", fontSize: 18, lineHeight: 1.3 }}>{String(detail.title || selected.title)}</h2>
+            <div class="drawer-head">
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 12, color: c.muted }} title={String(detail.ts || selected.ts || "") + " UTC"}>
+                  {drawerTimeLabel(String(detail.ts || selected.ts || ""), tz)}
                 </div>
-                <button type="button" class="btn icon ghost" aria-label="Close details" onClick={() => { setSelected(null); setDetail(null); focusCardRef.current?.focus(); }}>✕</button>
+                <h2 style={{ margin: "4px 0 0", fontSize: 18, lineHeight: 1.3 }}>{String(detail.title || selected.title)}</h2>
               </div>
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-                <span style={{ fontSize: 12, padding: "3px 10px", borderRadius: 999, background: dark ? "rgba(255,255,255,0.06)" : "rgba(30,27,75,0.06)", color: actorTone(c, String(detail.actor || "")), fontWeight: 600 }}>
-                  {displayActor(String(detail.actor || ""))}
-                </span>
-                <span style={{ fontSize: 12, padding: "3px 10px", borderRadius: 999, border: "1px solid " + c.border, color: c.muted }}>{kindLabel(String(detail.kind || ""))}</span>
-                <span class="mono" style={{ fontSize: 12, padding: "3px 10px", borderRadius: 999, border: "1px solid " + c.border, color: c.muted }}>{String(detail.id || selected.id)}</span>
+              <button type="button" class="btn icon ghost" aria-label="Close details" onClick={() => { setSelected(null); setDetail(null); setRawOpen(false); focusCardRef.current?.focus(); }}>✕</button>
+            </div>
+            {rawOpen && canShowRaw ? (
+              <pre class="drawer-raw mono" aria-label="Raw JSON">{rawText}</pre>
+            ) : (
+              <div class="drawer-scroll">
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                  <span style={{ fontSize: 12, padding: "3px 10px", borderRadius: 999, background: dark ? "rgba(255,255,255,0.06)" : "rgba(30,27,75,0.06)", color: actorTone(c, String(detail.actor || "")), fontWeight: 600 }}>
+                    {displayActor(String(detail.actor || ""))}
+                  </span>
+                  <span style={{ fontSize: 12, padding: "3px 10px", borderRadius: 999, border: "1px solid " + c.border, color: c.muted }}>{kindLabel(String(detail.kind || ""))}</span>
+                  <span class="mono" style={{ fontSize: 12, padding: "3px 10px", borderRadius: 999, border: "1px solid " + c.border, color: c.muted }}>{String(detail.id || selected.id)}</span>
+                </div>
+                <div style={{ fontSize: 14, lineHeight: 1.6, whiteSpace: "pre-line" }}>{String(detail.body || detail.summary || "")}</div>
+                <div>
+                  <div style={{ fontSize: 12, fontWeight: 650, color: c.muted, marginBottom: 8 }}>Thread</div>
+                  <ol style={{ listStyle: "none", margin: 0, padding: 0, display: "flex", flexDirection: "column", gap: 8 }}>
+                    {((detail.thread as { ts?: string; actor?: string; title?: string; summary?: string }[]) || []).map((th) => (
+                      <li style={{ display: "flex", gap: 10, fontSize: 13 }}>
+                        <span class="mono" style={{ width: 44, flex: "0 0 44px", color: c.muted }}>{timeLabel(th.ts, tz)}</span>
+                        <span style={{ fontWeight: 600, color: actorTone(c, String(th.actor || "")) }}>{displayActor(th.actor)}</span>
+                        <span style={{ color: c.muted }}>{th.title || th.summary}</span>
+                      </li>
+                    ))}
+                  </ol>
+                </div>
               </div>
-              <div style={{ fontSize: 14, lineHeight: 1.6, whiteSpace: "pre-line" }}>{String(detail.body || detail.summary || "")}</div>
-              <div>
-                <div style={{ fontSize: 12, fontWeight: 650, color: c.muted, marginBottom: 8 }}>Thread</div>
-                <ol style={{ listStyle: "none", margin: 0, padding: 0, display: "flex", flexDirection: "column", gap: 8 }}>
-                  {((detail.thread as { ts?: string; actor?: string; title?: string; summary?: string }[]) || []).map((th) => (
-                    <li style={{ display: "flex", gap: 10, fontSize: 13 }}>
-                      <span class="mono" style={{ width: 44, flex: "0 0 44px", color: c.muted }}>{timeLabel(th.ts, tz)}</span>
-                      <span style={{ fontWeight: 600, color: actorTone(c, String(th.actor || "")) }}>{displayActor(th.actor)}</span>
-                      <span style={{ color: c.muted }}>{th.title || th.summary}</span>
-                    </li>
-                  ))}
-                </ol>
-              </div>
-              <div style={{ display: "flex", gap: 8, marginTop: "auto" }}>
-                <button type="button" class="btn ghost" onClick={() => void navigator.clipboard.writeText(String(detail.id || selected.id))}>Copy id</button>
-                <button type="button" class="btn ghost" onClick={() => setRawOpen((v) => !v)}>{rawOpen ? "Hide raw JSON" : "Show raw JSON"}</button>
-              </div>
-              {rawOpen && (
-                <pre class="mono" style={{ fontSize: 11, overflow: "auto", background: c.surface2, padding: 12, borderRadius: 8, border: "1px solid " + c.border }}>
-                  {JSON.stringify(detail, null, 2)}
-                </pre>
-              )}
+            )}
+            <div class="drawer-actions">
+              <button type="button" class="btn ghost" onClick={() => void navigator.clipboard.writeText(String(detail.id || selected.id))}>Copy id</button>
+              <button
+                type="button"
+                class="btn ghost"
+                disabled={!canShowRaw}
+                title={canShowRaw ? undefined : "No JSON for this event"}
+                onClick={() => setRawOpen((v) => !v)}
+              >
+                {rawOpen && canShowRaw ? "Hide raw JSON" : "Show raw JSON"}
+              </button>
             </div>
           </section>
         )}

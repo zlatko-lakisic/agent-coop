@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { dayKey, ellipsisWords, eventCountLabel, kindLabel, parseProgressFields } from "./labels";
+import { dayKey, ellipsisWords, eventCountLabel, formatRawJson, kindLabel, parseProgressFields } from "./labels";
 import { bucketCountFromHeight, mergeLiveEvents } from "./rail";
 
 describe("labels and order", () => {
@@ -39,6 +39,13 @@ describe("labels and order", () => {
       [{ id: "prog", order: 3, ts: "2026-10-28T12:00:03Z" }],
     );
     expect(merged.map((e) => e.id)).toEqual(["prog", "msg", "stall"]);
+  });
+
+  it("formats raw JSON and treats empty as missing", () => {
+    expect(formatRawJson(null)).toBe("");
+    expect(formatRawJson({})).toBe("");
+    expect(formatRawJson({ id: "m1", kind: "message.task" })).toContain('"id": "m1"');
+    expect(formatRawJson({ id: "m1", kind: "message.task" })).toContain("\n");
   });
 
   it("sizes rail buckets from height", () => {

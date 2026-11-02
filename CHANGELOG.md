@@ -11,6 +11,7 @@
 - Stall events freeze minutes in `projects/<name>/progress/.stall.json` at detection. Waiting and blocked are waiting, not stalled. One severity table covers every kind; `update.installed` is info.
 - Board text is read as UTF-8 with replacement characters. The Files tab lists attachments, shared copies, drafts, outbox files, held, and outside paths for the selected range. On the desktop viewer, clicking a listed file opens it (images in a lightbox, other files in a new tab) via `/local-file` on loopback; programs stay closed. Phone mode still serves shared copies only.
 - The overview rail is a continuous strip from the newest to the oldest event in the filter (empty days only between those). It does not extend into empty days the middle list cannot reach. It scrolls on its own like a Frigate scrubber: the orange window follows timestamps visible in the middle, and drag or click seeks the list. The top bar shows the installed Agent Co-op version from hello.
+- The detail drawer shows raw JSON as a formatted pane in the right panel (outside the event scroll). Show raw JSON is disabled when the event has no JSON.
 
 ## 0.2.11 - 2026-10-28
 
