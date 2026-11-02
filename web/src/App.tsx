@@ -174,6 +174,10 @@ export function App({ token }: { token: string }) {
   const [readonly, setReadonly] = useState(false);
   const [coopVersion, setCoopVersion] = useState("");
   const [loadingMore, setLoadingMore] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [loadingFiles, setLoadingFiles] = useState(false);
+  const loadGenRef = useRef(0);
+  const metaLoadedRef = useRef(false);
   const socketRef = useRef<ViewerSocket | null>(null);
   const timelineRef = useRef<HTMLElement | null>(null);
   const railRef = useRef<HTMLElement | null>(null);
@@ -259,35 +263,77 @@ export function App({ token }: { token: string }) {
 
   async function loadProject(sock: ViewerSocket, name: string, resubscribe: boolean) {
     if (!name) return;
+    const gen = ++loadGenRef.current;
     const current = resolveRange(rangeStateRef.current, nowRef.current);
     const from = new Date(current.startMs).toISOString();
     const to = new Date(current.endMs).toISOString();
     const buckets = bucketCount;
-    const [ev, ag, ru, st, hi, fi] = await Promise.all([
-      sock.request("events", { project: name, from, to, limit: 50, q: queryRef.current || undefined, actors: filterActorRef.current ? [filterActorRef.current] : undefined }),
-      sock.request("agents", { project: name }),
-      sock.request("rules", { project: name }),
-      sock.request("status"),
-      sock.request("histogram", { project: name, from, to, buckets }),
-      sock.request("files", { project: name, from, to }),
-    ]);
-    const page = ev as { events: EventRow[]; next?: string; total?: number; day_counts?: Record<string, number> };
-    setEvents(page.events || []);
-    setNextCursor(page.next || "");
-    setEventTotal(page.total ?? (page.events || []).length);
-    setDayCounts(page.day_counts || {});
-    setAgents(((ag as { agents: AgentRow[] }).agents) || []);
-    setRules((ru as Record<string, unknown>) || {});
-    setStatusItems(((st as { items: typeof statusItems }).items) || []);
-    setHistogram(hi as typeof histogram);
-    setFiles(((fi as { files: FileRow[] }).files) || []);
-    if (resubscribe) {
-      await sock.request("subscribe", {
-        project: name,
-        from,
-        to,
-        actors: filterActorRef.current ? [filterActorRef.current] : undefined,
-      });
+    setLoading(true);
+    setLoadingFiles(true);
+    try {
+      const needsMeta = !metaLoadedRef.current;
+      const core = [
+        sock.request("events", {
+          project: name,
+          from,
+          to,
+          limit: 50,
+          q: queryRef.current || undefined,
+          actors: filterActorRef.current ? [filterActorRef.current] : undefined,
+        }),
+        sock.request("histogram", { project: name, from, to, buckets }),
+      ];
+      const meta = needsMeta
+        ? [
+            sock.request("agents", { project: name }),
+            sock.request("rules", { project: name }),
+            sock.request("status"),
+          ]
+        : [];
+      const settled = await Promise.all([...core, ...meta]);
+      if (gen !== loadGenRef.current) return;
+      const ev = settled[0];
+      const hi = settled[1];
+      const page = ev as { events: EventRow[]; next?: string; total?: number; day_counts?: Record<string, number> };
+      setEvents(page.events || []);
+      setNextCursor(page.next || "");
+      setEventTotal(page.total ?? (page.events || []).length);
+      setDayCounts(page.day_counts || {});
+      setHistogram(hi as typeof histogram);
+      if (needsMeta) {
+        setAgents((((settled[2] as { agents: AgentRow[] }) || {}).agents) || []);
+        setRules((settled[3] as Record<string, unknown>) || {});
+        setStatusItems((((settled[4] as { items: typeof statusItems }) || {}).items) || []);
+        metaLoadedRef.current = true;
+      }
+      setLoading(false);
+      if (resubscribe) {
+        void sock.request("subscribe", {
+          project: name,
+          from,
+          to,
+          actors: filterActorRef.current ? [filterActorRef.current] : undefined,
+        });
+      }
+      // Files can be heavy; keep the timeline usable while they load.
+      void sock
+        .request("files", { project: name, from, to })
+        .then((fi) => {
+          if (gen !== loadGenRef.current) return;
+          setFiles(((fi as { files: FileRow[] }).files) || []);
+        })
+        .catch(() => {
+          if (gen !== loadGenRef.current) return;
+          setFiles([]);
+        })
+        .finally(() => {
+          if (gen === loadGenRef.current) setLoadingFiles(false);
+        });
+    } catch {
+      if (gen === loadGenRef.current) {
+        setLoading(false);
+        setLoadingFiles(false);
+      }
     }
   }
 
@@ -322,6 +368,10 @@ export function App({ token }: { token: string }) {
   }
 
   useEffect(() => {
+    metaLoadedRef.current = false;
+  }, [project]);
+
+  useEffect(() => {
     const sock = socketRef.current;
     if (!sock || conn !== "live" || !project) return;
     void loadProject(sock, project, true);
@@ -342,12 +392,20 @@ export function App({ token }: { token: string }) {
   useEffect(() => {
     const el = railRef.current;
     if (!el) return;
-    const update = () => setBucketCount(bucketCountFromHeight(el.clientHeight));
+    let timer = 0;
+    const update = () => {
+      window.clearTimeout(timer);
+      timer = window.setTimeout(() => {
+        const next = bucketCountFromHeight(el.clientHeight);
+        setBucketCount((prev) => (prev === next ? prev : next));
+      }, 200);
+    };
     update();
     const ro = typeof ResizeObserver !== "undefined" ? new ResizeObserver(update) : null;
     ro?.observe(el);
     window.addEventListener("resize", update);
     return () => {
+      window.clearTimeout(timer);
       ro?.disconnect();
       window.removeEventListener("resize", update);
     };
@@ -739,6 +797,12 @@ export function App({ token }: { token: string }) {
                   <button type="button" class={"chip" + (fileFilter === id ? " attention" : "")} onClick={() => setFileFilter(id)}>{id === "all" ? "All" : id[0].toUpperCase() + id.slice(1) + (id === "image" ? "s" : id === "document" ? "s" : "")}</button>
                 ))}
               </div>
+              {loadingFiles && (
+                <div class="loading-inline" role="status">
+                  <span class="spinner" aria-hidden="true" />
+                  Loading files…
+                </div>
+              )}
               <div class="file-tree" role="list">
                 {shownFileTree.map(({ file: f, depth }) => (
                   <button
@@ -764,6 +828,12 @@ export function App({ token }: { token: string }) {
         </aside>
 
         <main class="timeline" ref={timelineRef as never} aria-label="Board timeline">
+          {loading && (
+            <div class="loading-banner" role="status">
+              <span class="spinner" aria-hidden="true" />
+              Loading this range…
+            </div>
+          )}
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, padding: "8px 0 4px" }}>
             <div style={{ fontSize: 13, color: c.muted }}>{eventCountLabel(eventTotal)} in this range. Newest first.</div>
             {filterActor && <button type="button" class="chip" onClick={() => setFilterActor("")}>Showing {filterActor} only. Show everyone</button>}

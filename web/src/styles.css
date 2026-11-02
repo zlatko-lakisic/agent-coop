@@ -415,6 +415,32 @@ a { color: #7B5CD6; }
   white-space: nowrap;
 }
 .chips-row { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+.loading-banner,
+.loading-inline {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 8px 0;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--surface2);
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 600;
+}
+.spinner {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 2px solid var(--border);
+  border-top-color: var(--accent);
+  animation: spin 0.7s linear infinite;
+  flex: 0 0 auto;
+}
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
 .range-panel {
   position: absolute;
   top: 44px;

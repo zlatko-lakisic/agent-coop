@@ -194,8 +194,9 @@ export function reconnectDelay(attempt: number): number {
 /** How many rail buckets fit when the rail can scroll on its own. */
 export function bucketCountFromHeight(heightPx: number, rowPx = 14): number {
   // Prefer denser buckets than the viewport alone: the track scrolls like Frigate.
+  // Cap at 96 so a 30-day range stays responsive.
   const visible = Math.floor(Math.max(0, heightPx) / Math.max(10, rowPx));
-  return Math.max(24, Math.min(200, Math.max(visible * 2, 48)));
+  return Math.max(24, Math.min(96, Math.max(visible * 2, 48)));
 }
 
 export function mergeLiveEvents<T extends { id: string; order?: number; ts?: string }>(

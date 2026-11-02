@@ -13,6 +13,7 @@
 - The overview rail is a continuous strip from the newest to the oldest event in the filter (empty days only between those). It does not extend into empty days the middle list cannot reach. It scrolls on its own like a Frigate scrubber: the orange window follows timestamps visible in the middle, and drag or click seeks the list. The top bar shows the installed Agent Co-op version from hello.
 - The detail drawer shows raw JSON as a formatted pane in the right panel (outside the event scroll). Show raw JSON is disabled when the event has no JSON.
 - The Files tab is a vertical tree. Paths named inside listed notes (for example `data/board/screens/...`) appear under that file; on the desktop those linked images and files open like the other served rows.
+- Long ranges stay responsive: the timeline loads first with a spinner, Files load in the background, and named-path lookup caches disk checks so catalogs do not stall the viewer.
 
 ## 0.2.11 - 2026-10-28
 

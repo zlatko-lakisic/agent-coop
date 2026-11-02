@@ -703,14 +703,10 @@ def _project_workspace(board: Path, project: str) -> Path | None:
         return None
 
 
-def _path_under_project(board: Path, project: str, real: Path) -> bool:
-    """Return True when real sits under the board project folder or the project path."""
-    from agentcoop.paths import is_same_or_inside, project_dir
+def _path_under_roots(real: Path, roots: list[Path]) -> bool:
+    """Return True when real sits under one of the allowed roots."""
+    from agentcoop.paths import is_same_or_inside
 
-    roots = [project_dir(board, project)]
-    workspace = _project_workspace(board, project)
-    if workspace is not None:
-        roots.append(workspace)
     for root in roots:
         try:
             root_real = root.resolve()
@@ -719,6 +715,38 @@ def _path_under_project(board: Path, project: str, real: Path) -> bool:
         if is_same_or_inside(real, root_real):
             return True
     return False
+
+
+def _path_under_project(board: Path, project: str, real: Path) -> bool:
+    """Return True when real sits under the board project folder or the project path."""
+    from agentcoop.paths import project_dir
+
+    roots = [project_dir(board, project)]
+    workspace = _project_workspace(board, project)
+    if workspace is not None:
+        roots.append(workspace)
+    return _path_under_roots(real, roots)
+
+
+_SAFE_OPEN_SUFFIXES = {
+    ".png",
+    ".jpg",
+    ".jpeg",
+    ".gif",
+    ".webp",
+    ".svg",
+    ".md",
+    ".markdown",
+    ".txt",
+    ".pdf",
+    ".json",
+    ".csv",
+    ".html",
+    ".htm",
+    ".log",
+    ".yml",
+    ".yaml",
+}
 
 
 _TEXT_REF_SUFFIXES = {
@@ -782,7 +810,9 @@ def _referenced_paths_in_text(text: str) -> list[str]:
         suffix = Path(cleaned).suffix.lower()
         if suffix and suffix not in _REF_FILE_SUFFIXES:
             return
-        if "/" not in cleaned and not (cleaned[1:2] == ":" and cleaned[0].isalpha()):
+        # Bare names need a known image/doc suffix; full relative paths need a slash.
+        absolute = len(cleaned) > 2 and cleaned[1] == ":"
+        if "/" not in cleaned and not absolute:
             if suffix not in _REF_FILE_SUFFIXES:
                 return
         seen.add(cleaned)
@@ -804,19 +834,44 @@ def _referenced_paths_in_text(text: str) -> list[str]:
     return found
 
 
-def _resolve_referenced_path(token: str, *, workspace: Path, parent_dir: Path) -> Path | None:
+def _resolve_referenced_path(
+    token: str,
+    *,
+    workspace: Path,
+    parent_dir: Path,
+    exists_cache: dict[str, bool] | None = None,
+) -> Path | None:
     """Resolve a named path against the project folder or the parent file's folder."""
-    raw = Path(token)
+    cache = exists_cache if exists_cache is not None else {}
+    absolute = len(token) > 2 and token[1] == ":"
     candidates: list[Path] = []
-    if raw.is_absolute() or (len(token) > 2 and token[1] == ":"):
+    if absolute or Path(token).is_absolute():
         candidates.append(Path(token))
+    elif "/" in token:
+        candidates.append(workspace.joinpath(*token.split("/")))
     else:
-        candidates.append(workspace / token)
-        candidates.append(parent_dir / token)
-    for candidate in candidates:
+        # Bare filenames from catalogs usually live under data/board/screens.
+        name = Path(token).name
+        candidates.append(workspace / "data" / "board" / "screens" / name)
+        candidates.append(parent_dir / name)
+
+    def _exists(path: Path) -> bool:
+        key = str(path)
+        cached = cache.get(key)
+        if cached is not None:
+            return cached
         try:
-            if candidate.is_file() and not candidate.is_symlink():
-                return candidate.resolve()
+            ok = path.is_file() and not path.is_symlink()
+        except OSError:
+            ok = False
+        cache[key] = ok
+        return ok
+
+    for candidate in candidates:
+        if not _exists(candidate):
+            continue
+        try:
+            return candidate.resolve()
         except OSError:
             continue
     return None
@@ -930,6 +985,12 @@ def _project_file_rows(
     by_key: dict[str, dict] = {}
     disk_by_key: dict[str, Path] = {}
     workspace = _project_workspace(board, project)
+    from agentcoop.paths import project_dir
+
+    allowed_roots = [project_dir(board, project)]
+    if workspace is not None:
+        allowed_roots.append(workspace)
+    exists_cache: dict[str, bool] = {}
 
     def _bucket(kind: str) -> str:
         lower = (kind or "").lower()
@@ -1026,15 +1087,16 @@ def _project_file_rows(
         """Return url, path, served, note when desktop may open this disk file."""
         if not local_open:
             return "", "", False, ""
-        if not disk.is_file() or disk.is_symlink():
-            return "", "", False, ""
         try:
+            if disk.is_symlink() or not disk.is_file():
+                return "", "", False, ""
             resolved = disk.resolve()
         except OSError:
             return "", "", False, ""
-        if is_program(resolved):
+        suffix = resolved.suffix.lower()
+        if suffix not in _SAFE_OPEN_SUFFIXES and is_program(resolved):
             return "", "", False, "Program, not opened here."
-        if not _path_under_project(board, project, resolved):
+        if not _path_under_roots(resolved, allowed_roots):
             return "", "", False, ""
         url, served_path = _local_file_url(resolved)
         return url, served_path, True, ""
@@ -1282,6 +1344,7 @@ def _project_file_rows(
             )
 
     if workspace is not None:
+        children_by_disk: dict[str, list[dict]] = {}
         for key, row in list(by_key.items()):
             parent_disk = disk_by_key.get(key)
             if parent_disk is None:
@@ -1289,22 +1352,42 @@ def _project_file_rows(
             if parent_disk.suffix.lower() not in _TEXT_REF_SUFFIXES:
                 continue
             try:
-                if parent_disk.stat().st_size > 2_000_000:
+                scan_key = str(parent_disk.resolve())
+            except OSError:
+                scan_key = str(parent_disk)
+            cached_children = children_by_disk.get(scan_key)
+            if cached_children is not None:
+                row["children"] = [
+                    {**child, "id": "ref:" + key + ":" + str(child.get("name") or "").lower(), "parent": key}
+                    for child in cached_children
+                ]
+                continue
+            try:
+                size = parent_disk.stat().st_size
+                if size > 256_000:
+                    children_by_disk[scan_key] = []
                     continue
                 text = parent_disk.read_text(encoding="utf-8", errors="replace")
             except OSError:
+                children_by_disk[scan_key] = []
                 continue
             children: list[dict] = []
             seen_child: set[str] = set()
             for token in _referenced_paths_in_text(text):
+                if len(children) >= 40:
+                    break
                 target = _resolve_referenced_path(
-                    token, workspace=workspace, parent_dir=parent_disk.parent
+                    token,
+                    workspace=workspace,
+                    parent_dir=parent_disk.parent,
+                    exists_cache=exists_cache,
                 )
                 if target is None:
                     continue
-                if not _path_under_project(board, project, target):
+                if not _path_under_roots(target, allowed_roots):
                     continue
-                if is_program(target):
+                suffix = target.suffix.lower()
+                if suffix not in _SAFE_OPEN_SUFFIXES and is_program(target):
                     continue
                 try:
                     if target == parent_disk.resolve():
@@ -1315,12 +1398,20 @@ def _project_file_rows(
                 if child_key in seen_child:
                     continue
                 seen_child.add(child_key)
-                url, served_path, served, local_note = _try_local(target)
                 kind = _kind_from_name(target.name)
                 try:
-                    size = target.stat().st_size
+                    child_size = target.stat().st_size
                 except OSError:
-                    size = 0
+                    child_size = 0
+                served = False
+                url = ""
+                served_path = ""
+                local_note = ""
+                if local_open:
+                    url, served_path = _local_file_url(target)
+                    served = True
+                else:
+                    local_note = "Named in " + str(row.get("name") or "file")
                 children.append(
                     {
                         "id": "ref:" + key + ":" + target.name.lower(),
@@ -1328,8 +1419,8 @@ def _project_file_rows(
                         "kind": kind,
                         "bucket": _bucket(kind),
                         "media": "",
-                        "bytes": size,
-                        "size": human_size(size) if size else "",
+                        "bytes": child_size,
+                        "size": human_size(child_size) if child_size else "",
                         "url": url if served else "",
                         "path": served_path if served else "",
                         "served": served,
@@ -1344,6 +1435,7 @@ def _project_file_rows(
                     }
                 )
             children.sort(key=lambda item: str(item.get("name") or "").lower())
+            children_by_disk[scan_key] = children
             row["children"] = children
 
     rows = list(by_key.values())

@@ -49,9 +49,9 @@ describe("labels and order", () => {
   });
 
   it("sizes rail buckets from height", () => {
-    // Dense enough to scroll the rail like Frigate; never below 24.
+    // Dense enough to scroll the rail like Frigate; never below 24, capped for long ranges.
     expect(bucketCountFromHeight(250)).toBe(48);
     expect(bucketCountFromHeight(0)).toBe(48);
-    expect(bucketCountFromHeight(2000)).toBe(200);
+    expect(bucketCountFromHeight(2000)).toBe(96);
   });
 });
