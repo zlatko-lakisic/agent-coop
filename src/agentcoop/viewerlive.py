@@ -331,11 +331,14 @@ class LiveSession:
                 self.readonly = True
             self.authed = True
             self.hub.activate_file_session(self.file_session)
+            from agentcoop import __version__
+
             self._send_json(
                 {
                     "type": "hello.ok",
                     "file_session": self.file_session,
                     "readonly": self.readonly,
+                    "version": __version__,
                 }
             )
             return True
@@ -410,7 +413,7 @@ class LiveSession:
             rules_view,
             status_view,
         )
-        from agentcoop.ui import files_view
+        from agentcoop.ui import file_children, files_view
         from agentcoop.wizard import add_project_flow, change_driver, helper_add, helper_remove
 
         if op == "projects":
@@ -449,6 +452,10 @@ class LiveSession:
         if op == "status":
             return status_view(self.hub.board)
         if op == "files":
+            server = self.hub.server
+            host = str(getattr(server, "host", "127.0.0.1") or "127.0.0.1")
+            phone = bool(getattr(server, "phone", False))
+            local_open = host in ("127.0.0.1", "::1", "localhost") and not phone
             return {
                 "files": files_view(
                     self.hub.board,
@@ -456,6 +463,23 @@ class LiveSession:
                     self.hub.token,
                     start=params.get("from") or params.get("start"),
                     end=params.get("to") or params.get("end"),
+                    local_open=local_open,
+                )
+            }
+        if op == "file_children":
+            server = self.hub.server
+            host = str(getattr(server, "host", "127.0.0.1") or "127.0.0.1")
+            phone = bool(getattr(server, "phone", False))
+            local_open = host in ("127.0.0.1", "::1", "localhost") and not phone
+            return {
+                "children": file_children(
+                    self.hub.board,
+                    str(params.get("project") or ""),
+                    self.hub.token,
+                    str(params.get("local_path") or ""),
+                    local_open=local_open,
+                    parent_id=str(params.get("parent_id") or ""),
+                    parent_name=str(params.get("parent_name") or ""),
                 )
             }
         if op == "subscribe":

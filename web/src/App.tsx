@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
+import { AgentIcon } from "./agentIcons";
 import { KindIcon, iconForKind } from "./icons";
 import {
   dayKey,
@@ -7,6 +8,7 @@ import {
   drawerTimeLabel,
   ellipsisWords,
   eventCountLabel,
+  formatRawJson,
   kindLabel,
   parseProgressFields,
   timeLabel,
@@ -26,10 +28,16 @@ import {
 import {
   bucketCountFromHeight,
   mergeLiveEvents,
-  scrollTopForTime,
+  railFractionToTime,
+  railPointerFraction,
+  railRangeFromBuckets,
+  scrollRailToWindow,
+  scrollTimelineToTime,
   timeToRailFraction,
-  windowFromScroll,
+  trimEmptyRailEnds,
+  visibleWindowFromTimeline,
   windowStyle,
+  type VisibleWindow,
 } from "./rail";
 import { ViewerSocket, type ConnState } from "./ws";
 
@@ -59,6 +67,7 @@ type AgentRow = {
   last_seen?: string;
   activity?: { count?: number }[];
   display?: string;
+  tool?: string;
 };
 
 type ProjectRow = { name: string; path?: string; driver?: string };
@@ -75,10 +84,37 @@ type FileRow = {
   ts?: string;
   actor?: string;
   note?: string;
+  description?: string;
+  caption?: string;
   served?: boolean;
   source?: string;
+  parent?: string;
+  children?: FileRow[];
   messages?: { id?: string; actor?: string; ts?: string }[];
+  expandable?: boolean;
+  local_path?: string;
+  expanded?: boolean;
+  loading?: boolean;
 };
+
+function patchFileNode(nodes: FileRow[], id: string, patch: Partial<FileRow>): FileRow[] {
+  return nodes.map((node) => {
+    if ((node.id || node.name) === id) return { ...node, ...patch };
+    if (node.children?.length) {
+      return { ...node, children: patchFileNode(node.children, id, patch) };
+    }
+    return node;
+  });
+}
+
+function collectExpandable(nodes: FileRow[], onlyRoots = false): FileRow[] {
+  const out: FileRow[] = [];
+  for (const node of nodes) {
+    if (node.expandable && node.local_path && !node.expanded && !node.loading) out.push(node);
+    if (!onlyRoots && node.children?.length) out.push(...collectExpandable(node.children, false));
+  }
+  return out;
+}
 
 function applyTheme(c: Palette) {
   const root = document.documentElement;
@@ -133,8 +169,18 @@ export function App({ token }: { token: string }) {
   const [files, setFiles] = useState<FileRow[]>([]);
   const [fileFilter, setFileFilter] = useState<"all" | "image" | "document" | "other">("all");
   const [lightbox, setLightbox] = useState<number | null>(null);
+  const [filePreview, setFilePreview] = useState<{ name: string; url: string; body: string; error?: string } | null>(null);
   const [statusItems, setStatusItems] = useState<{ kind: string; text: string; project?: string }[]>([]);
-  const [histogram, setHistogram] = useState<{ buckets?: { start?: string; end?: string; actors?: Record<string, number>; counts?: Record<string, number>; markers?: string[] }[] }>({});
+  const [histogram, setHistogram] = useState<{
+    buckets?: {
+      start?: string;
+      end?: string;
+      actors?: Record<string, number>;
+      counts?: Record<string, number>;
+      markers?: string[];
+      day_break?: boolean;
+    }[];
+  }>({});
   const [tab, setTab] = useState<"agents" | "rules" | "files">("agents");
   const [filterActor, setFilterActor] = useState("");
   const [query, setQuery] = useState(initialUrl.q || "");
@@ -153,17 +199,24 @@ export function App({ token }: { token: string }) {
   const [pendingNew, setPendingNew] = useState(0);
   const [rawOpen, setRawOpen] = useState(false);
   const [readonly, setReadonly] = useState(false);
+  const [coopVersion, setCoopVersion] = useState("");
   const [loadingMore, setLoadingMore] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [loadingFiles, setLoadingFiles] = useState(false);
+  const loadGenRef = useRef(0);
+  const metaLoadedRef = useRef(false);
   const socketRef = useRef<ViewerSocket | null>(null);
   const timelineRef = useRef<HTMLElement | null>(null);
   const railRef = useRef<HTMLElement | null>(null);
+  const railTrackRef = useRef<HTMLDivElement | null>(null);
   const focusCardRef = useRef<HTMLButtonElement | null>(null);
-  const [winStyle, setWinStyle] = useState({ top: "0%", height: "20%" });
-  const [railDayTop, setRailDayTop] = useState("");
-  const [railDayBottom, setRailDayBottom] = useState("");
-  const [bucketCount, setBucketCount] = useState(24);
+  const [visibleWin, setVisibleWin] = useState<VisibleWindow>({ topMs: Date.now(), bottomMs: Date.now() - 3_600_000 });
+  const [bucketCount, setBucketCount] = useState(48);
   const atTopRef = useRef(true);
   const preserveScrollRef = useRef(true);
+  const eventsRef = useRef<EventRow[]>([]);
+  const nextCursorRef = useRef("");
+  const scrubbingRef = useRef(false);
 
   const projectRef = useRef(project);
   const rangeStateRef = useRef(rangeState);
@@ -182,13 +235,23 @@ export function App({ token }: { token: string }) {
   const rangeRef = useRef(range);
   rangeRef.current = range;
   const tz = tzMode === "utc" ? "UTC" : undefined;
+  // Newest-first, clipped to first/last activity so the rail matches where the middle can go.
+  const buckets = useMemo(
+    () => trimEmptyRailEnds([...(histogram.buckets || [])].reverse()),
+    [histogram],
+  );
+  const railRange = useMemo(() => railRangeFromBuckets(buckets, range), [buckets, range]);
+  const railRangeRef = useRef(railRange);
+  railRangeRef.current = railRange;
+  const winStyle = useMemo(() => windowStyle(visibleWin, railRange), [visibleWin, railRange]);
 
   useEffect(() => {
     if (!token) return;
     const sock = new ViewerSocket(token, {
       onState: setConn,
-      onHello: (_fileSession, isReadonly) => {
+      onHello: (_fileSession, isReadonly, version) => {
         setReadonly(isReadonly);
+        if (version) setCoopVersion(version);
         void bootstrap(sock);
       },
       onPush: (msg) => handlePush(msg),
@@ -227,36 +290,145 @@ export function App({ token }: { token: string }) {
 
   async function loadProject(sock: ViewerSocket, name: string, resubscribe: boolean) {
     if (!name) return;
+    const gen = ++loadGenRef.current;
     const current = resolveRange(rangeStateRef.current, nowRef.current);
     const from = new Date(current.startMs).toISOString();
     const to = new Date(current.endMs).toISOString();
     const buckets = bucketCount;
-    const [ev, ag, ru, st, hi, fi] = await Promise.all([
-      sock.request("events", { project: name, from, to, limit: 50, q: queryRef.current || undefined, actors: filterActorRef.current ? [filterActorRef.current] : undefined }),
-      sock.request("agents", { project: name }),
-      sock.request("rules", { project: name }),
-      sock.request("status"),
-      sock.request("histogram", { project: name, from, to, buckets }),
-      sock.request("files", { project: name, from, to }),
-    ]);
-    const page = ev as { events: EventRow[]; next?: string; total?: number; day_counts?: Record<string, number> };
-    setEvents(page.events || []);
-    setNextCursor(page.next || "");
-    setEventTotal(page.total ?? (page.events || []).length);
-    setDayCounts(page.day_counts || {});
-    setAgents(((ag as { agents: AgentRow[] }).agents) || []);
-    setRules((ru as Record<string, unknown>) || {});
-    setStatusItems(((st as { items: typeof statusItems }).items) || []);
-    setHistogram(hi as typeof histogram);
-    setFiles(((fi as { files: FileRow[] }).files) || []);
-    if (resubscribe) {
-      await sock.request("subscribe", {
-        project: name,
-        from,
-        to,
-        actors: filterActorRef.current ? [filterActorRef.current] : undefined,
-      });
+    setLoading(true);
+    setLoadingFiles(true);
+    try {
+      const needsMeta = !metaLoadedRef.current;
+      const core = [
+        sock.request("events", {
+          project: name,
+          from,
+          to,
+          limit: 50,
+          q: queryRef.current || undefined,
+          actors: filterActorRef.current ? [filterActorRef.current] : undefined,
+        }),
+        sock.request("histogram", { project: name, from, to, buckets }),
+      ];
+      const meta = needsMeta
+        ? [
+            sock.request("agents", { project: name }),
+            sock.request("rules", { project: name }),
+            sock.request("status"),
+          ]
+        : [];
+      const settled = await Promise.all([...core, ...meta]);
+      if (gen !== loadGenRef.current) return;
+      const ev = settled[0];
+      const hi = settled[1];
+      const page = ev as { events: EventRow[]; next?: string; total?: number; day_counts?: Record<string, number> };
+      setEvents(page.events || []);
+      setNextCursor(page.next || "");
+      setEventTotal(page.total ?? (page.events || []).length);
+      setDayCounts(page.day_counts || {});
+      setHistogram(hi as typeof histogram);
+      if (needsMeta) {
+        setAgents((((settled[2] as { agents: AgentRow[] }) || {}).agents) || []);
+        setRules((settled[3] as Record<string, unknown>) || {});
+        setStatusItems((((settled[4] as { items: typeof statusItems }) || {}).items) || []);
+        metaLoadedRef.current = true;
+      }
+      setLoading(false);
+      if (resubscribe) {
+        void sock.request("subscribe", {
+          project: name,
+          from,
+          to,
+          actors: filterActorRef.current ? [filterActorRef.current] : undefined,
+        });
+      }
+      // Files load as a shallow list first; linked levels fill in asynchronously.
+      void sock
+        .request("files", { project: name, from, to })
+        .then((fi) => {
+          if (gen !== loadGenRef.current) return;
+          const rows = ((fi as { files: FileRow[] }).files) || [];
+          setFiles(rows);
+          setLoadingFiles(false);
+          void expandFileLevels(sock, name, rows, gen, true);
+        })
+        .catch(() => {
+          if (gen !== loadGenRef.current) return;
+          setFiles([]);
+          setLoadingFiles(false);
+        });
+    } catch {
+      if (gen === loadGenRef.current) {
+        setLoading(false);
+        setLoadingFiles(false);
+      }
     }
+  }
+
+  async function expandFileLevels(
+    sock: ViewerSocket,
+    projectName: string,
+    roots: FileRow[],
+    gen: number,
+    firstLevelOnly: boolean,
+  ) {
+    const targets = collectExpandable(roots, firstLevelOnly);
+    for (const target of targets) {
+      if (gen !== loadGenRef.current) return;
+      await loadFileChildren(sock, projectName, target, gen);
+    }
+  }
+
+  async function loadFileChildren(
+    sock: ViewerSocket,
+    projectName: string,
+    target: FileRow,
+    gen: number,
+  ) {
+    const id = target.id || target.name;
+    if (!target.local_path || !id) return;
+    setFiles((prev) => patchFileNode(prev, id, { loading: true }));
+    try {
+      const res = await sock.request("file_children", {
+        project: projectName,
+        local_path: target.local_path,
+        parent_id: id,
+        parent_name: target.name,
+      });
+      if (gen !== loadGenRef.current) return;
+      const children = ((res as { children: FileRow[] }).children) || [];
+      setFiles((prev) =>
+        patchFileNode(prev, id, {
+          children,
+          expanded: true,
+          loading: false,
+        }),
+      );
+    } catch {
+      if (gen !== loadGenRef.current) return;
+      setFiles((prev) =>
+        patchFileNode(prev, id, {
+          children: [],
+          expanded: true,
+          loading: false,
+        }),
+      );
+    }
+  }
+
+  async function toggleFileExpand(f: FileRow) {
+    const sock = socketRef.current;
+    const id = f.id || f.name;
+    if (!sock || !id) return;
+    if (f.expanded) {
+      setFiles((prev) => patchFileNode(prev, id, { expanded: false }));
+      return;
+    }
+    if ((f.children || []).length) {
+      setFiles((prev) => patchFileNode(prev, id, { expanded: true }));
+      return;
+    }
+    await loadFileChildren(sock, project, f, loadGenRef.current);
   }
 
   function handlePush(msg: Record<string, unknown>) {
@@ -290,6 +462,10 @@ export function App({ token }: { token: string }) {
   }
 
   useEffect(() => {
+    metaLoadedRef.current = false;
+  }, [project]);
+
+  useEffect(() => {
     const sock = socketRef.current;
     if (!sock || conn !== "live" || !project) return;
     void loadProject(sock, project, true);
@@ -310,16 +486,27 @@ export function App({ token }: { token: string }) {
   useEffect(() => {
     const el = railRef.current;
     if (!el) return;
-    const update = () => setBucketCount(bucketCountFromHeight(el.clientHeight));
+    let timer = 0;
+    const update = () => {
+      window.clearTimeout(timer);
+      timer = window.setTimeout(() => {
+        const next = bucketCountFromHeight(el.clientHeight);
+        setBucketCount((prev) => (prev === next ? prev : next));
+      }, 200);
+    };
     update();
     const ro = typeof ResizeObserver !== "undefined" ? new ResizeObserver(update) : null;
     ro?.observe(el);
     window.addEventListener("resize", update);
     return () => {
+      window.clearTimeout(timer);
       ro?.disconnect();
       window.removeEventListener("resize", update);
     };
   }, []);
+
+  eventsRef.current = events;
+  nextCursorRef.current = nextCursor;
 
   useEffect(() => {
     const el = timelineRef.current;
@@ -327,16 +514,14 @@ export function App({ token }: { token: string }) {
     let raf = 0;
     const update = () => {
       raf = 0;
-      const win = windowFromScroll(el.scrollTop, el.clientHeight, el.scrollHeight, range);
-      setWinStyle(windowStyle(win, range));
+      const mapRange = railRangeRef.current;
+      const win = visibleWindowFromTimeline(el, mapRange);
+      setVisibleWin(win);
       atTopRef.current = el.scrollTop < 40;
-      const visible = events.find((e) => {
-        const t = e.ts ? Date.parse(e.ts) : 0;
-        return t <= win.topMs && t >= win.bottomMs;
-      });
-      setRailDayTop(visible?.ts ? new Date(visible.ts).toLocaleDateString(undefined, { weekday: "short", day: "numeric", timeZone: tz }) : "");
-      const oldest = events[events.length - 1];
-      setRailDayBottom(oldest?.ts ? new Date(oldest.ts).toLocaleDateString(undefined, { weekday: "short", day: "numeric", timeZone: tz }) : "");
+      const track = railTrackRef.current;
+      if (track && !scrubbingRef.current) {
+        scrollRailToWindow(track, win, mapRange);
+      }
     };
     const onScroll = () => {
       if (!raf) raf = requestAnimationFrame(update);
@@ -352,7 +537,16 @@ export function App({ token }: { token: string }) {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && selected) {
+      if (e.key !== "Escape") return;
+      if (filePreview) {
+        setFilePreview(null);
+        return;
+      }
+      if (lightbox != null) {
+        setLightbox(null);
+        return;
+      }
+      if (selected) {
         setSelected(null);
         setDetail(null);
         focusCardRef.current?.focus();
@@ -360,7 +554,7 @@ export function App({ token }: { token: string }) {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [selected]);
+  }, [selected, lightbox, filePreview]);
 
   async function loadMore() {
     const sock = socketRef.current;
@@ -396,7 +590,7 @@ export function App({ token }: { token: string }) {
       const d = await socketRef.current?.request("event", { id: row.id });
       setDetail((d as Record<string, unknown>) || row);
     } catch {
-      setDetail(row);
+      setDetail(row as unknown as Record<string, unknown>);
     }
   }
 
@@ -404,16 +598,38 @@ export function App({ token }: { token: string }) {
     const el = timelineRef.current;
     const sock = socketRef.current;
     if (!el || !sock || !project) return;
-    const ms = range.endMs - frac * (range.endMs - range.startMs);
+    const mapRange = railRangeRef.current;
+    const ms = railFractionToTime(frac, mapRange);
+    scrubbingRef.current = true;
     preserveScrollRef.current = false;
-    // Load pages until an event near that time exists or no next page.
+    // Load older pages until we have an event at or before this time.
     let guard = 0;
     while (guard++ < 40) {
-      const hit = events.some((e) => e.ts && Math.abs(Date.parse(e.ts) - ms) < (range.endMs - range.startMs) / 20);
-      if (hit || !nextCursor) break;
+      const list = eventsRef.current;
+      const oldest = list[list.length - 1];
+      const oldestMs = oldest?.ts ? Date.parse(oldest.ts) : NaN;
+      if (!nextCursorRef.current || (Number.isFinite(oldestMs) && oldestMs <= ms)) break;
       await loadMore();
     }
-    el.scrollTop = scrollTopForTime(ms, el.clientHeight, el.scrollHeight, range);
+    if (!scrollTimelineToTime(el, ms)) {
+      // Empty range: still move the orange window so the rail feedback matches.
+      const pad = Math.max(60_000, (mapRange.endMs - mapRange.startMs) * 0.05);
+      setVisibleWin({
+        topMs: Math.min(mapRange.endMs, ms + pad / 2),
+        bottomMs: Math.max(mapRange.startMs, ms - pad / 2),
+      });
+    }
+    requestAnimationFrame(() => {
+      scrubbingRef.current = false;
+      const win = visibleWindowFromTimeline(el, railRangeRef.current);
+      setVisibleWin(win);
+    });
+  }
+
+  function scrubFromPointer(clientY: number) {
+    const track = railTrackRef.current;
+    if (!track) return;
+    void scrubTo(railPointerFraction(track, clientY));
   }
 
   function choosePreset(id: string) {
@@ -459,8 +675,65 @@ export function App({ token }: { token: string }) {
 
   const connDot = conn === "live" ? c.teal : conn === "reconnecting" ? c.attention : c.problem;
   const presetLabel = rangeState.custom ? rangeState.label : PRESETS.find((p) => p[0] === rangeState.preset)?.[1] || rangeState.preset;
-  const imageFiles = files.filter((f) => (f.bucket || f.kind || "").includes("image") && f.url);
-  const shownFiles = files.filter((f) => fileFilter === "all" || f.bucket === fileFilter || (fileFilter === "image" && (f.kind || "").includes("image")));
+  const fileMatches = (f: FileRow) =>
+    fileFilter === "all" || f.bucket === fileFilter || (fileFilter === "image" && (f.kind || "").includes("image"));
+  function collectImages(rows: FileRow[]): FileRow[] {
+    const out: FileRow[] = [];
+    const walk = (f: FileRow) => {
+      if ((f.bucket || f.kind || "").includes("image") && f.url) out.push(f);
+      for (const child of f.children || []) walk(child);
+    };
+    rows.forEach(walk);
+    return out;
+  }
+  function flattenFileTree(nodes: FileRow[], depth = 0): { file: FileRow; depth: number }[] {
+    const out: { file: FileRow; depth: number }[] = [];
+    for (const f of nodes) {
+      const childRows = f.expanded ? flattenFileTree(f.children || [], depth + 1) : [];
+      if (fileFilter === "all" || fileMatches(f) || childRows.length || f.loading || f.expandable) {
+        out.push({ file: f, depth });
+        out.push(...childRows);
+      }
+    }
+    return out;
+  }
+  const imageFiles = collectImages(files);
+  const shownFileTree = flattenFileTree(files);
+
+  async function openListedFile(f: FileRow) {
+    if (f.url && (f.bucket === "image" || (f.kind || "").includes("image"))) {
+      const idx = imageFiles.findIndex((img) => img.url === f.url);
+      setLightbox(idx >= 0 ? idx : 0);
+      return;
+    }
+    if (f.url) {
+      try {
+        const res = await fetch(f.url);
+        if (!res.ok) throw new Error("Could not read that file.");
+        let body = await res.text();
+        if ((f.name || "").toLowerCase().endsWith(".json") || (f.kind || "").includes("json")) {
+          try {
+            body = JSON.stringify(JSON.parse(body), null, 2);
+          } catch {
+            // Keep the raw text when it is not valid JSON.
+          }
+        }
+        setFilePreview({ name: f.name, url: f.url, body });
+      } catch (err) {
+        setFilePreview({
+          name: f.name,
+          url: f.url,
+          body: "",
+          error: err instanceof Error ? err.message : "Could not read that file.",
+        });
+      }
+      return;
+    }
+    if (f.messages?.[0]?.id) {
+      const hit = events.find((e) => e.id === f.messages?.[0]?.id);
+      if (hit) void openEvent(hit);
+    }
+  }
 
   if (!token) {
     return (
@@ -486,7 +759,18 @@ export function App({ token }: { token: string }) {
     );
   }
 
-  const buckets = histogram.buckets || [];
+  const railDayTop = new Date(visibleWin.topMs || railRange.endMs).toLocaleDateString(undefined, {
+    weekday: "short",
+    day: "numeric",
+    timeZone: tz,
+  });
+  const railDayBottom = new Date(visibleWin.bottomMs || railRange.startMs).toLocaleDateString(undefined, {
+    weekday: "short",
+    day: "numeric",
+    timeZone: tz,
+  });
+  const rawText = formatRawJson(detail);
+  const canShowRaw = Boolean(rawText);
 
   return (
     <div class="app">
@@ -494,6 +778,11 @@ export function App({ token }: { token: string }) {
         <div class="brand">
           <RobotMark c={c} />
           <span>Agent Co-op</span>
+          {coopVersion && (
+            <span class="version" title={"Installed Agent Co-op " + coopVersion}>
+              {coopVersion}
+            </span>
+          )}
         </div>
         <label class="btn" aria-label="Choose project">
           <span class="dot" style={{ background: c.driver, borderRadius: 2 }} />
@@ -601,7 +890,7 @@ export function App({ token }: { token: string }) {
             return (
               <button type="button" class={"card" + (on ? " on" : "")} onClick={() => setFilterActor(on ? "" : a.name)}>
                 <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                  <span style={{ width: 28, height: 28, borderRadius: agentRadius(a.name, a.role), background: color, color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: 12 }}>{(a.name || "?").slice(0, 1).toUpperCase()}</span>
+                  <AgentIcon tool={a.tool} name={a.name} color={color} size={28} />
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontWeight: 600 }}>{a.display || a.name}</div>
                     <div style={{ fontSize: 12, color: c.muted }}>{a.role}</div>
@@ -639,26 +928,52 @@ export function App({ token }: { token: string }) {
                   <button type="button" class={"chip" + (fileFilter === id ? " attention" : "")} onClick={() => setFileFilter(id)}>{id === "all" ? "All" : id[0].toUpperCase() + id.slice(1) + (id === "image" ? "s" : id === "document" ? "s" : "")}</button>
                 ))}
               </div>
-              <div class="file-grid">
-                {shownFiles.map((f) => (
-                  <button type="button" class="file-tile" onClick={() => {
-                    if (f.url && (f.bucket === "image" || (f.kind || "").includes("image"))) {
-                      const idx = imageFiles.findIndex((img) => img.url === f.url);
-                      setLightbox(idx >= 0 ? idx : 0);
-                    } else if (f.messages?.[0]?.id) {
-                      const hit = events.find((e) => e.id === f.messages?.[0]?.id);
-                      if (hit) void openEvent(hit);
-                    }
-                  }}>
-                    <div class="file-thumb">
-                      {f.url && (f.bucket === "image" || (f.kind || "").includes("image")) ? <img src={f.url} alt="" /> : <KindIcon name="file" color={c.muted} />}
-                    </div>
-                    <div style={{ padding: 8 }}>
-                      <div style={{ fontSize: 12, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{f.name}</div>
-                      <div style={{ fontSize: 11, color: c.muted }}>{f.kind || f.source} · {f.size || f.meta || f.note}</div>
-                      <div style={{ fontSize: 11, color: c.muted }}>{displayActor(f.actor)}{(f.messages || []).length > 1 ? " · " + (f.messages || []).length + " messages" : ""}</div>
-                    </div>
-                  </button>
+              {loadingFiles && (
+                <div class="loading-inline" role="status">
+                  <span class="spinner" aria-hidden="true" />
+                  Loading files…
+                </div>
+              )}
+              <div class="file-tree" role="list">
+                {shownFileTree.map(({ file: f, depth }) => (
+                  <div
+                    class={"file-row" + (depth ? " child" : "") + (f.loading ? " loading" : "")}
+                    role="listitem"
+                    style={{ marginLeft: depth ? depth * 14 : 0 }}
+                  >
+                    {f.expandable ? (
+                      <button
+                        type="button"
+                        class="file-twist"
+                        aria-label={f.expanded ? "Hide linked files" : "Show linked files"}
+                        aria-expanded={!!f.expanded}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          void toggleFileExpand(f);
+                        }}
+                      >
+                        {f.loading ? <span class="spinner" aria-hidden="true" /> : f.expanded ? "▾" : "▸"}
+                      </button>
+                    ) : (
+                      <span class="file-twist spacer" aria-hidden="true" />
+                    )}
+                    <button type="button" class="file-open" onClick={() => void openListedFile(f)}>
+                      <div class="file-thumb small">
+                        {f.url && (f.bucket === "image" || (f.kind || "").includes("image")) ? <img src={f.url} alt="" /> : <KindIcon name="file" color={c.muted} />}
+                      </div>
+                      <div class="file-meta">
+                        <div class="file-name">{f.caption || f.name}</div>
+                        <div class="file-sub">{f.caption ? f.name + " · " : ""}{f.kind || f.source} · {f.size || f.meta || f.note || f.description || ""}</div>
+                        <div class="file-sub">
+                          {f.loading
+                            ? "Looking for linked files…"
+                            : displayActor(f.actor)
+                              + ((f.messages || []).length > 1 ? " · " + (f.messages || []).length + " messages" : "")
+                              + ((f.children || []).length ? " · " + (f.children || []).length + " linked" : f.expandable && f.expanded ? " · no linked files" : f.expandable ? " · may have linked files" : "")}
+                        </div>
+                      </div>
+                    </button>
+                  </div>
                 ))}
               </div>
             </div>
@@ -666,6 +981,12 @@ export function App({ token }: { token: string }) {
         </aside>
 
         <main class="timeline" ref={timelineRef as never} aria-label="Board timeline">
+          {loading && (
+            <div class="loading-banner" role="status">
+              <span class="spinner" aria-hidden="true" />
+              Loading this range…
+            </div>
+          )}
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, padding: "8px 0 4px" }}>
             <div style={{ fontSize: 13, color: c.muted }}>{eventCountLabel(eventTotal)} in this range. Newest first.</div>
             {filterActor && <button type="button" class="chip" onClick={() => setFilterActor("")}>Showing {filterActor} only. Show everyone</button>}
@@ -705,80 +1026,115 @@ export function App({ token }: { token: string }) {
           aria-label="Time overview"
           tabIndex={0}
           onKeyDown={(e) => {
-            if (e.key === "ArrowDown") void scrubTo(Math.min(1, timeToRailFraction(range.startMs + 1, range) + 0.04));
-            if (e.key === "ArrowUp") void scrubTo(Math.max(0, timeToRailFraction(range.endMs - 1, range) - 0.04));
-          }}
-          onClick={(e) => {
-            const rect = (e.currentTarget as HTMLElement).querySelector(".rail-track")?.getBoundingClientRect();
-            if (!rect) return;
-            const frac = (e.clientY - rect.top) / Math.max(1, rect.height);
-            void scrubTo(frac);
+            if (e.key === "ArrowDown") void scrubTo(Math.min(1, timeToRailFraction(visibleWin.bottomMs, railRange) + 0.04));
+            if (e.key === "ArrowUp") void scrubTo(Math.max(0, timeToRailFraction(visibleWin.topMs, railRange) - 0.04));
           }}
         >
-          <div style={{ fontSize: 11, fontWeight: 650, color: c.muted, marginBottom: 8, textAlign: "center" }}>{railDayTop}</div>
-          <div class="rail-track">
+          <div class="rail-cap" title="Newest day in view">{railDayTop}</div>
+          <div
+            class="rail-track"
+            ref={railTrackRef as never}
+            onPointerDown={(e) => {
+              if (e.button !== 0) return;
+              const target = e.currentTarget as HTMLDivElement;
+              target.setPointerCapture(e.pointerId);
+              scrubFromPointer(e.clientY);
+            }}
+            onPointerMove={(e) => {
+              if (!e.currentTarget.hasPointerCapture(e.pointerId)) return;
+              scrubFromPointer(e.clientY);
+            }}
+            onPointerUp={(e) => {
+              if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+                e.currentTarget.releasePointerCapture(e.pointerId);
+              }
+            }}
+          >
+            <span class="rail-axis" aria-hidden="true" />
             <span class="rail-window" style={winStyle} aria-label="Shown in the timeline" />
             {buckets.map((b, i) => {
               const counts = b.actors || b.counts || {};
-              const total = Object.values(counts).reduce((a, n) => a + n, 0) || 1;
-              const label = b.start ? new Date(b.start).getHours().toString().padStart(2, "0") : "";
+              const total = Object.values(counts).reduce((a, n) => a + n, 0);
+              const when = b.start ? new Date(b.start) : null;
+              const hour = when ? when.toLocaleTimeString(undefined, { hour: "2-digit", hour12: false, timeZone: tz }).slice(0, 2) : "";
+              const day = when
+                ? when.toLocaleDateString(undefined, { weekday: "short", day: "numeric", timeZone: tz })
+                : "";
+              const prev = i > 0 && buckets[i - 1].start ? new Date(buckets[i - 1].start as string) : null;
+              const prevDay = prev
+                ? prev.toLocaleDateString(undefined, { weekday: "short", day: "numeric", timeZone: tz })
+                : "";
+              const showDay = Boolean(day) && (i === 0 || day !== prevDay);
+              const showHour =
+                Boolean(when) &&
+                (i === 0 || showDay || when!.getMinutes() === 0 || i % Math.max(1, Math.floor(buckets.length / 12)) === 0);
               return (
-                <div style={{ position: "relative", display: "flex", alignItems: "center", gap: 4, height: 25 }}>
-                  <span class={"mono hour"} style={{ width: 18, fontSize: 10, textAlign: "right", color: c.muted }}>{i % 1 === 0 ? label : ""}</span>
-                  <span style={{ flex: 1, display: "flex", height: 12, borderRadius: 3, overflow: "hidden", background: c.surface2 }}>
-                    {Object.entries(counts).map(([actor, n]) => (
-                      <span style={{ width: (100 * n) / total + "%", background: actorTone(c, actor) }} />
-                    ))}
+                <div class={"rail-row" + (showDay && i > 0 ? " day-break" : "")} key={(b.start || "") + "-" + i}>
+                  {showDay && <span class="rail-day">{day}</span>}
+                  <span class={"mono hour"}>{showHour ? hour : ""}</span>
+                  <span class={"rail-blips" + (total === 0 ? " empty" : "")}>
+                    {total > 0
+                      ? Object.entries(counts).map(([actor, n]) => (
+                          <span style={{ width: Math.max(18, (100 * n) / total) + "%", background: actorTone(c, actor) }} />
+                        ))
+                      : <span class="rail-tick" />}
                   </span>
-                  <span style={{ width: 6, height: 6, borderRadius: "50%", background: (b.markers || []).length ? c.problem : "transparent" }} />
+                  <span class={"rail-mark" + ((b.markers || []).length ? " on" : "")} />
                 </div>
               );
             })}
           </div>
-          <div style={{ fontSize: 11, fontWeight: 650, color: c.muted, marginTop: 8, textAlign: "center" }}>{railDayBottom}</div>
+          <div class="rail-cap" title="Oldest day in view">{railDayBottom}</div>
         </nav>
 
         {selected && detail && (
           <section class="drawer" aria-label="Event details">
-            <div class="drawer-scroll">
-              <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 12, color: c.muted }} title={String(detail.ts || selected.ts || "") + " UTC"}>
-                    {drawerTimeLabel(String(detail.ts || selected.ts || ""), tz)}
-                  </div>
-                  <h2 style={{ margin: "4px 0 0", fontSize: 18, lineHeight: 1.3 }}>{String(detail.title || selected.title)}</h2>
+            <div class="drawer-head">
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 12, color: c.muted }} title={String(detail.ts || selected.ts || "") + " UTC"}>
+                  {drawerTimeLabel(String(detail.ts || selected.ts || ""), tz)}
                 </div>
-                <button type="button" class="btn icon ghost" aria-label="Close details" onClick={() => { setSelected(null); setDetail(null); focusCardRef.current?.focus(); }}>✕</button>
+                <h2 style={{ margin: "4px 0 0", fontSize: 18, lineHeight: 1.3 }}>{String(detail.title || selected.title)}</h2>
               </div>
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-                <span style={{ fontSize: 12, padding: "3px 10px", borderRadius: 999, background: dark ? "rgba(255,255,255,0.06)" : "rgba(30,27,75,0.06)", color: actorTone(c, String(detail.actor || "")), fontWeight: 600 }}>
-                  {displayActor(String(detail.actor || ""))}
-                </span>
-                <span style={{ fontSize: 12, padding: "3px 10px", borderRadius: 999, border: "1px solid " + c.border, color: c.muted }}>{kindLabel(String(detail.kind || ""))}</span>
-                <span class="mono" style={{ fontSize: 12, padding: "3px 10px", borderRadius: 999, border: "1px solid " + c.border, color: c.muted }}>{String(detail.id || selected.id)}</span>
+              <button type="button" class="btn icon ghost" aria-label="Close details" onClick={() => { setSelected(null); setDetail(null); setRawOpen(false); focusCardRef.current?.focus(); }}>✕</button>
+            </div>
+            {rawOpen && canShowRaw ? (
+              <pre class="drawer-raw mono" aria-label="Raw JSON">{rawText}</pre>
+            ) : (
+              <div class="drawer-scroll">
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                  <span style={{ fontSize: 12, padding: "3px 10px", borderRadius: 999, background: dark ? "rgba(255,255,255,0.06)" : "rgba(30,27,75,0.06)", color: actorTone(c, String(detail.actor || "")), fontWeight: 600 }}>
+                    {displayActor(String(detail.actor || ""))}
+                  </span>
+                  <span style={{ fontSize: 12, padding: "3px 10px", borderRadius: 999, border: "1px solid " + c.border, color: c.muted }}>{kindLabel(String(detail.kind || ""))}</span>
+                  <span class="mono" style={{ fontSize: 12, padding: "3px 10px", borderRadius: 999, border: "1px solid " + c.border, color: c.muted }}>{String(detail.id || selected.id)}</span>
+                </div>
+                <div style={{ fontSize: 14, lineHeight: 1.6, whiteSpace: "pre-line" }}>{String(detail.body || detail.summary || "")}</div>
+                <div>
+                  <div style={{ fontSize: 12, fontWeight: 650, color: c.muted, marginBottom: 8 }}>Thread</div>
+                  <ol style={{ listStyle: "none", margin: 0, padding: 0, display: "flex", flexDirection: "column", gap: 8 }}>
+                    {((detail.thread as { ts?: string; actor?: string; title?: string; summary?: string }[]) || []).map((th) => (
+                      <li style={{ display: "flex", gap: 10, fontSize: 13 }}>
+                        <span class="mono" style={{ width: 44, flex: "0 0 44px", color: c.muted }}>{timeLabel(th.ts, tz)}</span>
+                        <span style={{ fontWeight: 600, color: actorTone(c, String(th.actor || "")) }}>{displayActor(th.actor)}</span>
+                        <span style={{ color: c.muted }}>{th.title || th.summary}</span>
+                      </li>
+                    ))}
+                  </ol>
+                </div>
               </div>
-              <div style={{ fontSize: 14, lineHeight: 1.6, whiteSpace: "pre-line" }}>{String(detail.body || detail.summary || "")}</div>
-              <div>
-                <div style={{ fontSize: 12, fontWeight: 650, color: c.muted, marginBottom: 8 }}>Thread</div>
-                <ol style={{ listStyle: "none", margin: 0, padding: 0, display: "flex", flexDirection: "column", gap: 8 }}>
-                  {((detail.thread as { ts?: string; actor?: string; title?: string; summary?: string }[]) || []).map((th) => (
-                    <li style={{ display: "flex", gap: 10, fontSize: 13 }}>
-                      <span class="mono" style={{ width: 44, flex: "0 0 44px", color: c.muted }}>{timeLabel(th.ts, tz)}</span>
-                      <span style={{ fontWeight: 600, color: actorTone(c, String(th.actor || "")) }}>{displayActor(th.actor)}</span>
-                      <span style={{ color: c.muted }}>{th.title || th.summary}</span>
-                    </li>
-                  ))}
-                </ol>
-              </div>
-              <div style={{ display: "flex", gap: 8, marginTop: "auto" }}>
-                <button type="button" class="btn ghost" onClick={() => void navigator.clipboard.writeText(String(detail.id || selected.id))}>Copy id</button>
-                <button type="button" class="btn ghost" onClick={() => setRawOpen((v) => !v)}>{rawOpen ? "Hide raw JSON" : "Show raw JSON"}</button>
-              </div>
-              {rawOpen && (
-                <pre class="mono" style={{ fontSize: 11, overflow: "auto", background: c.surface2, padding: 12, borderRadius: 8, border: "1px solid " + c.border }}>
-                  {JSON.stringify(detail, null, 2)}
-                </pre>
-              )}
+            )}
+            <div class="drawer-actions">
+              <button type="button" class="btn ghost" onClick={() => void navigator.clipboard.writeText(String(detail.id || selected.id))}>Copy id</button>
+              <button
+                type="button"
+                class="btn ghost"
+                disabled={!canShowRaw}
+                title={canShowRaw ? undefined : "No JSON for this event"}
+                onClick={() => setRawOpen((v) => !v)}
+              >
+                {rawOpen && canShowRaw ? "Hide raw JSON" : "Show raw JSON"}
+              </button>
             </div>
           </section>
         )}
@@ -792,11 +1148,55 @@ export function App({ token }: { token: string }) {
       </div>
 
       {lightbox != null && imageFiles[lightbox] && (
-        <div class="lightbox" role="dialog" aria-label="Image">
-          <button type="button" class="btn" onClick={() => setLightbox((lightbox + imageFiles.length - 1) % imageFiles.length)}>Prev</button>
-          <img src={imageFiles[lightbox].url} alt={imageFiles[lightbox].name} />
-          <button type="button" class="btn" onClick={() => setLightbox((lightbox + 1) % imageFiles.length)}>Next</button>
-          <button type="button" class="btn" onClick={() => setLightbox(null)}>Close</button>
+        <div
+          class="lightbox"
+          role="dialog"
+          aria-label="Image"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setLightbox(null);
+          }}
+        >
+          <div class="lightbox-frame">
+            <div class="lightbox-toolbar">
+              <button type="button" class="btn" onClick={() => setLightbox((lightbox + imageFiles.length - 1) % imageFiles.length)}>Prev</button>
+              <div class="lightbox-caption">
+                <div class="lightbox-title">{imageFiles[lightbox].caption || imageFiles[lightbox].name}</div>
+                {imageFiles[lightbox].caption ? <div class="lightbox-file mono">{imageFiles[lightbox].name}</div> : null}
+              </div>
+              <button type="button" class="btn" onClick={() => setLightbox((lightbox + 1) % imageFiles.length)}>Next</button>
+              <button type="button" class="btn" aria-label="Close image" onClick={() => setLightbox(null)}>Close</button>
+            </div>
+            <img
+              src={imageFiles[lightbox].url}
+              alt={imageFiles[lightbox].caption || imageFiles[lightbox].name}
+            />
+          </div>
+        </div>
+      )}
+
+      {filePreview && (
+        <div
+          class="file-preview"
+          role="dialog"
+          aria-label={"File " + filePreview.name}
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setFilePreview(null);
+          }}
+        >
+          <div class="file-preview-panel">
+            <div class="file-preview-head">
+              <div>
+                <div style={{ fontWeight: 650 }}>{filePreview.name}</div>
+                <div style={{ fontSize: 12, color: c.muted }}>File contents</div>
+              </div>
+              <button type="button" class="btn icon ghost" aria-label="Close file" onClick={() => setFilePreview(null)}>✕</button>
+            </div>
+            {filePreview.error ? (
+              <div class="file-preview-error">{filePreview.error}</div>
+            ) : (
+              <pre class="file-preview-body mono">{filePreview.body}</pre>
+            )}
+          </div>
         </div>
       )}
 
@@ -843,7 +1243,7 @@ function EventCard({
   const summary = progress ? "" : ellipsisWords(event.summary || "");
   const pct = progress?.percent ?? (Number(event.percent || 0) || null);
   return (
-    <li>
+    <li data-event-ts={event.ts || ""}>
       <div style={{ display: "flex", gap: 10, alignItems: "stretch" }}>
         <div class="mono" style={{ width: 48, flex: "0 0 48px", paddingTop: 14, textAlign: "right", fontSize: 12, color: c.muted }}>
           {timeLabel(event.ts, tz)}

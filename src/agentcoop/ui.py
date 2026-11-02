@@ -119,6 +119,12 @@ class ViewerHandler(BaseHTTPRequestHandler):
                 return
             self._shared_file(path)
             return
+        if path == "/local-file":
+            if not self._local_file_allowed():
+                self._send(403, b"This page needs the token from the agentcoop ui command.\n")
+                return
+            self._local_file()
+            return
         if path.startswith("/assets/") or path.startswith("/images/"):
             if not (self._allowed() or self._phone_session()):
                 self._send(403, b"This page needs the token from the agentcoop ui command.\n")
@@ -432,6 +438,44 @@ p{color:#A9A6C2}
         self.end_headers()
         self.wfile.write(body)
 
+    def _local_file_allowed(self) -> bool:
+        """Desktop loopback may open board-local files. Phone mode may not."""
+        if self.server.host not in ("127.0.0.1", "::1", "localhost"):
+            return False
+        if self._phone_session() is not None:
+            return False
+        return self._allowed() or self._file_allowed()
+
+    def _local_file(self) -> None:
+        """Serve one readable file under the board or project folder on this computer."""
+        query = parse_qs(urlparse(self.path).query)
+        raw = (query.get("p") or [""])[0]
+        project = (query.get("project") or [""])[0]
+        if not raw or not project:
+            self._send(404, b"Not found.\n")
+            return
+        target = Path(raw)
+        if target.is_symlink():
+            self._send(403, b"That file is not available.\n")
+            return
+        try:
+            real = target.resolve()
+        except OSError:
+            self._send(404, b"Not found.\n")
+            return
+        if not real.is_file() or real.name.startswith("."):
+            self._send(404, b"Not found.\n")
+            return
+        if not _path_under_project(self.server.board, project, real):
+            self._send(403, b"That file is not available.\n")
+            return
+        from agentcoop.share import is_program
+
+        if is_program(real):
+            self._send(403, b"That file is a program and is not opened here.\n")
+            return
+        self._write_file_bytes(real)
+
     def _shared_file(self, path: str) -> None:
         """Serve one file from a project's shared folder, and nowhere else."""
         parts = [part for part in path.split("/") if part and part != "."]
@@ -462,16 +506,19 @@ p{color:#A9A6C2}
         if not real.is_file() or real.name.startswith(".") or real.name in ("index.json", "pending.json"):
             self._send(404, b"Not found.\n")
             return
-        import mimetypes
-
-        suffix = real.suffix.lower()
-        download = suffix in (".svg", ".html", ".htm")
         from agentcoop.share import is_program, load_pending
 
         held = {str(item.get("name") or "") for item in load_pending(self.server.board, project)}
         if real.name in held or is_program(real):
             self._send(403, b"That file is held.\n")
             return
+        self._write_file_bytes(real)
+
+    def _write_file_bytes(self, real: Path) -> None:
+        import mimetypes
+
+        suffix = real.suffix.lower()
+        download = suffix in (".svg", ".html", ".htm")
         media = "application/octet-stream" if download else (mimetypes.guess_type(real.name)[0] or "application/octet-stream")
         try:
             data = real.read_bytes()
@@ -630,9 +677,437 @@ def files_view(
     *,
     start: str | None = None,
     end: str | None = None,
+    local_open: bool = True,
+    expand_refs: bool = False,
 ) -> list[dict]:
-    """Return every file tied to project events in the range, newest first."""
-    return _project_file_rows(board, project, token, start=start, end=end)
+    """Return every file tied to project events in the range, newest first.
+
+    When local_open is True (desktop loopback), readable board and project files
+    get a /local-file URL so the person can open them. Phone mode keeps shared-only.
+    Linked paths are not expanded here by default; the viewer loads each tree
+    level with file_children so long catalogs stay responsive.
+    """
+    return _project_file_rows(
+        board,
+        project,
+        token,
+        start=start,
+        end=end,
+        local_open=local_open,
+        expand_refs=expand_refs,
+    )
+
+
+def file_children(
+    board: Path,
+    project: str,
+    token: str,
+    local_path: str,
+    *,
+    local_open: bool = True,
+    parent_id: str = "",
+    parent_name: str = "",
+) -> list[dict]:
+    """Return one level of project files named inside local_path."""
+    disk = Path(local_path)
+    try:
+        if not disk.is_file() or disk.is_symlink():
+            return []
+        real = disk.resolve()
+    except OSError:
+        return []
+    if not _path_under_project(board, project, real):
+        return []
+    workspace = _project_workspace(board, project)
+    if workspace is None:
+        return []
+    from agentcoop.paths import project_dir
+    from agentcoop.share import human_size, is_program
+
+    allowed_roots = [project_dir(board, project), workspace]
+    return _children_one_level(
+        parent_disk=real,
+        parent_key=parent_id or ("file:" + real.name.lower()),
+        parent_name=parent_name or real.name,
+        parent_ts="",
+        parent_actor="",
+        parent_messages=[],
+        workspace=workspace,
+        allowed_roots=allowed_roots,
+        token=token,
+        project=project,
+        local_open=local_open,
+        exists_cache={},
+        is_program=is_program,
+        human_size=human_size,
+    )
+
+
+def _project_workspace(board: Path, project: str) -> Path | None:
+    """Return the project's working folder from projects.json when it exists."""
+    try:
+        data, _ok = read_projects_checked(board)
+        entry = (data.get("projects") or {}).get(project) or {}
+        raw = entry.get("path") if isinstance(entry, dict) else None
+        if not raw:
+            return None
+        path = Path(str(raw))
+        return path.resolve() if path.exists() else path
+    except (OSError, CoopError, TypeError, ValueError):
+        return None
+
+
+def _path_under_roots(real: Path, roots: list[Path]) -> bool:
+    """Return True when real sits under one of the allowed roots."""
+    from agentcoop.paths import is_same_or_inside
+
+    for root in roots:
+        try:
+            root_real = root.resolve()
+        except OSError:
+            continue
+        if is_same_or_inside(real, root_real):
+            return True
+    return False
+
+
+def _path_under_project(board: Path, project: str, real: Path) -> bool:
+    """Return True when real sits under the board project folder or the project path."""
+    from agentcoop.paths import project_dir
+
+    roots = [project_dir(board, project)]
+    workspace = _project_workspace(board, project)
+    if workspace is not None:
+        roots.append(workspace)
+    return _path_under_roots(real, roots)
+
+
+_SAFE_OPEN_SUFFIXES = {
+    ".png",
+    ".jpg",
+    ".jpeg",
+    ".gif",
+    ".webp",
+    ".svg",
+    ".md",
+    ".markdown",
+    ".txt",
+    ".pdf",
+    ".json",
+    ".csv",
+    ".html",
+    ".htm",
+    ".log",
+    ".yml",
+    ".yaml",
+}
+
+
+_TEXT_REF_SUFFIXES = {
+    ".md",
+    ".markdown",
+    ".txt",
+    ".rst",
+    ".csv",
+    ".json",
+    ".yml",
+    ".yaml",
+    ".log",
+    ".html",
+    ".htm",
+}
+_REF_FILE_SUFFIXES = {
+    ".png",
+    ".jpg",
+    ".jpeg",
+    ".gif",
+    ".webp",
+    ".svg",
+    ".md",
+    ".txt",
+    ".pdf",
+    ".json",
+    ".html",
+    ".htm",
+    ".csv",
+}
+
+
+def _kind_from_name(name: str) -> str:
+    suffix = Path(name).suffix.lower().lstrip(".")
+    if suffix in ("png", "jpg", "jpeg", "gif", "webp", "svg"):
+        return "image"
+    if suffix in ("md", "markdown", "txt", "rst", "pdf", "html", "htm", "csv"):
+        return "document"
+    if suffix == "json":
+        return "document"
+    return "file"
+
+
+def _normalize_ref_token(token: str) -> str | None:
+    """Return a cleaned path token, or None when it is not a file reference."""
+    cleaned = (token or "").strip().strip("`\"'").rstrip(".,);]")
+    cleaned = cleaned.replace("\\", "/")
+    if not cleaned:
+        return None
+    if "://" in cleaned or cleaned.startswith("#"):
+        return None
+    parts = [part for part in cleaned.split("/") if part]
+    if not parts or any(part == ".." for part in parts):
+        return None
+    suffix = Path(cleaned).suffix.lower()
+    if suffix and suffix not in _REF_FILE_SUFFIXES:
+        return None
+    absolute = len(cleaned) > 2 and cleaned[1] == ":"
+    if "/" not in cleaned and not absolute:
+        if suffix not in _REF_FILE_SUFFIXES:
+            return None
+    return cleaned
+
+
+_BARE_FILE_NAME = (
+    r"[\w][\w.+=\-]*\.(?:"
+    + "|".join(sorted(s.lstrip(".") for s in _REF_FILE_SUFFIXES))
+    + r")"
+)
+_REL_FILE_PATH = (
+    r"(?:data|docs|src|tests|design|screenshots?|assets|runtime|board)"
+    r"(?:/[\w.+=\-]+)+\.[\w]{1,8}"
+)
+_FILE_TOKEN = r"(?:`([^`\n]{3,260})`|(" + _REL_FILE_PATH + r")|(" + _BARE_FILE_NAME + r"))"
+_CAPTION_KEYS = ("line", "label", "title", "caption", "text", "description", "screen", "name")
+_FILE_KEYS = ("file", "path", "image", "screenshot", "shot", "src", "href", "url")
+
+
+def _clean_caption(text: str) -> str:
+    """Return a short human label for a referenced file, or empty."""
+    cleaned = " ".join((text or "").replace("`", " ").split())
+    cleaned = cleaned.strip(" |-")
+    if len(cleaned) < 3 or len(cleaned) > 160:
+        return ""
+    if _normalize_ref_token(cleaned) is not None and Path(cleaned).suffix.lower() in _REF_FILE_SUFFIXES:
+        return ""
+    lower = cleaned.lower()
+    if lower in ("file", "path", "image", "name", "screen", "reader", "status"):
+        return ""
+    if set(cleaned) <= {"-", ":", "|", " "}:
+        return ""
+    return cleaned
+
+
+def _token_from_file_match(match: "re.Match[str]") -> str | None:
+    for group in match.groups():
+        if group:
+            return _normalize_ref_token(group)
+    return None
+
+
+def _referenced_entries_in_text(text: str) -> list[tuple[str, str]]:
+    """Return (path, caption) pairs named in helper notes and catalogs.
+
+    Markdown table rows like
+    ``| Campaign map after load… | data/runtime/…/after-load.png | … |``
+    use the cell before the file as the caption.
+    """
+    import re
+
+    found: list[tuple[str, str]] = []
+    captions: dict[str, str] = {}
+    order: list[str] = []
+
+    def add(token: str, caption: str = "") -> None:
+        cleaned = _normalize_ref_token(token)
+        if cleaned is None:
+            return
+        label = _clean_caption(caption)
+        if cleaned not in captions:
+            order.append(cleaned)
+            captions[cleaned] = label
+        elif label and not captions[cleaned]:
+            captions[cleaned] = label
+
+    # Table rows: text in the cell before a file cell becomes the caption.
+    cell_file = re.compile(_FILE_TOKEN, re.I)
+    for row in re.finditer(r"^\|(.+)\|\s*$", text or "", re.M):
+        cells = [cell.strip() for cell in row.group(1).split("|")]
+        for index, cell in enumerate(cells):
+            matches = list(cell_file.finditer(cell))
+            if not matches:
+                continue
+            caption = ""
+            for prior in range(index - 1, -1, -1):
+                caption = _clean_caption(cells[prior])
+                if caption:
+                    break
+            for match in matches:
+                token = _token_from_file_match(match)
+                if token:
+                    add(token, caption)
+
+    # Inline "caption | file" or "caption: file" outside strict tables.
+    inline = re.compile(
+        r"(?P<caption>[^|\n`]{3,160}?)\s*(?:\||:)\s*(?P<body>[^|\n]*?"
+        + _FILE_TOKEN
+        + r")",
+        re.I,
+    )
+    for match in inline.finditer(text or ""):
+        body_match = cell_file.search(match.group("body") or "")
+        if body_match is None:
+            continue
+        token = _token_from_file_match(body_match)
+        if token:
+            add(token, match.group("caption"))
+
+    for match in re.finditer(r"`([^`\n]{3,260})`", text or ""):
+        add(match.group(1))
+    for match in re.finditer(r"\[[^\]]*\]\(([^)\s]+)", text or ""):
+        add(match.group(1))
+    for match in re.finditer(r"(?<![\w:/])(" + _REL_FILE_PATH + r")", text or "", re.I):
+        add(match.group(1))
+    for match in re.finditer(r"(?<![\w./\\-])(" + _BARE_FILE_NAME + r")(?![\w./\\-])", text or "", re.I):
+        add(match.group(1))
+    for abs_path in _absolute_paths_in_text(text or ""):
+        add(abs_path)
+
+    for token in order:
+        found.append((token, captions.get(token) or ""))
+    return found
+
+
+def _referenced_paths_in_text(text: str) -> list[str]:
+    """Return relative or absolute file paths named in helper notes and catalogs."""
+    return [path for path, _caption in _referenced_entries_in_text(text)]
+
+
+def _referenced_entries_in_json_data(data: object) -> list[tuple[str, str]]:
+    """Walk JSON and collect (path, caption) pairs for project files."""
+    found: list[tuple[str, str]] = []
+    captions: dict[str, str] = {}
+    order: list[str] = []
+
+    def add(token: str, caption: str = "") -> None:
+        cleaned = _normalize_ref_token(token)
+        if cleaned is None:
+            return
+        label = _clean_caption(caption)
+        if cleaned not in captions:
+            order.append(cleaned)
+            captions[cleaned] = label
+        elif label and not captions[cleaned]:
+            captions[cleaned] = label
+
+    def caption_from_dict(node: dict) -> str:
+        for key in _CAPTION_KEYS:
+            value = node.get(key)
+            if isinstance(value, str):
+                label = _clean_caption(value)
+                if label:
+                    return label
+        return ""
+
+    def walk(node: object, key: str = "", sibling_caption: str = "") -> None:
+        if isinstance(node, str):
+            cleaned = _normalize_ref_token(node)
+            if cleaned is None:
+                return
+            has_path = "/" in cleaned or (len(cleaned) > 2 and cleaned[1] == ":")
+            has_suffix = Path(cleaned).suffix.lower() in _REF_FILE_SUFFIXES
+            if has_path or has_suffix or key.lower() in _FILE_KEYS:
+                add(cleaned, sibling_caption)
+            return
+        if isinstance(node, dict):
+            local_caption = caption_from_dict(node)
+            for child_key, value in node.items():
+                walk(value, str(child_key or ""), local_caption or sibling_caption)
+            return
+        if isinstance(node, list):
+            for value in node:
+                walk(value, key, sibling_caption)
+
+    walk(data)
+    for token in order:
+        found.append((token, captions.get(token) or ""))
+    return found
+
+
+def _referenced_paths_in_json_data(data: object) -> list[str]:
+    """Walk JSON values and collect strings that look like project files or paths."""
+    return [path for path, _caption in _referenced_entries_in_json_data(data)]
+
+
+def _referenced_entries_from_file(path: Path, text: str) -> list[tuple[str, str]]:
+    """Extract (path, caption) pairs from markdown notes or JSON manifests."""
+    if path.suffix.lower() == ".json":
+        import json
+
+        try:
+            data = json.loads(text)
+        except (TypeError, ValueError, json.JSONDecodeError):
+            data = None
+        if data is not None:
+            entries = list(_referenced_entries_in_json_data(data))
+            seen = {path for path, _caption in entries}
+            for token, caption in _referenced_entries_in_text(text):
+                if token in seen:
+                    continue
+                entries.append((token, caption))
+                seen.add(token)
+            if entries:
+                return entries
+    return _referenced_entries_in_text(text)
+
+
+def _referenced_paths_from_file(path: Path, text: str) -> list[str]:
+    """Extract referenced paths from markdown notes or JSON manifests."""
+    return [token for token, _caption in _referenced_entries_from_file(path, text)]
+
+
+def _resolve_referenced_path(
+    token: str,
+    *,
+    workspace: Path,
+    parent_dir: Path,
+    exists_cache: dict[str, bool] | None = None,
+) -> Path | None:
+    """Resolve a named path against the project folder or the parent file's folder."""
+    cache = exists_cache if exists_cache is not None else {}
+    absolute = len(token) > 2 and token[1] == ":"
+    candidates: list[Path] = []
+    if absolute or Path(token).is_absolute():
+        candidates.append(Path(token))
+    elif "/" in token:
+        candidates.append(workspace.joinpath(*token.split("/")))
+    else:
+        # Bare filenames from catalogs usually sit beside the parent or under screens.
+        name = Path(token).name
+        candidates.append(parent_dir / name)
+        candidates.append(workspace / "data" / "board" / "screens" / name)
+        candidates.append(workspace / "data" / "runtime" / name)
+        # Common campaign / labels folders next to the parent file.
+        for child in ("screens", "labels", "images", "frames"):
+            candidates.append(parent_dir / child / name)
+
+    def _exists(path: Path) -> bool:
+        key = str(path)
+        cached = cache.get(key)
+        if cached is not None:
+            return cached
+        try:
+            ok = path.is_file() and not path.is_symlink()
+        except OSError:
+            ok = False
+        cache[key] = ok
+        return ok
+
+    for candidate in candidates:
+        if not _exists(candidate):
+            continue
+        try:
+            return candidate.resolve()
+        except OSError:
+            continue
+    return None
 
 
 def _viewer_parts(relative: str) -> list[str] | None:
@@ -722,6 +1197,130 @@ def _shared_rows(board: Path, project: str, token: str) -> list[dict]:
     return _project_file_rows(board, project, token)
 
 
+def _children_one_level(
+    *,
+    parent_disk: Path,
+    parent_key: str,
+    parent_name: str,
+    parent_ts: str,
+    parent_actor: str,
+    parent_messages: list,
+    workspace: Path,
+    allowed_roots: list[Path],
+    token: str,
+    project: str,
+    local_open: bool,
+    exists_cache: dict[str, bool],
+    is_program,
+    human_size,
+) -> list[dict]:
+    """Return only the direct referenced files under one parent file."""
+    from urllib.parse import quote
+
+    if parent_disk.suffix.lower() not in _TEXT_REF_SUFFIXES:
+        return []
+    max_bytes = 1_000_000 if parent_disk.suffix.lower() == ".json" else 256_000
+    try:
+        resolved_parent = parent_disk.resolve()
+        size = parent_disk.stat().st_size
+        if size > max_bytes:
+            return []
+        text = parent_disk.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return []
+
+    def _bucket(kind: str) -> str:
+        lower = (kind or "").lower()
+        if lower.startswith("image") or lower in ("png", "jpg", "jpeg", "gif", "webp", "svg"):
+            return "image"
+        if lower in ("document", "pdf", "text", "markdown", "html", "md", "json"):
+            return "document"
+        return "other"
+
+    def _local_file_url(abs_path: Path) -> tuple[str, str]:
+        path = "/local-file"
+        url = (
+            path
+            + "?project="
+            + quote(project)
+            + "&p="
+            + quote(str(abs_path))
+            + "&t="
+            + quote(token)
+        )
+        return url, path
+
+    children: list[dict] = []
+    seen_child: set[str] = set()
+    for token_path, caption in _referenced_entries_from_file(parent_disk, text):
+        if len(children) >= 40:
+            break
+        target = _resolve_referenced_path(
+            token_path,
+            workspace=workspace,
+            parent_dir=parent_disk.parent,
+            exists_cache=exists_cache,
+        )
+        if target is None:
+            continue
+        if not _path_under_roots(target, allowed_roots):
+            continue
+        suffix = target.suffix.lower()
+        if suffix not in _SAFE_OPEN_SUFFIXES and is_program(target):
+            continue
+        try:
+            if target.resolve() == resolved_parent:
+                continue
+            child_id = str(target.resolve()).lower()
+            local_abs = str(target.resolve())
+        except OSError:
+            child_id = str(target).lower()
+            local_abs = str(target)
+        if child_id in seen_child:
+            continue
+        seen_child.add(child_id)
+        kind = _kind_from_name(target.name)
+        try:
+            child_size = target.stat().st_size
+        except OSError:
+            child_size = 0
+        served = False
+        url = ""
+        served_path = ""
+        if local_open:
+            url, served_path = _local_file_url(target)
+            served = True
+        expandable = local_open and target.suffix.lower() in _TEXT_REF_SUFFIXES
+        children.append(
+            {
+                "id": "ref:" + parent_key + ":" + target.name.lower(),
+                "name": target.name,
+                "kind": kind,
+                "bucket": _bucket(kind),
+                "media": "",
+                "bytes": child_size,
+                "size": human_size(child_size) if child_size else "",
+                "url": url if served else "",
+                "path": served_path if served else "",
+                "served": served,
+                "source": "reference",
+                "note": "Named in " + parent_name,
+                "description": token_path,
+                "caption": caption,
+                "ts": parent_ts,
+                "actor": parent_actor,
+                "messages": list(parent_messages or []),
+                "parent": parent_key,
+                "children": [],
+                "expandable": expandable,
+                "local_path": local_abs if expandable else "",
+                "expanded": False,
+            }
+        )
+    children.sort(key=lambda item: str(item.get("name") or "").lower())
+    return children
+
+
 def _project_file_rows(
     board: Path,
     project: str,
@@ -729,17 +1328,27 @@ def _project_file_rows(
     *,
     start: str | None = None,
     end: str | None = None,
+    local_open: bool = True,
+    expand_refs: bool = False,
 ) -> list[dict]:
     """Collect attachments, shared copies, drafts, outbox files, held, and outside paths."""
     from urllib.parse import quote
 
     from agentcoop.core import log_messages
-    from agentcoop.share import human_size, load_index, load_pending, share_root
+    from agentcoop.share import human_size, is_program, load_index, load_pending, share_root
     from agentcoop.timeline import _in_range, _stamp
 
     root = share_root(board, project)
     pending = {str(item.get("name") or "") for item in load_pending(board, project)}
     by_key: dict[str, dict] = {}
+    disk_by_key: dict[str, Path] = {}
+    workspace = _project_workspace(board, project)
+    from agentcoop.paths import project_dir
+
+    allowed_roots = [project_dir(board, project)]
+    if workspace is not None:
+        allowed_roots.append(workspace)
+    exists_cache: dict[str, bool] = {}
 
     def _bucket(kind: str) -> str:
         lower = (kind or "").lower()
@@ -765,6 +1374,7 @@ def _project_file_rows(
         note: str = "",
         media: str = "",
         description: str = "",
+        disk: Path | None = None,
     ) -> None:
         stamp = _stamp(ts) if ts else ""
         if stamp and not _in_range(stamp, start, end):
@@ -791,25 +1401,71 @@ def _project_file_rows(
                 "ts": stamp,
                 "actor": actor,
                 "messages": [message] if message else [],
+                "children": [],
+                "expandable": False,
+                "local_path": "",
+                "expanded": False,
             }
-            return
-        if stamp > str(row.get("ts") or ""):
-            row["ts"] = stamp
-            row["actor"] = actor or row.get("actor")
-        if message and all(item.get("id") != message_id for item in row["messages"]):
-            row["messages"].append(message)
-        if served and not row.get("url") and url:
-            row["url"] = url
-            row["path"] = path
-            row["served"] = True
-        if note and not row.get("note"):
-            row["note"] = note
+        else:
+            if stamp > str(row.get("ts") or ""):
+                row["ts"] = stamp
+                row["actor"] = actor or row.get("actor")
+            if message and all(item.get("id") != message_id for item in row["messages"]):
+                row["messages"].append(message)
+            if served and not row.get("url") and url:
+                row["url"] = url
+                row["path"] = path
+                row["served"] = True
+            if note and not row.get("note"):
+                row["note"] = note
+        if disk is not None:
+            try:
+                if disk.is_file() and not disk.is_symlink():
+                    resolved = disk.resolve()
+                    disk_by_key[key] = resolved
+                    if local_open and resolved.suffix.lower() in _TEXT_REF_SUFFIXES:
+                        row = by_key[key]
+                        row["expandable"] = True
+                        row["local_path"] = str(resolved)
+            except OSError:
+                pass
 
     def _file_url(relative: Path) -> tuple[str, str]:
         parts = relative.parts
         path = "/files/" + quote(project) + "/" + "/".join(quote(part) for part in parts)
         url = path + "?t=" + quote(token)
         return url, path
+
+    def _local_file_url(abs_path: Path) -> tuple[str, str]:
+        path = "/local-file"
+        url = (
+            path
+            + "?project="
+            + quote(project)
+            + "&p="
+            + quote(str(abs_path))
+            + "&t="
+            + quote(token)
+        )
+        return url, path
+
+    def _try_local(disk: Path) -> tuple[str, str, bool, str]:
+        """Return url, path, served, note when desktop may open this disk file."""
+        if not local_open:
+            return "", "", False, ""
+        try:
+            if disk.is_symlink() or not disk.is_file():
+                return "", "", False, ""
+            resolved = disk.resolve()
+        except OSError:
+            return "", "", False, ""
+        suffix = resolved.suffix.lower()
+        if suffix not in _SAFE_OPEN_SUFFIXES and is_program(resolved):
+            return "", "", False, "Program, not opened here."
+        if not _path_under_roots(resolved, allowed_roots):
+            return "", "", False, ""
+        url, served_path = _local_file_url(resolved)
+        return url, served_path, True, ""
 
     for row in load_index(board, project).get("files") or []:
         if not isinstance(row, dict):
@@ -820,6 +1476,7 @@ def _project_file_rows(
         relative = None
         url = ""
         served_path = ""
+        note = ""
         if path.is_file() and not path.is_symlink():
             try:
                 relative = path.resolve().relative_to(root.resolve())
@@ -827,6 +1484,13 @@ def _project_file_rows(
                 relative = None
         if relative is not None and not held:
             url, served_path = _file_url(relative)
+        elif held or relative is None:
+            local_url, local_path, local_ok, local_note = _try_local(path)
+            if local_ok:
+                url, served_path = local_url, local_path
+                note = "Held on the board; opened on this computer only." if held else ""
+            else:
+                note = local_note or ("Held, not served." if held else "")
         _add(
             key="shared:" + name,
             name=name or path.name,
@@ -839,9 +1503,10 @@ def _project_file_rows(
             served=bool(url),
             url=url,
             path=served_path,
-            note="Held, not served." if held else "",
+            note=note,
             media=str(row.get("media_type") or ""),
             description=str(row.get("description") or ""),
+            disk=path if path.is_file() else None,
         )
 
     project_root = board / "projects" / project
@@ -858,6 +1523,7 @@ def _project_file_rows(
                     stamp = datetime.fromtimestamp(when, timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
                 except OSError:
                     continue
+                url, served_path, served, local_note = _try_local(path)
                 _add(
                     key="draft:" + agent_dir.name + ":" + path.name,
                     name=path.name,
@@ -867,8 +1533,11 @@ def _project_file_rows(
                     actor=agent_dir.name,
                     message_id="",
                     source="draft",
-                    served=False,
-                    note="Helper draft, not served.",
+                    served=served,
+                    url=url,
+                    path=served_path,
+                    note=local_note or ("" if served else "Helper draft, not served."),
+                    disk=path,
                 )
 
     outbox = project_root / "outbox"
@@ -889,6 +1558,7 @@ def _project_file_rows(
                         size = path.stat().st_size
                     except OSError:
                         continue
+                    url, served_path, served, local_note = _try_local(path)
                     _add(
                         key="outbox:" + agent_dir.name + ":" + path.name,
                         name=path.name,
@@ -898,8 +1568,12 @@ def _project_file_rows(
                         actor=agent_dir.name,
                         message_id=files_dir.stem,
                         source="outbox",
-                        served=False,
-                        note="Outbox file, not served until shared.",
+                        served=served,
+                        url=url,
+                        path=served_path,
+                        note=local_note
+                        or ("" if served else "Outbox file, not served until shared."),
+                        disk=path,
                     )
 
     shareable = []
@@ -929,7 +1603,12 @@ def _project_file_rows(
             source = "attachment"
             if held:
                 source = "held"
-                note = "Held, not served."
+                local_url, local_path, local_ok, local_note = _try_local(disk)
+                if local_ok:
+                    url, served_path, served = local_url, local_path, True
+                    note = "Held on the board; opened on this computer only."
+                else:
+                    note = local_note or "Held, not served."
             elif disk.is_file() and not disk.is_symlink():
                 try:
                     resolved = disk.resolve()
@@ -952,10 +1631,20 @@ def _project_file_rows(
                                 continue
                         if inside:
                             source = "attachment"
-                            note = "Inside a shareable folder, not indexed."
+                            local_url, local_path, local_ok, local_note = _try_local(disk)
+                            if local_ok:
+                                url, served_path, served = local_url, local_path, True
+                                note = "Inside a shareable folder, not indexed."
+                            else:
+                                note = local_note or "Inside a shareable folder, not indexed."
                         else:
                             source = "outside"
-                            note = "Outside shareable folders, not served."
+                            local_url, local_path, local_ok, local_note = _try_local(disk)
+                            if local_ok:
+                                url, served_path, served = local_url, local_path, True
+                                note = "Opened on this computer only."
+                            else:
+                                note = local_note or "Outside shareable folders, not served."
             _add(
                 key="name:" + name.lower(),
                 name=name,
@@ -971,6 +1660,7 @@ def _project_file_rows(
                 note=note,
                 media=str(info.get("media_type") or ""),
                 description=str(info.get("description") or ""),
+                disk=disk if disk.is_file() else None,
             )
         body = str(message.body or "")
         for token_path in _absolute_paths_in_text(body):
@@ -978,6 +1668,9 @@ def _project_file_rows(
             name = disk.name
             note = "Outside shareable folders, not served."
             source = "outside"
+            url = ""
+            served_path = ""
+            served = False
             if disk.is_file() and not disk.is_symlink():
                 try:
                     resolved = disk.resolve()
@@ -991,18 +1684,56 @@ def _project_file_rows(
                             continue
                 except OSError:
                     pass
+                local_url, local_path, local_ok, local_note = _try_local(disk)
+                if local_ok:
+                    url, served_path, served = local_url, local_path, True
+                    if source == "outside":
+                        note = "Opened on this computer only."
+                    elif not note:
+                        note = "Named in a message body."
+                elif local_note:
+                    note = local_note
             _add(
                 key="body:" + name.lower(),
                 name=name,
-                kind="file",
+                kind=_kind_from_name(name),
                 bytes_count=disk.stat().st_size if disk.is_file() else 0,
                 ts=stamp,
                 actor=message.sender,
                 message_id=message.id,
                 source=source,
-                served=False,
+                served=served,
+                url=url,
+                path=served_path,
                 note=note,
+                disk=disk if disk.is_file() else None,
             )
+
+    if expand_refs and workspace is not None:
+        # Tests and callers that want one eager level can pass expand_refs=True.
+        for key, row in list(by_key.items()):
+            parent_disk = disk_by_key.get(key)
+            if parent_disk is None:
+                continue
+            children = _children_one_level(
+                parent_disk=parent_disk,
+                parent_key=key,
+                parent_name=str(row.get("name") or "file"),
+                parent_ts=str(row.get("ts") or ""),
+                parent_actor=str(row.get("actor") or ""),
+                parent_messages=list(row.get("messages") or []),
+                workspace=workspace,
+                allowed_roots=allowed_roots,
+                token=token,
+                project=project,
+                local_open=local_open,
+                exists_cache=exists_cache,
+                is_program=is_program,
+                human_size=human_size,
+            )
+            row["children"] = children
+            if children:
+                row["expanded"] = True
 
     rows = list(by_key.values())
     rows.sort(key=lambda row: (str(row.get("ts") or ""), str(row.get("name") or "")), reverse=True)

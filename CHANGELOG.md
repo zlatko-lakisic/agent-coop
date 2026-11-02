@@ -9,7 +9,12 @@
 - `query_events` returns the real total for the range and filters, plus day counts. The timeline loads more with the next cursor.
 - Events sort by time then send order. Day headers include the year so the same day never appears twice.
 - Stall events freeze minutes in `projects/<name>/progress/.stall.json` at detection. Waiting and blocked are waiting, not stalled. One severity table covers every kind; `update.installed` is info.
-- Board text is read as UTF-8 with replacement characters. The Files tab lists attachments, shared copies, drafts, outbox files, held, and outside paths for the selected range.
+- Board text is read as UTF-8 with replacement characters. The Files tab lists attachments, shared copies, drafts, outbox files, held, and outside paths for the selected range. On the desktop viewer, clicking a listed file opens it (images in a lightbox, other files in a new tab) via `/local-file` on loopback; programs stay closed. Phone mode still serves shared copies only.
+- The overview rail is a continuous strip from the newest to the oldest event in the filter (empty days only between those). It does not extend into empty days the middle list cannot reach. It scrolls on its own like a Frigate scrubber: the orange window follows timestamps visible in the middle, and drag or click seeks the list. The top bar shows the installed Agent Co-op version from hello.
+- The detail drawer shows raw JSON as a formatted pane in the right panel (outside the event scroll). Show raw JSON is disabled when the event has no JSON.
+- The Files tab is a vertical tree. Paths named inside listed notes and JSON manifests (for example `frame_manifest.json` or bare names like `scroll-1100.png` under a `file` key) load one level at a time over the socket, with a per-row spinner, so long catalogs stay responsive. On the desktop, images open in a framed lightbox and other files open in a content modal. Linked images show a caption when the catalog has one: the markdown table cell before the path, or JSON `line` (then `label` / `title` / `caption` / `text` / `description` / `screen`). Technical `source` notes are not used as captions.
+- Long ranges stay responsive: the timeline loads first with a spinner, Files load a shallow list in the background, then linked levels fill in asynchronously. Named-path lookup caches disk checks so catalogs do not stall the viewer.
+- The Agents tab shows a simple mark for each known tool (Cursor, Claude, Codex or ChatGPT, Gemini, Copilot, OpenCode, Cline, Goose, Ollama, LM Studio).
 
 ## 0.2.11 - 2026-10-28
 

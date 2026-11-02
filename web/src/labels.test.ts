@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { dayKey, ellipsisWords, eventCountLabel, kindLabel, parseProgressFields } from "./labels";
+import { dayKey, ellipsisWords, eventCountLabel, formatRawJson, kindLabel, parseProgressFields } from "./labels";
 import { bucketCountFromHeight, mergeLiveEvents } from "./rail";
 
 describe("labels and order", () => {
@@ -41,8 +41,17 @@ describe("labels and order", () => {
     expect(merged.map((e) => e.id)).toEqual(["prog", "msg", "stall"]);
   });
 
+  it("formats raw JSON and treats empty as missing", () => {
+    expect(formatRawJson(null)).toBe("");
+    expect(formatRawJson({})).toBe("");
+    expect(formatRawJson({ id: "m1", kind: "message.task" })).toContain('"id": "m1"');
+    expect(formatRawJson({ id: "m1", kind: "message.task" })).toContain("\n");
+  });
+
   it("sizes rail buckets from height", () => {
-    expect(bucketCountFromHeight(250)).toBe(10);
-    expect(bucketCountFromHeight(0)).toBe(8);
+    // Dense enough to scroll the rail like Frigate; never below 24, capped for long ranges.
+    expect(bucketCountFromHeight(250)).toBe(48);
+    expect(bucketCountFromHeight(0)).toBe(48);
+    expect(bucketCountFromHeight(2000)).toBe(96);
   });
 });

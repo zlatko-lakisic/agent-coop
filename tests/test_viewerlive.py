@@ -133,6 +133,9 @@ class ViewerLiveTests(unittest.TestCase):
         conn = _ws(self.port)
         hello = _hello(conn, "secret-token")
         self.assertEqual(hello.get("type"), "hello.ok")
+        from agentcoop import __version__
+
+        self.assertEqual(hello.get("version"), __version__)
         reply = _req(conn, 1, "projects")
         self.assertTrue(reply.get("ok"))
         names = [row["name"] for row in reply["data"]["projects"]]

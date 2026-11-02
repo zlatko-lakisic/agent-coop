@@ -142,3 +142,16 @@ export function displayActor(actor?: string): string {
   if (!actor || actor === "board") return "Agent Co-op";
   return actor;
 }
+
+/** Pretty-print event detail JSON. Empty when there is nothing useful to show. */
+export function formatRawJson(detail: Record<string, unknown> | null | undefined): string {
+  if (detail == null || typeof detail !== "object" || Array.isArray(detail)) return "";
+  if (!Object.keys(detail).length) return "";
+  try {
+    const text = JSON.stringify(detail, null, 2);
+    if (!text || text === "{}" || text === "null") return "";
+    return text;
+  } catch {
+    return "";
+  }
+}
