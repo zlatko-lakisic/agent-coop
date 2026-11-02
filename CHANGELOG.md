@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-### Planned 0.2.12
+## 0.2.12 - 2026-11-02
 
 - Viewer layout: desktop and tablet keep the page fixed; the left panel and timeline scroll on their own. The detail drawer is fixed on the right under the top bar. Phone still scrolls the page with a pinned rail.
 - Time range: presets roll their end to now; custom calendar ranges stay fixed. Prev and next shift the window. The chosen range is kept in the URL (no token) and on reconnect.
