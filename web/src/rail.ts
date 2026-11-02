@@ -6,8 +6,51 @@ export type { TimeRange };
 
 export type VisibleWindow = { topMs: number; bottomMs: number };
 
+export type RailBucket = {
+  start?: string;
+  end?: string;
+  actors?: Record<string, number>;
+  counts?: Record<string, number>;
+  markers?: string[];
+  day_break?: boolean;
+};
+
 export function clamp(n: number, lo: number, hi: number): number {
   return Math.max(lo, Math.min(hi, n));
+}
+
+export function bucketHasActivity(bucket: RailBucket): boolean {
+  const counts = bucket.actors || bucket.counts || {};
+  for (const n of Object.values(counts)) {
+    if (n > 0) return true;
+  }
+  return (bucket.markers || []).length > 0;
+}
+
+/**
+ * Drop empty buckets before the first event and after the last.
+ * Keep empty days in the middle so gaps stay visible, like the event list.
+ */
+export function trimEmptyRailEnds(buckets: RailBucket[]): RailBucket[] {
+  let lo = 0;
+  let hi = buckets.length - 1;
+  while (lo <= hi && !bucketHasActivity(buckets[lo])) lo += 1;
+  while (hi >= lo && !bucketHasActivity(buckets[hi])) hi -= 1;
+  if (lo > hi) return [];
+  return buckets.slice(lo, hi + 1);
+}
+
+/** Time span for a newest-first trimmed rail. Falls back when empty. */
+export function railRangeFromBuckets(bucketsNewestFirst: RailBucket[], fallback: TimeRange): TimeRange {
+  if (!bucketsNewestFirst.length) return fallback;
+  const newest = bucketsNewestFirst[0];
+  const oldest = bucketsNewestFirst[bucketsNewestFirst.length - 1];
+  const endMs = Date.parse(String(newest.end || newest.start || "")) || fallback.endMs;
+  const startMs = Date.parse(String(oldest.start || oldest.end || "")) || fallback.startMs;
+  if (!Number.isFinite(startMs) || !Number.isFinite(endMs) || endMs <= startMs) {
+    return fallback;
+  }
+  return { startMs, endMs };
 }
 
 /** Fraction 0 = newest (top of rail), 1 = oldest (bottom). */

@@ -28,9 +28,11 @@ import {
   mergeLiveEvents,
   railFractionToTime,
   railPointerFraction,
+  railRangeFromBuckets,
   scrollRailToWindow,
   scrollTimelineToTime,
   timeToRailFraction,
+  trimEmptyRailEnds,
   visibleWindowFromTimeline,
   windowStyle,
   type VisibleWindow,
@@ -198,7 +200,15 @@ export function App({ token }: { token: string }) {
   const rangeRef = useRef(range);
   rangeRef.current = range;
   const tz = tzMode === "utc" ? "UTC" : undefined;
-  const winStyle = useMemo(() => windowStyle(visibleWin, range), [visibleWin, range]);
+  // Newest-first, clipped to first/last activity so the rail matches where the middle can go.
+  const buckets = useMemo(
+    () => trimEmptyRailEnds([...(histogram.buckets || [])].reverse()),
+    [histogram],
+  );
+  const railRange = useMemo(() => railRangeFromBuckets(buckets, range), [buckets, range]);
+  const railRangeRef = useRef(railRange);
+  railRangeRef.current = railRange;
+  const winStyle = useMemo(() => windowStyle(visibleWin, railRange), [visibleWin, railRange]);
 
   useEffect(() => {
     if (!token) return;
@@ -348,12 +358,13 @@ export function App({ token }: { token: string }) {
     let raf = 0;
     const update = () => {
       raf = 0;
-      const win = visibleWindowFromTimeline(el, rangeRef.current);
+      const mapRange = railRangeRef.current;
+      const win = visibleWindowFromTimeline(el, mapRange);
       setVisibleWin(win);
       atTopRef.current = el.scrollTop < 40;
       const track = railTrackRef.current;
       if (track && !scrubbingRef.current) {
-        scrollRailToWindow(track, win, rangeRef.current);
+        scrollRailToWindow(track, win, mapRange);
       }
     };
     const onScroll = () => {
@@ -422,8 +433,8 @@ export function App({ token }: { token: string }) {
     const el = timelineRef.current;
     const sock = socketRef.current;
     if (!el || !sock || !project) return;
-    const current = rangeRef.current;
-    const ms = railFractionToTime(frac, current);
+    const mapRange = railRangeRef.current;
+    const ms = railFractionToTime(frac, mapRange);
     scrubbingRef.current = true;
     preserveScrollRef.current = false;
     // Load older pages until we have an event at or before this time.
@@ -437,15 +448,15 @@ export function App({ token }: { token: string }) {
     }
     if (!scrollTimelineToTime(el, ms)) {
       // Empty range: still move the orange window so the rail feedback matches.
-      const pad = Math.max(60_000, (current.endMs - current.startMs) * 0.05);
+      const pad = Math.max(60_000, (mapRange.endMs - mapRange.startMs) * 0.05);
       setVisibleWin({
-        topMs: Math.min(current.endMs, ms + pad / 2),
-        bottomMs: Math.max(current.startMs, ms - pad / 2),
+        topMs: Math.min(mapRange.endMs, ms + pad / 2),
+        bottomMs: Math.max(mapRange.startMs, ms - pad / 2),
       });
     }
     requestAnimationFrame(() => {
       scrubbingRef.current = false;
-      const win = visibleWindowFromTimeline(el, rangeRef.current);
+      const win = visibleWindowFromTimeline(el, railRangeRef.current);
       setVisibleWin(win);
     });
   }
@@ -526,14 +537,12 @@ export function App({ token }: { token: string }) {
     );
   }
 
-  // Newest at the top of the rail, continuous across the whole selected range.
-  const buckets = [...(histogram.buckets || [])].reverse();
-  const railDayTop = new Date(visibleWin.topMs || range.endMs).toLocaleDateString(undefined, {
+  const railDayTop = new Date(visibleWin.topMs || railRange.endMs).toLocaleDateString(undefined, {
     weekday: "short",
     day: "numeric",
     timeZone: tz,
   });
-  const railDayBottom = new Date(visibleWin.bottomMs || range.startMs).toLocaleDateString(undefined, {
+  const railDayBottom = new Date(visibleWin.bottomMs || railRange.startMs).toLocaleDateString(undefined, {
     weekday: "short",
     day: "numeric",
     timeZone: tz,
@@ -767,8 +776,8 @@ export function App({ token }: { token: string }) {
           aria-label="Time overview"
           tabIndex={0}
           onKeyDown={(e) => {
-            if (e.key === "ArrowDown") void scrubTo(Math.min(1, timeToRailFraction(visibleWin.bottomMs, range) + 0.04));
-            if (e.key === "ArrowUp") void scrubTo(Math.max(0, timeToRailFraction(visibleWin.topMs, range) - 0.04));
+            if (e.key === "ArrowDown") void scrubTo(Math.min(1, timeToRailFraction(visibleWin.bottomMs, railRange) + 0.04));
+            if (e.key === "ArrowUp") void scrubTo(Math.max(0, timeToRailFraction(visibleWin.topMs, railRange) - 0.04));
           }}
         >
           <div class="rail-cap" title="Newest day in view">{railDayTop}</div>

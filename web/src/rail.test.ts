@@ -3,8 +3,10 @@ import {
   mergeLiveEvents,
   railFractionToTime,
   railPointerFraction,
+  railRangeFromBuckets,
   reconnectDelay,
   timeToRailFraction,
+  trimEmptyRailEnds,
   visibleWindowFromTimeline,
   windowFromScroll,
   windowStyle,
@@ -26,6 +28,24 @@ describe("rail mapping", () => {
     const style = windowStyle(win, range);
     expect(parseFloat(style.top)).toBeLessThan(50);
     expect(parseFloat(style.height)).toBeGreaterThan(0);
+  });
+
+  it("trims empty rail ends but keeps gaps between activity", () => {
+    const trimmed = trimEmptyRailEnds([
+      { start: "a", actors: {} },
+      { start: "b", actors: { cursor: 1 } },
+      { start: "c", actors: {} },
+      { start: "d", actors: { helper: 2 } },
+      { start: "e", actors: {} },
+    ]);
+    expect(trimmed.map((b) => b.start)).toEqual(["b", "c", "d"]);
+    const newestFirst = [
+      { start: "2026-10-22T00:00:00Z", end: "2026-11-01T12:00:00Z", actors: { cursor: 1 } },
+      { start: "2026-10-10T00:00:00Z", end: "2026-10-22T00:00:00Z", actors: { cursor: 1 } },
+    ];
+    const span = railRangeFromBuckets(newestFirst, range);
+    expect(span.endMs).toBe(Date.parse("2026-11-01T12:00:00Z"));
+    expect(span.startMs).toBe(Date.parse("2026-10-10T00:00:00Z"));
   });
 
   it("builds the orange window from visible event timestamps", () => {
