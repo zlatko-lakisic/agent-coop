@@ -7,10 +7,23 @@
       "spec": "0.3",
       "board_format": 1,
       "oldest_reader": "0.2.0",
-      "board_changes": "projects/<name>/progress/.stall.json freezes the stall minutes the viewer shows. Older programs ignore that file. query_events may include total and day_counts. The files view may list drafts, outbox files, held, and outside paths. Older clients ignore those fields.",
+      "board_changes": "Nothing",
       "settings_changes": "None",
-      "downgrade_loses": "A downgrade no longer freezes stall minutes in .stall.json, so a quiet task can show a growing minute count again. The viewer loses rolling range restore, real totals, the richer Files tab, and the fixed drawer layout until that build is restored.",
+      "downgrade_loses": "Nothing",
       "desktop_skill": "Same",
+      "upgrade_from": "0.2.0"
+    },
+    {
+      "version": "0.2.12",
+      "date": "2026-11-02",
+      "message_format": 1,
+      "spec": "0.3",
+      "board_format": 1,
+      "oldest_reader": "0.2.0",
+      "board_changes": "projects/<name>/progress/.stall.json freezes the stall minutes the viewer shows. Older programs ignore that file. query_events may include total and day_counts. The files view may list drafts, outbox files, held, and outside paths, and may nest linked project files with captions. Older clients ignore those fields.",
+      "settings_changes": "None",
+      "downgrade_loses": "A downgrade no longer freezes stall minutes in .stall.json, so a quiet task can show a growing minute count again. The viewer loses rolling range restore, real totals, the richer Files tab with linked trees and captions, agent tool marks, and the fixed drawer layout until that build is restored.",
+      "desktop_skill": "Changed",
       "upgrade_from": "0.2.0"
     },
     {
