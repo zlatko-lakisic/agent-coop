@@ -790,6 +790,27 @@ def _kind_from_name(name: str) -> str:
     return "file"
 
 
+def _normalize_ref_token(token: str) -> str | None:
+    """Return a cleaned path token, or None when it is not a file reference."""
+    cleaned = (token or "").strip().strip("`\"'").rstrip(".,);]")
+    cleaned = cleaned.replace("\\", "/")
+    if not cleaned:
+        return None
+    if "://" in cleaned or cleaned.startswith("#"):
+        return None
+    parts = [part for part in cleaned.split("/") if part]
+    if not parts or any(part == ".." for part in parts):
+        return None
+    suffix = Path(cleaned).suffix.lower()
+    if suffix and suffix not in _REF_FILE_SUFFIXES:
+        return None
+    absolute = len(cleaned) > 2 and cleaned[1] == ":"
+    if "/" not in cleaned and not absolute:
+        if suffix not in _REF_FILE_SUFFIXES:
+            return None
+    return cleaned
+
+
 def _referenced_paths_in_text(text: str) -> list[str]:
     """Return relative or absolute file paths named in helper notes and catalogs."""
     import re
@@ -798,23 +819,9 @@ def _referenced_paths_in_text(text: str) -> list[str]:
     seen: set[str] = set()
 
     def add(token: str) -> None:
-        cleaned = (token or "").strip().strip("`\"'").rstrip(".,);]")
-        cleaned = cleaned.replace("\\", "/")
-        if not cleaned or cleaned in seen:
+        cleaned = _normalize_ref_token(token)
+        if cleaned is None or cleaned in seen:
             return
-        if "://" in cleaned or cleaned.startswith("#"):
-            return
-        parts = [part for part in cleaned.split("/") if part]
-        if not parts or any(part == ".." for part in parts):
-            return
-        suffix = Path(cleaned).suffix.lower()
-        if suffix and suffix not in _REF_FILE_SUFFIXES:
-            return
-        # Bare names need a known image/doc suffix; full relative paths need a slash.
-        absolute = len(cleaned) > 2 and cleaned[1] == ":"
-        if "/" not in cleaned and not absolute:
-            if suffix not in _REF_FILE_SUFFIXES:
-                return
         seen.add(cleaned)
         found.append(cleaned)
 
@@ -832,6 +839,50 @@ def _referenced_paths_in_text(text: str) -> list[str]:
     for abs_path in _absolute_paths_in_text(text or ""):
         add(abs_path)
     return found
+
+
+def _referenced_paths_in_json_data(data: object) -> list[str]:
+    """Walk JSON values and collect strings that look like project file paths."""
+    found: list[str] = []
+    seen: set[str] = set()
+
+    def walk(node: object) -> None:
+        if isinstance(node, str):
+            cleaned = _normalize_ref_token(node)
+            if cleaned is None or cleaned in seen:
+                return
+            # Prefer path-like values (with slash or known screen/image name).
+            if "/" not in cleaned and not (len(cleaned) > 2 and cleaned[1] == ":"):
+                return
+            seen.add(cleaned)
+            found.append(cleaned)
+            return
+        if isinstance(node, dict):
+            for value in node.values():
+                walk(value)
+            return
+        if isinstance(node, list):
+            for value in node:
+                walk(value)
+
+    walk(data)
+    return found
+
+
+def _referenced_paths_from_file(path: Path, text: str) -> list[str]:
+    """Extract referenced paths from markdown notes or JSON manifests."""
+    if path.suffix.lower() == ".json":
+        import json
+
+        try:
+            data = json.loads(text)
+        except (TypeError, ValueError, json.JSONDecodeError):
+            data = None
+        if data is not None:
+            refs = _referenced_paths_in_json_data(data)
+            if refs:
+                return refs
+    return _referenced_paths_in_text(text)
 
 
 def _resolve_referenced_path(
@@ -1345,35 +1396,41 @@ def _project_file_rows(
 
     if workspace is not None:
         children_by_disk: dict[str, list[dict]] = {}
-        for key, row in list(by_key.items()):
-            parent_disk = disk_by_key.get(key)
-            if parent_disk is None:
-                continue
-            if parent_disk.suffix.lower() not in _TEXT_REF_SUFFIXES:
-                continue
+
+        def _build_children(
+            parent_disk: Path,
+            parent_key: str,
+            parent_name: str,
+            parent_ts: str,
+            parent_actor: str,
+            parent_messages: list,
+            depth: int,
+            ancestry: set[str],
+        ) -> list[dict]:
+            if depth > 3:
+                return []
             try:
-                scan_key = str(parent_disk.resolve())
+                resolved_parent = parent_disk.resolve()
             except OSError:
-                scan_key = str(parent_disk)
-            cached_children = children_by_disk.get(scan_key)
-            if cached_children is not None:
-                row["children"] = [
-                    {**child, "id": "ref:" + key + ":" + str(child.get("name") or "").lower(), "parent": key}
-                    for child in cached_children
-                ]
-                continue
+                return []
+            parent_id = str(resolved_parent).lower()
+            if parent_id in ancestry:
+                return []
+            if parent_disk.suffix.lower() not in _TEXT_REF_SUFFIXES:
+                return []
+            max_bytes = 1_000_000 if parent_disk.suffix.lower() == ".json" else 256_000
             try:
                 size = parent_disk.stat().st_size
-                if size > 256_000:
-                    children_by_disk[scan_key] = []
-                    continue
+                if size > max_bytes:
+                    return []
                 text = parent_disk.read_text(encoding="utf-8", errors="replace")
             except OSError:
-                children_by_disk[scan_key] = []
-                continue
+                return []
+            next_ancestry = set(ancestry)
+            next_ancestry.add(parent_id)
             children: list[dict] = []
             seen_child: set[str] = set()
-            for token in _referenced_paths_in_text(text):
+            for token in _referenced_paths_from_file(parent_disk, text):
                 if len(children) >= 40:
                     break
                 target = _resolve_referenced_path(
@@ -1390,14 +1447,14 @@ def _project_file_rows(
                 if suffix not in _SAFE_OPEN_SUFFIXES and is_program(target):
                     continue
                 try:
-                    if target == parent_disk.resolve():
+                    if target.resolve() == resolved_parent:
                         continue
+                    child_id = str(target.resolve()).lower()
                 except OSError:
+                    child_id = str(target).lower()
+                if child_id in seen_child or child_id in next_ancestry:
                     continue
-                child_key = str(target).lower()
-                if child_key in seen_child:
-                    continue
-                seen_child.add(child_key)
+                seen_child.add(child_id)
                 kind = _kind_from_name(target.name)
                 try:
                     child_size = target.stat().st_size
@@ -1406,15 +1463,25 @@ def _project_file_rows(
                 served = False
                 url = ""
                 served_path = ""
-                local_note = ""
                 if local_open:
                     url, served_path = _local_file_url(target)
                     served = True
-                else:
-                    local_note = "Named in " + str(row.get("name") or "file")
+                child_key = "ref:" + parent_key + ":" + target.name.lower()
+                nested: list[dict] = []
+                if target.suffix.lower() in _TEXT_REF_SUFFIXES:
+                    nested = _build_children(
+                        target,
+                        child_key,
+                        target.name,
+                        parent_ts,
+                        parent_actor,
+                        parent_messages,
+                        depth + 1,
+                        next_ancestry,
+                    )
                 children.append(
                     {
-                        "id": "ref:" + key + ":" + target.name.lower(),
+                        "id": child_key,
                         "name": target.name,
                         "kind": kind,
                         "bucket": _bucket(kind),
@@ -1425,16 +1492,42 @@ def _project_file_rows(
                         "path": served_path if served else "",
                         "served": served,
                         "source": "reference",
-                        "note": local_note or ("Named in " + str(row.get("name") or "file")),
+                        "note": "Named in " + parent_name,
                         "description": token,
-                        "ts": row.get("ts") or "",
-                        "actor": row.get("actor") or "",
-                        "messages": list(row.get("messages") or []),
-                        "parent": key,
-                        "children": [],
+                        "ts": parent_ts,
+                        "actor": parent_actor,
+                        "messages": list(parent_messages or []),
+                        "parent": parent_key,
+                        "children": nested,
                     }
                 )
             children.sort(key=lambda item: str(item.get("name") or "").lower())
+            return children
+
+        for key, row in list(by_key.items()):
+            parent_disk = disk_by_key.get(key)
+            if parent_disk is None:
+                continue
+            if parent_disk.suffix.lower() not in _TEXT_REF_SUFFIXES:
+                continue
+            try:
+                scan_key = str(parent_disk.resolve())
+            except OSError:
+                scan_key = str(parent_disk)
+            cached_children = children_by_disk.get(scan_key)
+            if cached_children is not None:
+                row["children"] = cached_children
+                continue
+            children = _build_children(
+                parent_disk,
+                key,
+                str(row.get("name") or "file"),
+                str(row.get("ts") or ""),
+                str(row.get("actor") or ""),
+                list(row.get("messages") or []),
+                0,
+                set(),
+            )
             children_by_disk[scan_key] = children
             row["children"] = children
 

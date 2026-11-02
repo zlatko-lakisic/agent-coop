@@ -143,6 +143,7 @@ export function App({ token }: { token: string }) {
   const [files, setFiles] = useState<FileRow[]>([]);
   const [fileFilter, setFileFilter] = useState<"all" | "image" | "document" | "other">("all");
   const [lightbox, setLightbox] = useState<number | null>(null);
+  const [filePreview, setFilePreview] = useState<{ name: string; url: string; body: string; error?: string } | null>(null);
   const [statusItems, setStatusItems] = useState<{ kind: string; text: string; project?: string }[]>([]);
   const [histogram, setHistogram] = useState<{
     buckets?: {
@@ -444,6 +445,10 @@ export function App({ token }: { token: string }) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "Escape") return;
+      if (filePreview) {
+        setFilePreview(null);
+        return;
+      }
       if (lightbox != null) {
         setLightbox(null);
         return;
@@ -456,7 +461,7 @@ export function App({ token }: { token: string }) {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [selected, lightbox]);
+  }, [selected, lightbox, filePreview]);
 
   async function loadMore() {
     const sock = socketRef.current;
@@ -579,23 +584,56 @@ export function App({ token }: { token: string }) {
   const presetLabel = rangeState.custom ? rangeState.label : PRESETS.find((p) => p[0] === rangeState.preset)?.[1] || rangeState.preset;
   const fileMatches = (f: FileRow) =>
     fileFilter === "all" || f.bucket === fileFilter || (fileFilter === "image" && (f.kind || "").includes("image"));
-  const imageFiles = files.flatMap((f) => [f, ...(f.children || [])]).filter((f) => (f.bucket || f.kind || "").includes("image") && f.url);
-  const shownFileTree = files.flatMap((f) => {
-    const kids = (f.children || []).filter(fileMatches);
-    if (fileMatches(f) || kids.length) {
-      return [{ file: f, depth: 0 as const }, ...kids.map((child) => ({ file: child, depth: 1 as const }))];
+  function collectImages(rows: FileRow[]): FileRow[] {
+    const out: FileRow[] = [];
+    const walk = (f: FileRow) => {
+      if ((f.bucket || f.kind || "").includes("image") && f.url) out.push(f);
+      for (const child of f.children || []) walk(child);
+    };
+    rows.forEach(walk);
+    return out;
+  }
+  function flattenFileTree(nodes: FileRow[], depth = 0): { file: FileRow; depth: number }[] {
+    const out: { file: FileRow; depth: number }[] = [];
+    for (const f of nodes) {
+      const childRows = flattenFileTree(f.children || [], depth + 1);
+      if (fileFilter === "all" || fileMatches(f) || childRows.length) {
+        out.push({ file: f, depth });
+        out.push(...childRows);
+      }
     }
-    return [];
-  });
+    return out;
+  }
+  const imageFiles = collectImages(files);
+  const shownFileTree = flattenFileTree(files);
 
-  function openListedFile(f: FileRow) {
+  async function openListedFile(f: FileRow) {
     if (f.url && (f.bucket === "image" || (f.kind || "").includes("image"))) {
       const idx = imageFiles.findIndex((img) => img.url === f.url);
       setLightbox(idx >= 0 ? idx : 0);
       return;
     }
     if (f.url) {
-      window.open(f.url, "_blank", "noopener,noreferrer");
+      try {
+        const res = await fetch(f.url);
+        if (!res.ok) throw new Error("Could not read that file.");
+        let body = await res.text();
+        if ((f.name || "").toLowerCase().endsWith(".json") || (f.kind || "").includes("json")) {
+          try {
+            body = JSON.stringify(JSON.parse(body), null, 2);
+          } catch {
+            // Keep the raw text when it is not valid JSON.
+          }
+        }
+        setFilePreview({ name: f.name, url: f.url, body });
+      } catch (err) {
+        setFilePreview({
+          name: f.name,
+          url: f.url,
+          body: "",
+          error: err instanceof Error ? err.message : "Could not read that file.",
+        });
+      }
       return;
     }
     if (f.messages?.[0]?.id) {
@@ -809,8 +847,8 @@ export function App({ token }: { token: string }) {
                     type="button"
                     class={"file-row" + (depth ? " child" : "")}
                     role="listitem"
-                    style={{ marginLeft: depth ? 16 : 0 }}
-                    onClick={() => openListedFile(f)}
+                    style={{ marginLeft: depth ? depth * 14 : 0 }}
+                    onClick={() => void openListedFile(f)}
                   >
                     <div class="file-thumb small">
                       {f.url && (f.bucket === "image" || (f.kind || "").includes("image")) ? <img src={f.url} alt="" /> : <KindIcon name="file" color={c.muted} />}
@@ -818,7 +856,7 @@ export function App({ token }: { token: string }) {
                     <div class="file-meta">
                       <div class="file-name">{f.name}</div>
                       <div class="file-sub">{f.kind || f.source} · {f.size || f.meta || f.note || f.description || ""}</div>
-                      {!depth && <div class="file-sub">{displayActor(f.actor)}{(f.messages || []).length > 1 ? " · " + (f.messages || []).length + " messages" : ""}{(f.children || []).length ? " · " + (f.children || []).length + " linked" : ""}</div>}
+                      <div class="file-sub">{displayActor(f.actor)}{(f.messages || []).length > 1 ? " · " + (f.messages || []).length + " messages" : ""}{(f.children || []).length ? " · " + (f.children || []).length + " linked" : ""}</div>
                     </div>
                   </button>
                 ))}
@@ -1002,21 +1040,42 @@ export function App({ token }: { token: string }) {
           onClick={(e) => {
             if (e.target === e.currentTarget) setLightbox(null);
           }}
-          onKeyDown={(e) => {
-            if (e.key === "Escape") setLightbox(null);
-            if (e.key === "ArrowLeft") setLightbox((lightbox + imageFiles.length - 1) % imageFiles.length);
-            if (e.key === "ArrowRight") setLightbox((lightbox + 1) % imageFiles.length);
+        >
+          <div class="lightbox-frame">
+            <div class="lightbox-toolbar">
+              <button type="button" class="btn" onClick={() => setLightbox((lightbox + imageFiles.length - 1) % imageFiles.length)}>Prev</button>
+              <div class="lightbox-caption">{imageFiles[lightbox].name}</div>
+              <button type="button" class="btn" onClick={() => setLightbox((lightbox + 1) % imageFiles.length)}>Next</button>
+              <button type="button" class="btn" aria-label="Close image" onClick={() => setLightbox(null)}>Close</button>
+            </div>
+            <img src={imageFiles[lightbox].url} alt={imageFiles[lightbox].name} />
+          </div>
+        </div>
+      )}
+
+      {filePreview && (
+        <div
+          class="file-preview"
+          role="dialog"
+          aria-label={"File " + filePreview.name}
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setFilePreview(null);
           }}
         >
-          <button type="button" class="btn lightbox-close" aria-label="Close image" onClick={() => setLightbox(null)}>
-            Close
-          </button>
-          <div class="lightbox-stage">
-            <button type="button" class="btn" onClick={() => setLightbox((lightbox + imageFiles.length - 1) % imageFiles.length)}>Prev</button>
-            <img src={imageFiles[lightbox].url} alt={imageFiles[lightbox].name} />
-            <button type="button" class="btn" onClick={() => setLightbox((lightbox + 1) % imageFiles.length)}>Next</button>
+          <div class="file-preview-panel">
+            <div class="file-preview-head">
+              <div>
+                <div style={{ fontWeight: 650 }}>{filePreview.name}</div>
+                <div style={{ fontSize: 12, color: c.muted }}>File contents</div>
+              </div>
+              <button type="button" class="btn icon ghost" aria-label="Close file" onClick={() => setFilePreview(null)}>✕</button>
+            </div>
+            {filePreview.error ? (
+              <div class="file-preview-error">{filePreview.error}</div>
+            ) : (
+              <pre class="file-preview-body mono">{filePreview.body}</pre>
+            )}
           </div>
-          <div class="lightbox-caption">{imageFiles[lightbox].name}</div>
         </div>
       )}
 

@@ -348,6 +348,61 @@ class ViewerRealUseTests(unittest.TestCase):
             self.assertTrue(child["served"])
             self.assertIn("/local-file", child["url"])
 
+    def test_files_view_nests_json_manifest_paths_recursively(self) -> None:
+        with support.TempEnv() as env:
+            from agentcoop.cli import main
+
+            assert main(["setup", "--connect", "cursor", "--schedule", "no", "--yes"]) == 0
+            folder = env.workspace / "demo"
+            folder.mkdir()
+            assert (
+                main(
+                    [
+                        "project",
+                        "add",
+                        str(folder),
+                        "--name",
+                        "demo",
+                        "--driver",
+                        "cursor",
+                        "--gitignore",
+                        "no",
+                        "--yes",
+                    ]
+                )
+                == 0
+            )
+            screens = folder / "data" / "board" / "screens"
+            screens.mkdir(parents=True, exist_ok=True)
+            (screens / "r11-a.png").write_bytes(b"\x89PNG\r\n\x1a\n")
+            (screens / "r11-b.png").write_bytes(b"\x89PNG\r\n\x1a\n")
+            runtime = folder / "data" / "runtime" / "negotiations"
+            runtime.mkdir(parents=True, exist_ok=True)
+            (runtime / "frame_manifest.json").write_text(
+                json.dumps(
+                    {
+                        "held_out": ["data/board/screens/r11-a.png"],
+                        "frames": [{"file": "data/board/screens/r11-b.png", "screen": "negotiations"}],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            draft = env.board / "projects" / "demo" / "files" / "cursor"
+            draft.mkdir(parents=True, exist_ok=True)
+            (draft / "note.md").write_text(
+                "See `data/runtime/negotiations/frame_manifest.json`.\n",
+                encoding="utf-8",
+            )
+            rows = files_view(env.board, "demo", "tok", local_open=True)
+            parent = next(row for row in rows if row["name"] == "note.md")
+            children = parent.get("children") or []
+            self.assertEqual(len(children), 1)
+            manifest = children[0]
+            self.assertEqual(manifest["name"], "frame_manifest.json")
+            nested = {child["name"] for child in (manifest.get("children") or [])}
+            self.assertIn("r11-a.png", nested)
+            self.assertIn("r11-b.png", nested)
+
     def test_local_file_serves_draft_refuses_program(self) -> None:
         with support.TempEnv() as env:
             from agentcoop.cli import main
