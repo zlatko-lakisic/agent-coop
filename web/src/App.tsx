@@ -26,10 +26,14 @@ import {
 import {
   bucketCountFromHeight,
   mergeLiveEvents,
-  scrollTopForTime,
+  railFractionToTime,
+  railPointerFraction,
+  scrollRailToWindow,
+  scrollTimelineToTime,
   timeToRailFraction,
-  windowFromScroll,
+  visibleWindowFromTimeline,
   windowStyle,
+  type VisibleWindow,
 } from "./rail";
 import { ViewerSocket, type ConnState } from "./ws";
 
@@ -167,11 +171,15 @@ export function App({ token }: { token: string }) {
   const socketRef = useRef<ViewerSocket | null>(null);
   const timelineRef = useRef<HTMLElement | null>(null);
   const railRef = useRef<HTMLElement | null>(null);
+  const railTrackRef = useRef<HTMLDivElement | null>(null);
   const focusCardRef = useRef<HTMLButtonElement | null>(null);
-  const [winStyle, setWinStyle] = useState({ top: "0%", height: "20%" });
-  const [bucketCount, setBucketCount] = useState(24);
+  const [visibleWin, setVisibleWin] = useState<VisibleWindow>({ topMs: Date.now(), bottomMs: Date.now() - 3_600_000 });
+  const [bucketCount, setBucketCount] = useState(48);
   const atTopRef = useRef(true);
   const preserveScrollRef = useRef(true);
+  const eventsRef = useRef<EventRow[]>([]);
+  const nextCursorRef = useRef("");
+  const scrubbingRef = useRef(false);
 
   const projectRef = useRef(project);
   const rangeStateRef = useRef(rangeState);
@@ -190,6 +198,7 @@ export function App({ token }: { token: string }) {
   const rangeRef = useRef(range);
   rangeRef.current = range;
   const tz = tzMode === "utc" ? "UTC" : undefined;
+  const winStyle = useMemo(() => windowStyle(visibleWin, range), [visibleWin, range]);
 
   useEffect(() => {
     if (!token) return;
@@ -330,15 +339,22 @@ export function App({ token }: { token: string }) {
     };
   }, []);
 
+  eventsRef.current = events;
+  nextCursorRef.current = nextCursor;
+
   useEffect(() => {
     const el = timelineRef.current;
     if (!el) return;
     let raf = 0;
     const update = () => {
       raf = 0;
-      const win = windowFromScroll(el.scrollTop, el.clientHeight, el.scrollHeight, range);
-      setWinStyle(windowStyle(win, range));
+      const win = visibleWindowFromTimeline(el, rangeRef.current);
+      setVisibleWin(win);
       atTopRef.current = el.scrollTop < 40;
+      const track = railTrackRef.current;
+      if (track && !scrubbingRef.current) {
+        scrollRailToWindow(track, win, rangeRef.current);
+      }
     };
     const onScroll = () => {
       if (!raf) raf = requestAnimationFrame(update);
@@ -406,16 +422,38 @@ export function App({ token }: { token: string }) {
     const el = timelineRef.current;
     const sock = socketRef.current;
     if (!el || !sock || !project) return;
-    const ms = range.endMs - frac * (range.endMs - range.startMs);
+    const current = rangeRef.current;
+    const ms = railFractionToTime(frac, current);
+    scrubbingRef.current = true;
     preserveScrollRef.current = false;
-    // Load pages until an event near that time exists or no next page.
+    // Load older pages until we have an event at or before this time.
     let guard = 0;
     while (guard++ < 40) {
-      const hit = events.some((e) => e.ts && Math.abs(Date.parse(e.ts) - ms) < (range.endMs - range.startMs) / 20);
-      if (hit || !nextCursor) break;
+      const list = eventsRef.current;
+      const oldest = list[list.length - 1];
+      const oldestMs = oldest?.ts ? Date.parse(oldest.ts) : NaN;
+      if (!nextCursorRef.current || (Number.isFinite(oldestMs) && oldestMs <= ms)) break;
       await loadMore();
     }
-    el.scrollTop = scrollTopForTime(ms, el.clientHeight, el.scrollHeight, range);
+    if (!scrollTimelineToTime(el, ms)) {
+      // Empty range: still move the orange window so the rail feedback matches.
+      const pad = Math.max(60_000, (current.endMs - current.startMs) * 0.05);
+      setVisibleWin({
+        topMs: Math.min(current.endMs, ms + pad / 2),
+        bottomMs: Math.max(current.startMs, ms - pad / 2),
+      });
+    }
+    requestAnimationFrame(() => {
+      scrubbingRef.current = false;
+      const win = visibleWindowFromTimeline(el, rangeRef.current);
+      setVisibleWin(win);
+    });
+  }
+
+  function scrubFromPointer(clientY: number) {
+    const track = railTrackRef.current;
+    if (!track) return;
+    void scrubTo(railPointerFraction(track, clientY));
   }
 
   function choosePreset(id: string) {
@@ -490,12 +528,12 @@ export function App({ token }: { token: string }) {
 
   // Newest at the top of the rail, continuous across the whole selected range.
   const buckets = [...(histogram.buckets || [])].reverse();
-  const railDayTop = new Date(range.endMs).toLocaleDateString(undefined, {
+  const railDayTop = new Date(visibleWin.topMs || range.endMs).toLocaleDateString(undefined, {
     weekday: "short",
     day: "numeric",
     timeZone: tz,
   });
-  const railDayBottom = new Date(range.startMs).toLocaleDateString(undefined, {
+  const railDayBottom = new Date(visibleWin.bottomMs || range.startMs).toLocaleDateString(undefined, {
     weekday: "short",
     day: "numeric",
     timeZone: tz,
@@ -729,18 +767,31 @@ export function App({ token }: { token: string }) {
           aria-label="Time overview"
           tabIndex={0}
           onKeyDown={(e) => {
-            if (e.key === "ArrowDown") void scrubTo(Math.min(1, timeToRailFraction(range.startMs + 1, range) + 0.04));
-            if (e.key === "ArrowUp") void scrubTo(Math.max(0, timeToRailFraction(range.endMs - 1, range) - 0.04));
-          }}
-          onClick={(e) => {
-            const rect = (e.currentTarget as HTMLElement).querySelector(".rail-track")?.getBoundingClientRect();
-            if (!rect) return;
-            const frac = (e.clientY - rect.top) / Math.max(1, rect.height);
-            void scrubTo(frac);
+            if (e.key === "ArrowDown") void scrubTo(Math.min(1, timeToRailFraction(visibleWin.bottomMs, range) + 0.04));
+            if (e.key === "ArrowUp") void scrubTo(Math.max(0, timeToRailFraction(visibleWin.topMs, range) - 0.04));
           }}
         >
-          <div style={{ fontSize: 11, fontWeight: 650, color: c.muted, marginBottom: 8, textAlign: "center" }}>{railDayTop}</div>
-          <div class="rail-track">
+          <div class="rail-cap" title="Newest day in view">{railDayTop}</div>
+          <div
+            class="rail-track"
+            ref={railTrackRef as never}
+            onPointerDown={(e) => {
+              if (e.button !== 0) return;
+              const target = e.currentTarget as HTMLDivElement;
+              target.setPointerCapture(e.pointerId);
+              scrubFromPointer(e.clientY);
+            }}
+            onPointerMove={(e) => {
+              if (!e.currentTarget.hasPointerCapture(e.pointerId)) return;
+              scrubFromPointer(e.clientY);
+            }}
+            onPointerUp={(e) => {
+              if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+                e.currentTarget.releasePointerCapture(e.pointerId);
+              }
+            }}
+          >
+            <span class="rail-axis" aria-hidden="true" />
             <span class="rail-window" style={winStyle} aria-label="Shown in the timeline" />
             {buckets.map((b, i) => {
               const counts = b.actors || b.counts || {};
@@ -761,22 +812,20 @@ export function App({ token }: { token: string }) {
               return (
                 <div class={"rail-row" + (showDay && i > 0 ? " day-break" : "")} key={(b.start || "") + "-" + i}>
                   {showDay && <span class="rail-day">{day}</span>}
-                  <span class={"mono hour"} style={{ width: 18, fontSize: 10, textAlign: "right", color: c.muted }}>
-                    {showHour ? hour : ""}
-                  </span>
-                  <span style={{ flex: 1, display: "flex", height: 12, borderRadius: 3, overflow: "hidden", background: c.surface2 }}>
+                  <span class={"mono hour"}>{showHour ? hour : ""}</span>
+                  <span class={"rail-blips" + (total === 0 ? " empty" : "")}>
                     {total > 0
                       ? Object.entries(counts).map(([actor, n]) => (
-                          <span style={{ width: (100 * n) / total + "%", background: actorTone(c, actor) }} />
+                          <span style={{ width: Math.max(18, (100 * n) / total) + "%", background: actorTone(c, actor) }} />
                         ))
-                      : null}
+                      : <span class="rail-tick" />}
                   </span>
-                  <span style={{ width: 6, height: 6, borderRadius: "50%", background: (b.markers || []).length ? c.problem : "transparent" }} />
+                  <span class={"rail-mark" + ((b.markers || []).length ? " on" : "")} />
                 </div>
               );
             })}
           </div>
-          <div style={{ fontSize: 11, fontWeight: 650, color: c.muted, marginTop: 8, textAlign: "center" }}>{railDayBottom}</div>
+          <div class="rail-cap" title="Oldest day in view">{railDayBottom}</div>
         </nav>
 
         {selected && detail && (
@@ -884,7 +933,7 @@ function EventCard({
   const summary = progress ? "" : ellipsisWords(event.summary || "");
   const pct = progress?.percent ?? (Number(event.percent || 0) || null);
   return (
-    <li>
+    <li data-event-ts={event.ts || ""}>
       <div style={{ display: "flex", gap: 10, alignItems: "stretch" }}>
         <div class="mono" style={{ width: 48, flex: "0 0 48px", paddingTop: 14, textAlign: "right", fontSize: 12, color: c.muted }}>
           {timeLabel(event.ts, tz)}

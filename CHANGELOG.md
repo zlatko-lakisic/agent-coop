@@ -10,7 +10,7 @@
 - Events sort by time then send order. Day headers include the year so the same day never appears twice.
 - Stall events freeze minutes in `projects/<name>/progress/.stall.json` at detection. Waiting and blocked are waiting, not stalled. One severity table covers every kind; `update.installed` is info.
 - Board text is read as UTF-8 with replacement characters. The Files tab lists attachments, shared copies, drafts, outbox files, held, and outside paths for the selected range. On the desktop viewer, clicking a listed file opens it (images in a lightbox, other files in a new tab) via `/local-file` on loopback; programs stay closed. Phone mode still serves shared copies only.
-- The overview rail covers the whole selected range as one continuous strip, including empty days, with day labels on breaks. The top bar shows the installed Agent Co-op version from hello.
+- The overview rail covers the whole selected range as one continuous strip, including empty days, with day labels on breaks. It scrolls on its own like a Frigate scrubber: the orange window follows the timestamps visible in the middle timeline, drag or click seeks the middle list, and the rail keeps that window in view. The top bar shows the installed Agent Co-op version from hello.
 
 ## 0.2.11 - 2026-10-28
 
