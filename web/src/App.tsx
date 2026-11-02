@@ -385,7 +385,12 @@ export function App({ token }: { token: string }) {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && selected) {
+      if (e.key !== "Escape") return;
+      if (lightbox != null) {
+        setLightbox(null);
+        return;
+      }
+      if (selected) {
         setSelected(null);
         setDetail(null);
         focusCardRef.current?.focus();
@@ -393,7 +398,7 @@ export function App({ token }: { token: string }) {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [selected]);
+  }, [selected, lightbox]);
 
   async function loadMore() {
     const sock = socketRef.current;
@@ -920,11 +925,28 @@ export function App({ token }: { token: string }) {
       </div>
 
       {lightbox != null && imageFiles[lightbox] && (
-        <div class="lightbox" role="dialog" aria-label="Image">
-          <button type="button" class="btn" onClick={() => setLightbox((lightbox + imageFiles.length - 1) % imageFiles.length)}>Prev</button>
-          <img src={imageFiles[lightbox].url} alt={imageFiles[lightbox].name} />
-          <button type="button" class="btn" onClick={() => setLightbox((lightbox + 1) % imageFiles.length)}>Next</button>
-          <button type="button" class="btn" onClick={() => setLightbox(null)}>Close</button>
+        <div
+          class="lightbox"
+          role="dialog"
+          aria-label="Image"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setLightbox(null);
+          }}
+          onKeyDown={(e) => {
+            if (e.key === "Escape") setLightbox(null);
+            if (e.key === "ArrowLeft") setLightbox((lightbox + imageFiles.length - 1) % imageFiles.length);
+            if (e.key === "ArrowRight") setLightbox((lightbox + 1) % imageFiles.length);
+          }}
+        >
+          <button type="button" class="btn lightbox-close" aria-label="Close image" onClick={() => setLightbox(null)}>
+            Close
+          </button>
+          <div class="lightbox-stage">
+            <button type="button" class="btn" onClick={() => setLightbox((lightbox + imageFiles.length - 1) % imageFiles.length)}>Prev</button>
+            <img src={imageFiles[lightbox].url} alt={imageFiles[lightbox].name} />
+            <button type="button" class="btn" onClick={() => setLightbox((lightbox + 1) % imageFiles.length)}>Next</button>
+          </div>
+          <div class="lightbox-caption">{imageFiles[lightbox].name}</div>
         </div>
       )}
 
