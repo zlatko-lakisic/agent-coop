@@ -85,6 +85,7 @@ type FileRow = {
   actor?: string;
   note?: string;
   description?: string;
+  caption?: string;
   served?: boolean;
   source?: string;
   parent?: string;
@@ -961,8 +962,8 @@ export function App({ token }: { token: string }) {
                         {f.url && (f.bucket === "image" || (f.kind || "").includes("image")) ? <img src={f.url} alt="" /> : <KindIcon name="file" color={c.muted} />}
                       </div>
                       <div class="file-meta">
-                        <div class="file-name">{f.name}</div>
-                        <div class="file-sub">{f.kind || f.source} · {f.size || f.meta || f.note || f.description || ""}</div>
+                        <div class="file-name">{f.caption || f.name}</div>
+                        <div class="file-sub">{f.caption ? f.name + " · " : ""}{f.kind || f.source} · {f.size || f.meta || f.note || f.description || ""}</div>
                         <div class="file-sub">
                           {f.loading
                             ? "Looking for linked files…"
@@ -1158,11 +1159,17 @@ export function App({ token }: { token: string }) {
           <div class="lightbox-frame">
             <div class="lightbox-toolbar">
               <button type="button" class="btn" onClick={() => setLightbox((lightbox + imageFiles.length - 1) % imageFiles.length)}>Prev</button>
-              <div class="lightbox-caption">{imageFiles[lightbox].name}</div>
+              <div class="lightbox-caption">
+                <div class="lightbox-title">{imageFiles[lightbox].caption || imageFiles[lightbox].name}</div>
+                {imageFiles[lightbox].caption ? <div class="lightbox-file mono">{imageFiles[lightbox].name}</div> : null}
+              </div>
               <button type="button" class="btn" onClick={() => setLightbox((lightbox + 1) % imageFiles.length)}>Next</button>
               <button type="button" class="btn" aria-label="Close image" onClick={() => setLightbox(null)}>Close</button>
             </div>
-            <img src={imageFiles[lightbox].url} alt={imageFiles[lightbox].name} />
+            <img
+              src={imageFiles[lightbox].url}
+              alt={imageFiles[lightbox].caption || imageFiles[lightbox].name}
+            />
           </div>
         </div>
       )}

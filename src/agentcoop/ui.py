@@ -870,82 +870,174 @@ _BARE_FILE_NAME = (
     + "|".join(sorted(s.lstrip(".") for s in _REF_FILE_SUFFIXES))
     + r")"
 )
+_REL_FILE_PATH = (
+    r"(?:data|docs|src|tests|design|screenshots?|assets|runtime|board)"
+    r"(?:/[\w.+=\-]+)+\.[\w]{1,8}"
+)
+_FILE_TOKEN = r"(?:`([^`\n]{3,260})`|(" + _REL_FILE_PATH + r")|(" + _BARE_FILE_NAME + r"))"
+_CAPTION_KEYS = ("line", "label", "title", "caption", "text", "description", "screen", "name")
+_FILE_KEYS = ("file", "path", "image", "screenshot", "shot", "src", "href", "url")
 
 
-def _referenced_paths_in_text(text: str) -> list[str]:
-    """Return relative or absolute file paths named in helper notes and catalogs."""
+def _clean_caption(text: str) -> str:
+    """Return a short human label for a referenced file, or empty."""
+    cleaned = " ".join((text or "").replace("`", " ").split())
+    cleaned = cleaned.strip(" |-")
+    if len(cleaned) < 3 or len(cleaned) > 160:
+        return ""
+    if _normalize_ref_token(cleaned) is not None and Path(cleaned).suffix.lower() in _REF_FILE_SUFFIXES:
+        return ""
+    lower = cleaned.lower()
+    if lower in ("file", "path", "image", "name", "screen", "reader", "status"):
+        return ""
+    if set(cleaned) <= {"-", ":", "|", " "}:
+        return ""
+    return cleaned
+
+
+def _token_from_file_match(match: "re.Match[str]") -> str | None:
+    for group in match.groups():
+        if group:
+            return _normalize_ref_token(group)
+    return None
+
+
+def _referenced_entries_in_text(text: str) -> list[tuple[str, str]]:
+    """Return (path, caption) pairs named in helper notes and catalogs.
+
+    Markdown table rows like
+    ``| Campaign map after load… | data/runtime/…/after-load.png | … |``
+    use the cell before the file as the caption.
+    """
     import re
 
-    found: list[str] = []
-    seen: set[str] = set()
+    found: list[tuple[str, str]] = []
+    captions: dict[str, str] = {}
+    order: list[str] = []
 
-    def add(token: str) -> None:
+    def add(token: str, caption: str = "") -> None:
         cleaned = _normalize_ref_token(token)
-        if cleaned is None or cleaned in seen:
+        if cleaned is None:
             return
-        seen.add(cleaned)
-        found.append(cleaned)
+        label = _clean_caption(caption)
+        if cleaned not in captions:
+            order.append(cleaned)
+            captions[cleaned] = label
+        elif label and not captions[cleaned]:
+            captions[cleaned] = label
+
+    # Table rows: text in the cell before a file cell becomes the caption.
+    cell_file = re.compile(_FILE_TOKEN, re.I)
+    for row in re.finditer(r"^\|(.+)\|\s*$", text or "", re.M):
+        cells = [cell.strip() for cell in row.group(1).split("|")]
+        for index, cell in enumerate(cells):
+            matches = list(cell_file.finditer(cell))
+            if not matches:
+                continue
+            caption = ""
+            for prior in range(index - 1, -1, -1):
+                caption = _clean_caption(cells[prior])
+                if caption:
+                    break
+            for match in matches:
+                token = _token_from_file_match(match)
+                if token:
+                    add(token, caption)
+
+    # Inline "caption | file" or "caption: file" outside strict tables.
+    inline = re.compile(
+        r"(?P<caption>[^|\n`]{3,160}?)\s*(?:\||:)\s*(?P<body>[^|\n]*?"
+        + _FILE_TOKEN
+        + r")",
+        re.I,
+    )
+    for match in inline.finditer(text or ""):
+        body_match = cell_file.search(match.group("body") or "")
+        if body_match is None:
+            continue
+        token = _token_from_file_match(body_match)
+        if token:
+            add(token, match.group("caption"))
 
     for match in re.finditer(r"`([^`\n]{3,260})`", text or ""):
         add(match.group(1))
     for match in re.finditer(r"\[[^\]]*\]\(([^)\s]+)", text or ""):
         add(match.group(1))
-    for match in re.finditer(
-        r"(?<![\w:/])((?:data|docs|src|tests|design|screenshots?|assets|runtime|board)"
-        r"(?:/[\w.+=\-]+)+\.[\w]{1,8})",
-        text or "",
-        re.I,
-    ):
+    for match in re.finditer(r"(?<![\w:/])(" + _REL_FILE_PATH + r")", text or "", re.I):
         add(match.group(1))
-    # Bare filenames such as scroll-1100.png or labels.json in free text / JSON strings.
-    for match in re.finditer(r'(?<![\w./\\-])(' + _BARE_FILE_NAME + r')(?![\w./\\-])', text or "", re.I):
+    for match in re.finditer(r"(?<![\w./\\-])(" + _BARE_FILE_NAME + r")(?![\w./\\-])", text or "", re.I):
         add(match.group(1))
     for abs_path in _absolute_paths_in_text(text or ""):
         add(abs_path)
+
+    for token in order:
+        found.append((token, captions.get(token) or ""))
     return found
 
 
-def _referenced_paths_in_json_data(data: object) -> list[str]:
-    """Walk JSON values and collect strings that look like project files or paths.
+def _referenced_paths_in_text(text: str) -> list[str]:
+    """Return relative or absolute file paths named in helper notes and catalogs."""
+    return [path for path, _caption in _referenced_entries_in_text(text)]
 
-    Accepts both path-like values (data/board/screens/a.png) and bare filenames
-    with a known suffix (scroll-1100.png), including values under keys like file.
-    """
-    found: list[str] = []
-    seen: set[str] = set()
-    file_keys = {"file", "path", "image", "screenshot", "shot", "src", "href", "url"}
 
-    def add(token: str) -> None:
+def _referenced_entries_in_json_data(data: object) -> list[tuple[str, str]]:
+    """Walk JSON and collect (path, caption) pairs for project files."""
+    found: list[tuple[str, str]] = []
+    captions: dict[str, str] = {}
+    order: list[str] = []
+
+    def add(token: str, caption: str = "") -> None:
         cleaned = _normalize_ref_token(token)
-        if cleaned is None or cleaned in seen:
+        if cleaned is None:
             return
-        seen.add(cleaned)
-        found.append(cleaned)
+        label = _clean_caption(caption)
+        if cleaned not in captions:
+            order.append(cleaned)
+            captions[cleaned] = label
+        elif label and not captions[cleaned]:
+            captions[cleaned] = label
 
-    def walk(node: object, key: str = "") -> None:
+    def caption_from_dict(node: dict) -> str:
+        for key in _CAPTION_KEYS:
+            value = node.get(key)
+            if isinstance(value, str):
+                label = _clean_caption(value)
+                if label:
+                    return label
+        return ""
+
+    def walk(node: object, key: str = "", sibling_caption: str = "") -> None:
         if isinstance(node, str):
             cleaned = _normalize_ref_token(node)
             if cleaned is None:
                 return
             has_path = "/" in cleaned or (len(cleaned) > 2 and cleaned[1] == ":")
             has_suffix = Path(cleaned).suffix.lower() in _REF_FILE_SUFFIXES
-            if has_path or has_suffix or key.lower() in file_keys:
-                add(cleaned)
+            if has_path or has_suffix or key.lower() in _FILE_KEYS:
+                add(cleaned, sibling_caption)
             return
         if isinstance(node, dict):
+            local_caption = caption_from_dict(node)
             for child_key, value in node.items():
-                walk(value, str(child_key or ""))
+                walk(value, str(child_key or ""), local_caption or sibling_caption)
             return
         if isinstance(node, list):
             for value in node:
-                walk(value, key)
+                walk(value, key, sibling_caption)
 
     walk(data)
+    for token in order:
+        found.append((token, captions.get(token) or ""))
     return found
 
 
-def _referenced_paths_from_file(path: Path, text: str) -> list[str]:
-    """Extract referenced paths from markdown notes or JSON manifests."""
+def _referenced_paths_in_json_data(data: object) -> list[str]:
+    """Walk JSON values and collect strings that look like project files or paths."""
+    return [path for path, _caption in _referenced_entries_in_json_data(data)]
+
+
+def _referenced_entries_from_file(path: Path, text: str) -> list[tuple[str, str]]:
+    """Extract (path, caption) pairs from markdown notes or JSON manifests."""
     if path.suffix.lower() == ".json":
         import json
 
@@ -954,14 +1046,21 @@ def _referenced_paths_from_file(path: Path, text: str) -> list[str]:
         except (TypeError, ValueError, json.JSONDecodeError):
             data = None
         if data is not None:
-            refs = _referenced_paths_in_json_data(data)
-            # Also scan string values as free text so notes that name files are kept.
-            for extra in _referenced_paths_in_text(text):
-                if extra not in refs:
-                    refs.append(extra)
-            if refs:
-                return refs
-    return _referenced_paths_in_text(text)
+            entries = list(_referenced_entries_in_json_data(data))
+            seen = {path for path, _caption in entries}
+            for token, caption in _referenced_entries_in_text(text):
+                if token in seen:
+                    continue
+                entries.append((token, caption))
+                seen.add(token)
+            if entries:
+                return entries
+    return _referenced_entries_in_text(text)
+
+
+def _referenced_paths_from_file(path: Path, text: str) -> list[str]:
+    """Extract referenced paths from markdown notes or JSON manifests."""
+    return [token for token, _caption in _referenced_entries_from_file(path, text)]
 
 
 def _resolve_referenced_path(
@@ -1153,7 +1252,7 @@ def _children_one_level(
 
     children: list[dict] = []
     seen_child: set[str] = set()
-    for token_path in _referenced_paths_from_file(parent_disk, text):
+    for token_path, caption in _referenced_entries_from_file(parent_disk, text):
         if len(children) >= 40:
             break
         target = _resolve_referenced_path(
@@ -1207,6 +1306,7 @@ def _children_one_level(
                 "source": "reference",
                 "note": "Named in " + parent_name,
                 "description": token_path,
+                "caption": caption,
                 "ts": parent_ts,
                 "actor": parent_actor,
                 "messages": list(parent_messages or []),

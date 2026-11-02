@@ -478,6 +478,7 @@ class ViewerRealUseTests(unittest.TestCase):
                                 "file": "scroll-1100.png",
                                 "line": "We will give 1100 denarii",
                                 "value": 1100,
+                                "source": "editor counted from read_payment_amount 100, step 100",
                             },
                             {"file": "scroll-2200.png", "value": 2200},
                         ],
@@ -512,21 +513,78 @@ class ViewerRealUseTests(unittest.TestCase):
             )
             labels = next(row for row in level1 if row["name"] == "labels.json")
             self.assertTrue(labels.get("expandable"))
-            nested = {
-                child["name"]
-                for child in file_children(
-                    env.board,
-                    "demo",
-                    "tok",
-                    str(labels["local_path"]),
-                    local_open=True,
-                    parent_id=str(labels["id"]),
-                    parent_name=str(labels["name"]),
+            children = file_children(
+                env.board,
+                "demo",
+                "tok",
+                str(labels["local_path"]),
+                local_open=True,
+                parent_id=str(labels["id"]),
+                parent_name=str(labels["name"]),
+            )
+            by_name = {child["name"]: child for child in children}
+            self.assertIn("scroll-1100.png", by_name)
+            self.assertIn("scroll-2200.png", by_name)
+            self.assertIn("phasea-giveus-2500.png", by_name)
+            self.assertEqual(by_name["scroll-1100.png"].get("caption"), "We will give 1100 denarii")
+            self.assertEqual(by_name["phasea-giveus-2500.png"].get("caption"), "Give us 2500 denarii")
+            # Prefer line over source; source must not become the caption.
+            self.assertNotIn("editor counted", str(by_name["scroll-1100.png"].get("caption") or ""))
+
+    def test_files_view_captions_from_markdown_table(self) -> None:
+        with support.TempEnv() as env:
+            from agentcoop.cli import main
+
+            assert main(["setup", "--connect", "cursor", "--schedule", "no", "--yes"]) == 0
+            folder = env.workspace / "demo"
+            folder.mkdir()
+            assert (
+                main(
+                    [
+                        "project",
+                        "add",
+                        str(folder),
+                        "--name",
+                        "demo",
+                        "--driver",
+                        "cursor",
+                        "--gitignore",
+                        "no",
+                        "--yes",
+                    ]
                 )
-            }
-            self.assertIn("scroll-1100.png", nested)
-            self.assertIn("scroll-2200.png", nested)
-            self.assertIn("phasea-giveus-2500.png", nested)
+                == 0
+            )
+            shot_dir = folder / "data" / "runtime" / "overview" / "r12" / "load-checkpoint"
+            shot_dir.mkdir(parents=True, exist_ok=True)
+            (shot_dir / "after-load.png").write_bytes(b"\x89PNG\r\n\x1a\n")
+            draft = env.board / "projects" / "demo" / "files" / "cursor"
+            draft.mkdir(parents=True, exist_ok=True)
+            (draft / "ux-screen-catalog.md").write_text(
+                "## Checkpoint\n\n"
+                "| Screen | File | Reader |\n"
+                "| --- | --- | --- |\n"
+                "| Campaign map after load, senate parchment still open |"
+                " data/runtime/overview/r12/load-checkpoint/after-load.png | not covered |\n",
+                encoding="utf-8",
+            )
+            rows = files_view(env.board, "demo", "tok", local_open=True)
+            catalog = next(row for row in rows if row["name"] == "ux-screen-catalog.md")
+            children = file_children(
+                env.board,
+                "demo",
+                "tok",
+                str(catalog["local_path"]),
+                local_open=True,
+                parent_id=str(catalog["id"]),
+                parent_name=str(catalog["name"]),
+            )
+            self.assertEqual(len(children), 1)
+            self.assertEqual(children[0]["name"], "after-load.png")
+            self.assertEqual(
+                children[0].get("caption"),
+                "Campaign map after load, senate parchment still open",
+            )
 
     def test_local_file_serves_draft_refuses_program(self) -> None:
         with support.TempEnv() as env:
