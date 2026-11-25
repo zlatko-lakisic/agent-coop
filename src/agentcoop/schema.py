@@ -182,6 +182,9 @@ def check_config(data: object) -> list[str]:
     poll = data.get("github_poll_seconds")
     if poll is not None and (not isinstance(poll, int) or isinstance(poll, bool) or poll < 5 or poll > 3600):
         problems.append("github_poll_seconds must be a whole number from 5 to 3600")
+    attach = data.get("github_attach_max_mb")
+    if attach is not None and (not isinstance(attach, int) or isinstance(attach, bool) or attach < 1 or attach > 100):
+        problems.append("github_attach_max_mb must be a whole number from 1 to 100")
     context_limit = data.get("context_limit_bytes")
     if context_limit is not None and (
         not isinstance(context_limit, int)

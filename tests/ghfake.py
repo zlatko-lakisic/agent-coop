@@ -32,6 +32,10 @@ class FakeGitHub:
         self.down = False
         self.fail_comments = False
         self.token = TOKEN
+        self.empty = False
+        self.branches: dict[str, str] = {"main": "c0"}
+        self.files: dict[tuple[str, str], bytes] = {}
+        self.objects = 0
         self._moment = datetime(2026, 1, 1, tzinfo=timezone.utc)
 
     def _stamp(self) -> str:
@@ -128,6 +132,8 @@ class FakeGitHub:
             return self._json(201, issue)
         if method == "GET" and rest == "/issues/comments":
             return self._list_comments(headers, query)
+        if rest.startswith("/git/") or rest.startswith("/contents/"):
+            return self._git(method, rest, headers, query, payload)
         pieces = rest.strip("/").split("/")
         if len(pieces) >= 2 and pieces[0] == "issues" and pieces[1].isdigit():
             number = int(pieces[1])
@@ -141,6 +147,44 @@ class FakeGitHub:
                 if self.fail_comments:
                     return self._json(500, {"message": "Server Error"})
                 return self._json(201, self._add_comment(number, str(payload.get("body") or "")))
+        return self._json(404, {"message": "Not Found"})
+
+    def _git(self, method: str, rest: str, headers: dict, query: dict, payload: dict):
+        import base64
+
+        if self.empty:
+            return self._json(409, {"message": "Git Repository is empty."})
+        if method == "GET" and rest.startswith("/git/ref/heads/"):
+            name = rest[len("/git/ref/heads/") :]
+            if name not in self.branches:
+                return self._json(404, {"message": "Not Found"})
+            return self._json(200, {"ref": "refs/heads/" + name, "object": {"sha": self.branches[name]}})
+        if method == "POST" and rest in ("/git/trees", "/git/commits"):
+            self.objects += 1
+            return self._json(201, {"sha": "obj" + str(self.objects)})
+        if method == "POST" and rest == "/git/refs":
+            name = str(payload.get("ref") or "")[len("refs/heads/") :]
+            if name in self.branches:
+                return self._json(422, {"message": "Reference already exists"})
+            self.branches[name] = str(payload.get("sha"))
+            return self._json(201, {"ref": payload.get("ref")})
+        if rest.startswith("/contents/"):
+            path = urllib.parse.unquote(rest[len("/contents/") :])
+            if method == "GET":
+                data = self.files.get((query.get("ref", "main"), path))
+                if data is None:
+                    return self._json(404, {"message": "Not Found"})
+                if "raw" in str(headers.get("Accept")):
+                    return 200, {"Content-Type": "application/octet-stream"}, data
+                return self._json(200, {"path": path, "size": len(data)})
+            if method == "PUT":
+                branch = str(payload.get("branch") or "main")
+                if branch not in self.branches:
+                    return self._json(404, {"message": "Branch not found"})
+                if (branch, path) in self.files:
+                    return self._json(422, {"message": "sha wasn't supplied"})
+                self.files[(branch, path)] = base64.b64decode(str(payload.get("content") or ""))
+                return self._json(201, {"content": {"path": path}})
         return self._json(404, {"message": "Not Found"})
 
     def _conditional(self, headers: dict, data: object, extra: dict | None = None):

@@ -580,15 +580,19 @@ def _apply_plain(
             # Otherwise a later comment reused an id. The first comment keeps it.
         if changed:
             _save_index(board, project, index)
+    repo = github_repo((load_projects(board).get("projects") or {}).get(project)) or ""
     for parsed, raw in writes:
         ensure_agent_dirs(board, project, parsed.recipient)
-        try:
-            write_message_file(inbox_msgs(board, project, parsed.recipient), raw)
-        except FileExistsError:
-            pass
-        else:
-            result.messages += 1
-            touched.add(parsed.recipient)
+        if not (inbox_msgs(board, project, parsed.recipient) / (parsed.id + ".json")).exists():
+            # Files are fetched before the copy is written. If GitHub fails here, the next read tries again.
+            copy = _with_files(board, project, repo, parsed, raw, here) if repo else raw
+            try:
+                write_message_file(inbox_msgs(board, project, parsed.recipient), copy)
+            except FileExistsError:
+                pass
+            else:
+                result.messages += 1
+                touched.add(parsed.recipient)
         if parsed.sender in members:
             ensure_agent_dirs(board, project, parsed.sender)
             try:
@@ -887,6 +891,74 @@ def remember_project_issue(board: Path, project: str, issue: int | None) -> None
         state.setdefault("project_issue", issue)
 
     _with_state(board, project, action)
+
+
+def wire_message(project: str, repo: str, message: dict) -> dict:
+    """Return the message as it goes to GitHub.
+
+    Attached files are committed first. Paths on this computer are replaced
+    by the files' names on GitHub, so no local path leaves the computer.
+    """
+    infos = message.get("attachment_info")
+    if not message.get("attachments") or not isinstance(infos, list):
+        return message
+    from agentcoop.ghfiles import upload
+
+    wire = dict(message)
+    refs = []
+    wire_infos = []
+    for info in infos:
+        ref = upload(repo, project, Path(str(info.get("path"))), str(info.get("sha256")), str(info.get("name")))
+        refs.append(ref)
+        kept = {key: value for key, value in info.items() if key not in ("path", "source_path")}
+        kept["path"] = ref
+        wire_infos.append(kept)
+    wire["attachments"] = refs
+    wire["attachment_info"] = wire_infos
+    return wire
+
+
+def _with_files(board: Path, project: str, repo: str, parsed, raw: dict, here: set[str]) -> dict:
+    """Return the copy of a message to keep on this computer.
+
+    When the recipient works here, each attached file is downloaded, checked,
+    and kept in the shared folder, and the copy points at it. A file that
+    cannot be kept stays a name on GitHub, and check shows it as blocked.
+    """
+    from agentcoop import ghfiles
+
+    refs = raw.get("attachments")
+    if not isinstance(refs, list) or not any(ghfiles.is_ref(item) for item in refs):
+        return raw
+    if parsed.recipient not in here:
+        return raw
+    infos = raw.get("attachment_info") if isinstance(raw.get("attachment_info"), list) else []
+    limit = ghfiles.max_bytes(board)
+    local = dict(raw)
+    paths = []
+    local_infos = []
+    for position, ref in enumerate(refs):
+        info = dict(infos[position]) if position < len(infos) and isinstance(infos[position], dict) else {}
+        target = ghfiles.parse_ref(ref, project)
+        kept = None
+        if target is not None and info.get("sha256") == target[1] and info.get("name") == target[2]:
+            size = info.get("bytes")
+            if isinstance(size, int) and 0 <= size <= limit:
+                data = ghfiles.download(repo, target[0], target[1], limit)
+                if data is not None:
+                    from agentcoop.share import receive_file
+
+                    kept = receive_file(
+                        board, project, data, info, sender=parsed.sender, recipient=parsed.recipient, message_id=parsed.id
+                    )
+        paths.append(kept or str(ref))
+        if info:
+            info["path"] = kept or str(ref)
+            local_infos.append(info)
+    local["attachments"] = paths
+    if local_infos:
+        local["attachment_info"] = local_infos
+    return local
 
 
 def _thread_for(index: dict, message: dict) -> int | None:

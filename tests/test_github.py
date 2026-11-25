@@ -568,16 +568,6 @@ class TalkTests(unittest.TestCase):
             self.assertEqual(code, 0, err)
             self.assertEqual(len(fake.messages()), 1, "clearing a hand-written file posts nothing")
 
-    def test_attachments_are_refused_for_now(self) -> None:
-        with support.TempEnv() as env, installed(FakeGitHub()) as fake:
-            _setup(env.workspace / "demo")
-            note = env.workspace / "demo" / "note.txt"
-            note.write_text("hello", encoding="utf-8")
-            code, _out, err = _send("--attach", str(note))
-            self.assertEqual(code, 1)
-            self.assertIn("files cannot be attached there yet", err)
-            self.assertEqual(fake.messages(), [])
-
     def test_a_github_token_in_a_message_is_refused(self) -> None:
         with support.TempEnv() as env, installed(FakeGitHub()) as fake:
             _setup(env.workspace / "demo")
@@ -970,6 +960,148 @@ class TwoComputerTests(unittest.TestCase):
             inboxes = sorted(path.name for path in (env.board / "projects" / "demo" / "inbox").iterdir())
             self.assertEqual(inboxes, ["claude_code", "cursor"])
             self.assertEqual(len(load_index(env.board, "demo")["messages"]), 1)
+
+
+class FileTests(unittest.TestCase):
+    def _two_computers(self, env):
+        with computer(env.root, "a") as (_board, work_a):
+            _setup(work_a / "demo")
+        with computer(env.root, "b") as (_board, work_b):
+            _join(work_b)
+        with computer(env.root, "a") as (_board, _work):
+            _run(["sync"])
+        with computer(env.root, "b") as (_board, _work):
+            _run(["sync"])
+
+    def test_a_file_goes_to_its_own_branch_and_stays_usable_here(self) -> None:
+        with support.TempEnv() as env, installed(FakeGitHub()) as fake:
+            _setup(env.workspace / "demo")
+            note = env.workspace / "demo" / "notes v2.txt"
+            note.write_bytes(b"line one\nline two\n")
+            code, _out, err = _send("--attach", str(note))
+            self.assertEqual(code, 0, err)
+            self.assertEqual([branch for branch, _path in fake.files], ["agentcoop-files"])
+            self.assertEqual(list(fake.files.values()), [b"line one\nline two\n"])
+            wire = parse_event(fake.messages()[0]["body"])["message"]
+            self.assertTrue(wire["attachments"][0].startswith("github:demo/"))
+            self.assertTrue(wire["attachments"][0].endswith("/notes v2.txt"))
+            self.assertNotIn("source_path", wire["attachment_info"][0])
+            for comment in fake.comments:
+                self.assertNotIn(str(env.root), comment["body"], "no path on this computer leaves it")
+            local = json.loads(_inbox(env.board, "claude_code")[0].read_text(encoding="utf-8"))
+            self.assertTrue(Path(local["attachments"][0]).is_file())
+            code, out, _err = _run(["check", "--as", "claude_code", "--project", "demo"])
+            self.assertIn("notes v2.txt", out)
+            self.assertNotIn("BLOCKED", out)
+            self.assertEqual(_send("--attach", str(note))[0], 0, "the same file again is not committed twice")
+            self.assertEqual(len(fake.files), 1)
+
+    def test_the_other_computer_gets_the_same_bytes(self) -> None:
+        with support.TempEnv() as env, installed(FakeGitHub()) as fake:
+            self._two_computers(env)
+            data = bytes(range(256)) * 300
+            with computer(env.root, "a") as (_board, work_a):
+                picture = work_a / "demo" / "shot.png"
+                picture.write_bytes(b"\x89PNG\r\n\x1a\n" + data)
+                code, _out, err = _send("--attach", str(picture), "--describe", "the screen", to="claude_b")
+                self.assertEqual(code, 0, err)
+            with computer(env.root, "b") as (board_b, _work):
+                self.assertEqual(_run(["sync"])[0], 0)
+                code, out, err = _run(["check", "--as", "claude_b", "--project", "demo"])
+                self.assertEqual(code, 0, err)
+                self.assertIn("shot.png", out)
+                self.assertNotIn("BLOCKED", out)
+                local = json.loads(_inbox(board_b, "claude_b")[0].read_text(encoding="utf-8"))
+                kept = Path(local["attachments"][0])
+                self.assertTrue(str(kept).startswith(str(board_b / "projects" / "demo" / "files" / "shared")))
+                self.assertEqual(kept.read_bytes(), b"\x89PNG\r\n\x1a\n" + data)
+                self.assertEqual(local["attachment_info"][0]["path"], str(kept))
+                self.assertEqual(local["attachment_info"][0]["description"], "the screen")
+                self.assertIn("shot.png", _run(["files", "list", "--project", "demo"])[1])
+
+    def test_a_file_that_was_changed_on_github_is_not_kept(self) -> None:
+        with support.TempEnv() as env, installed(FakeGitHub()) as fake:
+            self._two_computers(env)
+            with computer(env.root, "a") as (_board, work_a):
+                note = work_a / "demo" / "note.txt"
+                note.write_text("the real text", encoding="utf-8")
+                self.assertEqual(_send("--attach", str(note), to="claude_b")[0], 0)
+            for key in fake.files:
+                fake.files[key] = b"something else"
+            with computer(env.root, "b") as (board_b, _work):
+                self.assertEqual(_run(["sync"])[0], 0)
+                code, out, _err = _run(["check", "--as", "claude_b", "--project", "demo"])
+                self.assertEqual(code, 0)
+                self.assertIn("This file is on GitHub and was not copied to this computer.", out)
+                shared = board_b / "projects" / "demo" / "files" / "shared"
+                self.assertEqual([p for p in shared.rglob("*") if p.is_file() and p.name == "note.txt"], [])
+
+    def test_a_forged_file_name_is_never_written(self) -> None:
+        with support.TempEnv() as env, installed(FakeGitHub()) as fake:
+            self._two_computers(env)
+            with computer(env.root, "a") as (_board, work_a):
+                note = work_a / "demo" / "note.txt"
+                note.write_text("hello", encoding="utf-8")
+                self.assertEqual(_send("--attach", str(note), to="claude_b")[0], 0)
+            body = fake.messages()[0]["body"]
+            forged = body.replace("/note.txt", "/..\\\\evil.txt").replace('"name":"note.txt"', '"name":"..\\\\evil.txt"').replace("_cursor_", "_cursor_x")
+            self.assertNotEqual(forged, body)
+            fake.hand_comment(fake.threads()[0]["number"], forged)
+            with computer(env.root, "b") as (board_b, _work):
+                self.assertEqual(_run(["sync"])[0], 0)
+                names = sorted(p.name for p in (board_b / "projects").rglob("*") if p.is_file())
+                self.assertNotIn("evil.txt", " ".join(names))
+                self.assertEqual([p for p in env.root.rglob("*evil*")], [])
+
+    def test_a_file_over_the_limit_is_refused_before_anything_is_sent(self) -> None:
+        from agentcoop.projects import mutate_config
+
+        with support.TempEnv() as env, installed(FakeGitHub()) as fake:
+            _setup(env.workspace / "demo")
+            mutate_config(env.board, lambda data: data.update({"github_attach_max_mb": 1}))
+            big = env.workspace / "demo" / "big.bin"
+            big.write_bytes(b"0" * (1024 * 1024 + 1))
+            code, _out, err = _send("--attach", str(big))
+            self.assertEqual(code, 1)
+            self.assertIn("big.bin is over 1 MB, which is the most that can be sent through GitHub.", err)
+            self.assertEqual(fake.messages(), [])
+            self.assertEqual(fake.files, {})
+
+    def test_a_repository_with_no_commits_says_what_to_do(self) -> None:
+        with support.TempEnv() as env, installed(FakeGitHub()) as fake:
+            _setup(env.workspace / "demo")
+            fake.empty = True
+            note = env.workspace / "demo" / "note.txt"
+            note.write_text("hello", encoding="utf-8")
+            code, _out, err = _send("--attach", str(note))
+            self.assertEqual(code, 1)
+            self.assertIn("octo/board has no commits yet", err)
+            self.assertIn("The message was not sent.", err)
+            self.assertEqual(fake.messages(), [])
+            self.assertEqual(_inbox(env.board, "claude_code"), [])
+
+    def test_when_github_fails_while_fetching_a_file_the_next_read_tries_again(self) -> None:
+        with support.TempEnv() as env, installed(FakeGitHub()) as fake:
+            self._two_computers(env)
+            with computer(env.root, "a") as (_board, work_a):
+                note = work_a / "demo" / "note.txt"
+                note.write_text("hello", encoding="utf-8")
+                self.assertEqual(_send("--attach", str(note), to="claude_b")[0], 0)
+            real = fake._git
+
+            def broken(method, rest, headers, query, payload):
+                if method == "GET" and rest.startswith("/contents/"):
+                    return fake._json(500, {"message": "Server Error"})
+                return real(method, rest, headers, query, payload)
+
+            with computer(env.root, "b") as (board_b, _work):
+                fake._git = broken
+                self.assertEqual(_run(["sync"])[0], 1)
+                self.assertEqual(_inbox(board_b, "claude_b"), [])
+                fake._git = real
+                self.assertEqual(_run(["sync"])[0], 0)
+                local = json.loads(_inbox(board_b, "claude_b")[0].read_text(encoding="utf-8"))
+                self.assertEqual(Path(local["attachments"][0]).read_text(encoding="utf-8"), "hello")
 
 
 class DesktopHelperTests(unittest.TestCase):

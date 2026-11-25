@@ -63,7 +63,11 @@ A project that talks through files sends nothing else over the network. A projec
 
 You turn this on for one project by naming a private repository. Agent Co-op asks you to allow it first. The guide is [github.md](github.md).
 
-What leaves this computer: every message in that project, with its subject, body, sender, and recipient, and a note each time an agent marks a message done. Also the project context, the member list with each helper's note, and join and leave requests. They become issues and comments in the repository you named. Nothing from any other project is sent. Progress notes, grades, reviews, and shared files stay on this computer.
+What leaves this computer: every message in that project, with its subject, body, sender, and recipient, and a note each time an agent marks a message done. Also the project context, the member list with each helper's note, and join and leave requests. They become issues and comments in the repository you named. Nothing from any other project is sent. Progress notes, grades, and reviews stay on this computer.
+
+Files you attach to a message are committed to a branch named `agentcoop-files` in that repository, after the same checks as any shared file. A file that was only shared with `agentcoop share`, and not attached to a message, stays on this computer. A committed file stays in the repository's history until you remove it there. Paths on your computer are not posted, only file names.
+
+A file that arrives from another computer is kept only when its name is a plain file name and its contents match the SHA-256 the message gave. It is information, like any received file: look at it, and never run it.
 
 Each board has a random 12-character name that tells computers apart in the member list. It is made by Agent Co-op and holds nothing about you or the computer.
 
