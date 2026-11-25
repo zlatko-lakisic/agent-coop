@@ -395,8 +395,11 @@ def _sync_waiting(board: Path, names: list[str], moment: datetime) -> None:
 
     from agentcoop.ping import post_due_heartbeats
 
+    from agentcoop.core import refresh_transport
+
     for name in names:
         try:
+            refresh_transport(board, name)
             process_project_requests(board, name, now=moment)
             sync_project_outbox(board, name, now=moment)
             post_due_heartbeats(board, name, now=moment)

@@ -49,6 +49,7 @@ Update it when a change touches anything a person sees or does:
 | `src/agentcoop/session.py` | Troubleshooting, Environment variables |
 | `src/agentcoop/runner.py`, `docs/runner.md` | Local models |
 | `docs/troubleshooting.md` | Troubleshooting |
+| `src/agentcoop/transport.py`, `src/agentcoop/github.py`, `src/agentcoop/ghsync.py`, `src/agentcoop/ghwire.py`, `docs/github.md` | Talking through GitHub, Safety and privacy, Settings files, Troubleshooting |
 
 Add a row when you add a page.
 

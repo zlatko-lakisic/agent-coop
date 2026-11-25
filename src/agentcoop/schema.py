@@ -7,6 +7,7 @@ from pathlib import Path
 
 PROJECT_NAME_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,47}$")
 AGENT_NAME_RE = re.compile(r"^[a-z][a-z0-9_]{1,31}$")
+GITHUB_REPO_RE = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})/[A-Za-z0-9._-]{1,100}$")
 
 
 def format_problem(path: Path, problem: str) -> str:
@@ -101,6 +102,11 @@ def check_projects(data: object) -> list[str]:
         review = record.get("review")
         if review is not None and review not in ("off", "changes", "always"):
             problems.append(name + " review must be off, changes, or always")
+        github = record.get("github")
+        if github is not None:
+            repo = github.get("repo") if isinstance(github, dict) else None
+            if not isinstance(repo, str) or not GITHUB_REPO_RE.fullmatch(repo):
+                problems.append(name + " github must be an object with repo set to owner/name")
     return problems
 
 
@@ -164,6 +170,9 @@ def check_config(data: object) -> list[str]:
     limit = data.get("body_limit_bytes")
     if not isinstance(limit, int) or isinstance(limit, bool) or limit <= 0:
         problems.append("body_limit_bytes must be a positive integer")
+    poll = data.get("github_poll_seconds")
+    if poll is not None and (not isinstance(poll, int) or isinstance(poll, bool) or poll < 5 or poll > 3600):
+        problems.append("github_poll_seconds must be a whole number from 5 to 3600")
     context_limit = data.get("context_limit_bytes")
     if context_limit is not None and (
         not isinstance(context_limit, int)

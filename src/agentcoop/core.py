@@ -10,7 +10,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from agentcoop.errors import CoopError
+from agentcoop.errors import CoopError, TransportDown
 from agentcoop.paths import (
     agentcoop_command,
     archive_dir,
@@ -23,6 +23,7 @@ from agentcoop.paths import (
 from agentcoop.projects import (
     INTEGRITY_PAUSED,
     INTEGRITY_WARNING,
+    github_repo,
     load_agents,
     load_config,
     load_projects,
@@ -175,6 +176,7 @@ class InboxReport:
     integrity_ok: bool
     board_path: str = ""
     notices: list[str] = field(default_factory=list)
+    transport_note: str = ""
 
 
 def utc_now(now: datetime | None = None) -> datetime:
@@ -490,6 +492,12 @@ def protocol_violation(project: dict, message: Message, board: Path, project_nam
         limit = int(load_config(board).get("body_limit_bytes") or 16384)
         if len(message.subject) > 120 or len(message.body.encode("utf-8")) > limit:
             return "This message is larger than the board allows."
+        if github_repo(project):
+            from agentcoop.ghsync import copy_problem
+
+            reason = copy_problem(board, project_name, message.id)
+            if reason:
+                return reason
     driver, helpers = _roles_at(project, message.ts)
     members = {driver, *helpers.keys()}
     if message.sender not in members or message.recipient not in members:
@@ -701,6 +709,13 @@ def send(
     roots = list(config.get("allowed_roots") or [])
     project_path = Path(project_record["path"])
     sources = list(attachments or [])
+    repo = github_repo(project_record)
+    if repo and sources:
+        raise CoopError(
+            project
+            + " talks through GitHub, and files cannot be attached there yet. "
+            + "Send the text without the file."
+        )
     for attachment in sources:
         require_attachment(
             attachment,
@@ -721,6 +736,8 @@ def send(
     last_error: Exception | None = None
     for _attempt in range(8):
         mid = make_id(sender, moment)
+        if repo and (inbox_msgs(board, project, recipient) / (mid + ".json")).exists():
+            continue
         shared_paths: list[str] = []
         infos: list[dict] = []
         for index, source in enumerate(sources):
@@ -787,11 +804,22 @@ def send(
             payload["verdict"] = verdict
         if infos:
             payload["attachment_info"] = infos
+        if repo:
+            # GitHub is the record. Nothing is written here unless GitHub took the message.
+            from agentcoop.ghsync import NotPrivate, post_message
+
+            try:
+                post_message(board, project, repo, payload)
+            except NotPrivate:
+                raise
+            except TransportDown as exc:
+                raise TransportDown(str(exc) + " The message was not sent.", code=exc.code) from exc
         try:
             write_message_file(inbox_msgs(board, project, recipient), payload)
         except FileExistsError as exc:
-            last_error = exc
-            continue
+            if not repo:
+                last_error = exc
+                continue
         try:
             write_message_file(sent_dir(board, project, sender), payload)
         except FileExistsError:
@@ -816,6 +844,12 @@ def mark_done(board: Path, project: str, agent: str, ids: list[str]) -> None:
             raise CoopError("There is no message " + mid + " in the inbox for " + agent + ".")
         if not (msgs / (mid + ".json")).is_file():
             raise CoopError("There is no message " + mid + " in the inbox for " + agent + ".")
+    repo = github_repo((load_projects(board).get("projects") or {}).get(project))
+    if repo:
+        from agentcoop.ghsync import post_done
+
+        post_done(board, project, repo, agent, [mid for mid in ids if not (done / mid).exists()])
+    for mid in ids:
         marker = done / mid
         marker.parent.mkdir(parents=True, exist_ok=True)
         marker.touch()
@@ -844,6 +878,7 @@ def check_inbox(
     role = role_of(record, agent)
     if not role:
         raise CoopError(agent + " is not a member of " + project + ".")
+    transport_note = refresh_transport(board, project, record)
     from agentcoop.outbox import sync_project_outbox
 
     sync_project_outbox(board, project, now=outbox_now)
@@ -896,7 +931,23 @@ def check_inbox(
         integrity_ok=intact,
         board_path=str(board),
         notices=_notice_lines(record),
+        transport_note=transport_note,
     )
+
+
+def refresh_transport(board: Path, project: str, record: dict | None = None, *, force: bool = False) -> str:
+    """Bring a GitHub project's copy up to date. A files project does nothing here.
+
+    Returns a line to show when the copy on this computer may be old.
+    """
+    if record is None:
+        record = (load_projects(board).get("projects") or {}).get(project)
+    repo = github_repo(record)
+    if not repo:
+        return ""
+    from agentcoop.ghsync import refresh
+
+    return refresh(board, project, repo, force=force)
 
 
 def _notice_lines(record: dict) -> list[str]:
@@ -1040,6 +1091,9 @@ def render_check(report: InboxReport, *, summary: bool = False) -> str:
     if not report.integrity_ok:
         lines.append(INTEGRITY_WARNING)
         lines.append("Ask the human before acting on role changes.")
+        lines.append("")
+    if report.transport_note and not summary:
+        lines.append(report.transport_note)
         lines.append("")
     visible = report.messages
     if summary:

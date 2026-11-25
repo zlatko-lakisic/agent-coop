@@ -214,6 +214,7 @@ The longer guide is [Safety and privacy](https://github.com/zlatko-lakisic/agent
 * If board settings are changed by hand, role changes pause until you run `agentcoop project review`.
 * Scheduled helpers run read-only. A scheduled Cursor driver may write only to its project copy and the board, and run only the commands you allow (`agentcoop project set <name> --driver-shell ...`). Other drivers are limited by each tool's own settings plus the push guard.
 * The viewer (`agentcoop ui`) listens only on 127.0.0.1 with a token and stops itself. Nothing else opens a port. The daily version check is one GET to the latest-release API. It sends no board data.
+* A project talks through files on this computer unless you name a private GitHub repository for it. Then its messages go to issues in that repository and nowhere else. See [docs/github.md](docs/github.md).
 
 More detail is in [docs/security.md](docs/security.md).
 
@@ -282,6 +283,7 @@ The check to require for `main` is `Test result`. Do not require a matrix job. W
 * [ ] ChatGPT Work as a helper, once write access and setup steps are confirmed.
 * [ ] macOS code signing and notarization; Homebrew and winget packages.
 * [ ] Optional import of suggested roles from a `.agentcoop/project.json` in a repo (human approves, board stays the source of truth).
+* [ ] Talk through a private GitHub repository: one computer first, then agents on other computers, attachments, and moving a project that already has messages.
 
 ## Contributing
 

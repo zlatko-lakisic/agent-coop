@@ -127,6 +127,16 @@ def render_status(board: Path, now: datetime | None = None) -> str:
         lines.append("Folder: " + str(project.get("path") or ""))
         lines.append("Driver: " + str(project.get("driver") or ""))
         lines.append("Helpers: " + helper_text)
+        from agentcoop.transport import talks_line
+
+        talks = talks_line(project)
+        if talks:
+            from agentcoop.ghsync import stale_line
+
+            lines.append(talks)
+            stale = stale_line(board, str(name))
+            if stale:
+                lines.append(stale)
         from agentcoop.grades import status_lines as grade_status_lines
 
         lines.extend(grade_status_lines(board, name))

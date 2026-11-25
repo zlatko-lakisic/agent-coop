@@ -19,7 +19,7 @@ from agentcoop.core import (
     send,
     utc_now,
 )
-from agentcoop.errors import CoopError
+from agentcoop.errors import CoopError, TransportDown
 from agentcoop.paths import (
     archive_dir,
     ensure_outbox_dirs,
@@ -216,6 +216,10 @@ def process_outbox(
                 _post_nudge(board, project, agent, driver, claimed, now, msg_type=kind)
             else:
                 _post_claimed(board, project, agent, driver, claimed, mid, now)
+        except TransportDown:
+            # GitHub could not take it. Nothing is wrong with the answer, so it is not
+            # rejected. It stays in processing and is posted again later.
+            break
         finally:
             if lock_path.is_file():
                 try:
@@ -486,6 +490,8 @@ def _post_progress(board: Path, project: str, agent: str, driver: str, path: Pat
         return
     try:
         fields = parse_fields(text)
+    except TransportDown:
+        raise
     except CoopError as exc:
         _reject(board, project, agent, path, str(exc))
         return
@@ -502,6 +508,8 @@ def _post_progress(board: Path, project: str, agent: str, driver: str, path: Pat
             now=str(fields.get("Now") or ""),
             allow_secret=True,
         )
+    except TransportDown:
+        raise
     except CoopError as exc:
         _reject(board, project, agent, path, str(exc))
         return
@@ -552,6 +560,8 @@ def _post_claimed(
                 type="context_request",
                 now=now,
             )
+        except TransportDown:
+            raise
         except CoopError as exc:
             _reject(board, project, agent, path, str(exc))
             return
@@ -574,6 +584,8 @@ def _post_claimed(
                 re=mid,
                 now=now,
             )
+        except TransportDown:
+            raise
         except CoopError as exc:
             _reject(board, project, agent, path, str(exc))
             return
@@ -602,6 +614,8 @@ def _post_claimed(
                 eta_minutes=fields.get("eta_minutes"),
                 now=now,
             )
+        except TransportDown:
+            raise
         except CoopError as exc:
             _reject(board, project, agent, path, str(exc))
             return
@@ -626,6 +640,8 @@ def _post_claimed(
                 verdict=verdict,
                 now=now,
             )
+        except TransportDown:
+            raise
         except CoopError as exc:
             _reject(board, project, agent, path, str(exc))
             return
@@ -690,6 +706,8 @@ def _post_claimed(
             attachments=attachments,
             now=now,
         )
+    except TransportDown:
+        raise
     except CoopError as exc:
         reason = str(exc)
         from agentcoop.safety import secret_warning
@@ -768,6 +786,8 @@ def _post_nudge(
             type=msg_type,
             now=now,
         )
+    except TransportDown:
+        raise
     except CoopError as exc:
         _reject(board, project, agent, path, str(exc))
         return

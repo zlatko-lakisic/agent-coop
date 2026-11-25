@@ -933,6 +933,9 @@ def _message_paths(board: Path, project: str) -> list[tuple[Path, bool]]:
             continue
         if path.name in ("index.json", "pending.json"):
             continue
+        if path.parent.name == "github" and path.parent.parent == root:
+            # Sync state for a project that talks through GitHub. These are not messages.
+            continue
         found.append((path, archived))
     return found
 

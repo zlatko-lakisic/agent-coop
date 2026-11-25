@@ -56,6 +56,7 @@ class LiveHub:
         self._watcher_stop.clear()
         self._watcher = threading.Thread(target=self._watch_loop, name="viewer-live", daemon=True)
         self._watcher.start()
+        threading.Thread(target=self._transport_loop, name="viewer-transport", daemon=True).start()
 
     def stop(self) -> None:
         """Stop the watcher and close every socket."""
@@ -143,6 +144,22 @@ class LiveHub:
             if missed and time.time() - float(missed[0].get("ts") or time.time()) > MAX_REPLAY_AGE_SECONDS:
                 return None, "The gap is older than ten minutes. Reload the view."
             return [dict(row) for row in missed], None
+
+    def _transport_loop(self) -> None:
+        """Keep projects that talk through GitHub fresh while the viewer is open.
+
+        A project that uses files does nothing here.
+        """
+        from agentcoop.core import refresh_transport
+        from agentcoop.projects import load_projects
+
+        while not self._watcher_stop.wait(5.0):
+            try:
+                projects = load_projects(self.board).get("projects") or {}
+                for name, record in projects.items():
+                    refresh_transport(self.board, name, record)
+            except Exception:
+                continue
 
     def _watch_loop(self) -> None:
         from agentcoop.timeline import (

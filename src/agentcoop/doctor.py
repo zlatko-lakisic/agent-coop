@@ -96,6 +96,7 @@ def run_doctor(
         if record.get("tool") == "runner":
             items.append(_runner_check(record))
     items.extend(_project_checks(projects, agents, config, only=project_names))
+    items.extend(_github_checks(board, projects, only=project_names))
     items.extend(_duplicate_instruction_checks(agents, projects, only=project_names))
     items.extend(_message_checks(board, projects, only=project_names))
     items.extend(_context_checks(board, projects, only=project_names, now=now))
@@ -269,6 +270,72 @@ def _agent_checks(name: str, record: dict) -> list[DoctorItem]:
         if not hooked:
             items.append(
                 DoctorItem("fix", display + " hooks are not installed. Run: agentcoop connect " + tool.key,
+                )
+            )
+    return items
+
+
+def _github_checks(board: Path, projects: dict, *, only: set[str] | None = None) -> list[DoctorItem]:
+    """Check each project that talks through GitHub. A files project adds nothing."""
+    from agentcoop.projects import github_repo
+
+    using = {}
+    for name, record in (projects.get("projects") or {}).items():
+        repo = github_repo(record)
+        if repo and (only is None or name in only):
+            using[str(name)] = repo
+    if not using:
+        return []
+    from agentcoop import github
+    from agentcoop.ghsync import check_repo, edited_ids, load_state, local_only
+
+    items = []
+    source = github.sign_in_source()
+    if not source:
+        items.append(DoctorItem("fix", github.NO_SIGN_IN))
+    else:
+        items.append(DoctorItem("ok", "Signed in to GitHub through " + source + "."))
+    for name, repo in using.items():
+        if source:
+            try:
+                check_repo(repo)
+            except CoopError as exc:
+                text = str(exc).replace(" Nothing was changed.", "")
+                items.append(DoctorItem("fix", name + ": " + text))
+            else:
+                items.append(DoctorItem("ok", name + ": talks through GitHub " + repo + ", which is private."))
+        state = load_state(board, name)
+        if state.get("last_error"):
+            items.append(
+                DoctorItem("note", name + ": the last read from GitHub failed. " + str(state.get("last_error")))
+            )
+        elif state.get("last_ok"):
+            items.append(DoctorItem("ok", name + ": last read from GitHub at " + str(state.get("last_ok")) + "."))
+        stray = local_only(board, name)
+        if stray:
+            noun = "file was" if len(stray) == 1 else "files were"
+            items.append(
+                DoctorItem(
+                    "note",
+                    name
+                    + ": "
+                    + str(len(stray))
+                    + " message "
+                    + noun
+                    + " written by hand and not sent, because this project talks through GitHub. First: "
+                    + str(stray[0]),
+                )
+            )
+        changed = edited_ids(board, name)
+        if changed:
+            items.append(
+                DoctorItem(
+                    "note",
+                    name
+                    + ": "
+                    + str(len(changed))
+                    + " comment(s) were edited on GitHub after they were posted. First: "
+                    + changed[0],
                 )
             )
     return items

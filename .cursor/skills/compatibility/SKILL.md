@@ -15,6 +15,7 @@ Before you finish, see if the change touches any of these:
 * board folders: inbox, done, sent, files, archive, context, progress, outbox, requests, watchers, STATUS.md, or any new board file
 * keys in projects.json, agents.json, config.json, or the integrity hash
 * role rules
+* how a project talks: the `github` key, the comment format on GitHub, or the `github/` folder (`transport.py`, `ghwire.py`, `ghsync.py`, SPEC.md section 16)
 * `board_format`, `min_version`, or migrations
 * skill, rule, AGENTS.md, GEMINI.md, or Claude desktop skill text
 * setup or update flags that older versions call, or that `docs/agent-setup.md` and `docs/agent-update.md` tell an agent to run

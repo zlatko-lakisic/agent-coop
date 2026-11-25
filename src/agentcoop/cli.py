@@ -257,6 +257,7 @@ def build_parser() -> argparse.ArgumentParser:
     project_add.add_argument("--lock-helpers", choices=("yes", "no"), default="no")
     project_add.add_argument("--gitignore", choices=("yes", "no"), default="yes")
     project_add.add_argument("--yes", action="store_true")
+    project_add.add_argument("--github", metavar="OWNER/NAME", help="Talk through a private GitHub repository")
     project_add.set_defaults(func=cmd_project_add)
     project_list = project_sub.add_parser("list", help="List projects")
     project_list.set_defaults(func=cmd_project_list)
@@ -294,8 +295,14 @@ def build_parser() -> argparse.ArgumentParser:
     project_review.set_defaults(func=cmd_project_review)
     project_set = project_sub.add_parser("set", help="Change a project setting")
     project_set.add_argument("name")
-    project_set.add_argument("--driver-shell", required=True)
+    project_set_what = project_set.add_mutually_exclusive_group(required=True)
+    project_set_what.add_argument("--driver-shell")
+    project_set_what.add_argument("--github", metavar="OWNER/NAME", help="Talk through a private GitHub repository")
+    project_set_what.add_argument("--files", action="store_true", help="Talk through files on this computer")
     project_set.set_defaults(func=cmd_project_set)
+    sync_cmd = sub.add_parser("sync", help="Read new messages from GitHub now")
+    sync_cmd.add_argument("--project")
+    sync_cmd.set_defaults(func=cmd_sync)
 
     ui_cmd = sub.add_parser("ui", help="Open the local viewer")
     ui_cmd.add_argument(
@@ -1039,11 +1046,13 @@ def _report_json(report: object) -> dict:
     from agentcoop.paths import board_root
 
     board = Path(getattr(report, "board_path", "") or board_root())
+    note = str(getattr(report, "transport_note", "") or "")
     return {
         "project": report.project,  # type: ignore[attr-defined]
         "agent": report.agent,  # type: ignore[attr-defined]
         "role": report.role,  # type: ignore[attr-defined]
         "integrity_ok": report.integrity_ok,  # type: ignore[attr-defined]
+        **({"transport_note": note} if note else {}),
         "messages": messages,
         "issues": [str(issue.path) for issue in report.issues],  # type: ignore[attr-defined]
         "context": context_status(
@@ -1820,6 +1829,49 @@ def cmd_agents(_args: argparse.Namespace) -> int:
 
 def cmd_project_add(args: argparse.Namespace) -> int:
     """Add a project from flags, as yourself, or by asking questions in a terminal."""
+    if not args.github:
+        return _project_add(args)
+    from agentcoop import github
+    from agentcoop.ghsync import check_repo
+    from agentcoop.projects import load_projects
+
+    board = _board()
+    repo = check_repo(github.require_repo(args.github))
+    before = set(load_projects(board).get("projects") or {})
+    code = _project_add(args)
+    added = sorted(set(load_projects(board).get("projects") or {}) - before)
+    if code != 0 or len(added) != 1:
+        raise CoopError(
+            "No new project was added, so nothing was sent to GitHub. To move a project "
+            "that already exists, run: agentcoop project set NAME --github " + repo
+        )
+    name = added[0]
+    try:
+        _use_github(args, board, name, repo)
+    except CoopError:
+        print(name + " was added and talks through files.")
+        raise
+    return 0
+
+
+def _use_github(args: argparse.Namespace, board: Path, name: str, repo_text: str) -> None:
+    from agentcoop.transport import check_can_use_github, confirm_summary, use_github
+
+    repo = check_can_use_github(board, name, repo_text)
+    _require_person(name, confirm_summary(name, repo), kind="project", actor=_actor_name(args))
+    print(use_github(board, name, repo))
+
+
+def cmd_sync(args: argparse.Namespace) -> int:
+    """Read new messages from GitHub now, for projects that talk through GitHub."""
+    from agentcoop.transport import sync_now
+
+    for line in sync_now(_board(), args.project):
+        print(line)
+    return 0
+
+
+def _project_add(args: argparse.Namespace) -> int:
     if args.driver == "self":
         from agentcoop.membership import add_self_driver
 
@@ -1925,7 +1977,27 @@ def cmd_project_repair(args: argparse.Namespace) -> int:
 
 
 def cmd_project_set(args: argparse.Namespace) -> int:
-    """Set the extra shell commands a scheduled driver may run."""
+    """Change one project setting. Each change needs the person to allow it."""
+    if args.github:
+        _use_github(args, _board(), args.name, args.github)
+        return 0
+    if args.files:
+        from agentcoop.projects import github_repo, load_projects
+        from agentcoop.transport import use_files
+
+        board = _board()
+        record = (load_projects(board).get("projects") or {}).get(args.name)
+        if record is None:
+            raise CoopError("There is no project named " + args.name + ". Run: agentcoop project list")
+        if github_repo(record):
+            _require_person(
+                args.name,
+                "This will stop " + args.name + " talking through GitHub. Its agents will use files on this computer.",
+                kind="project",
+                actor=_actor_name(args),
+            )
+        print(use_files(board, args.name))
+        return 0
     _require_person(
         args.name,
         "This changes which commands a scheduled driver may run in " + args.name + ".",

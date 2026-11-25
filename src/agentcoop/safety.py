@@ -38,7 +38,8 @@ _DENY_HOME_FILES = (Path(".docker") / "config.json",)
 
 _SECRET_PATTERNS = (
     re.compile(r"sk-[A-Za-z0-9]{8,}"),
-    re.compile(r"ghp_[A-Za-z0-9]{8,}"),
+    re.compile(r"gh[opsur]_[A-Za-z0-9]{8,}"),
+    re.compile(r"github_pat_[A-Za-z0-9_]{8,}"),
     re.compile(r"AKIA[0-9A-Z]{16}"),
     re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----"),
 )

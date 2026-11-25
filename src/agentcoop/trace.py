@@ -16,7 +16,10 @@ _BODY_FLAGS = {
     "--reason",
     "--describe",
 }
-_SECRET = re.compile(r"(BEGIN [A-Z ]*PRIVATE|sk-|AKIA[0-9A-Z]{8,}|ghp_[A-Za-z0-9]{8,})", re.I)
+_SECRET = re.compile(
+    r"(BEGIN [A-Z ]*PRIVATE|sk-|AKIA[0-9A-Z]{8,}|gh[opsur]_[A-Za-z0-9]{8,}|github_pat_[A-Za-z0-9_]{8,})",
+    re.I,
+)
 _RESULT_COMMANDS = {"check", "watch", "wait", "cursor-loop"}
 _RESULT_LIMIT = 2000
 

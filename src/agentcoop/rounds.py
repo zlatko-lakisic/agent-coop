@@ -11,7 +11,7 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-from agentcoop.errors import CoopError
+from agentcoop.errors import CoopError, TransportDown
 from agentcoop.paths import private_dir
 from agentcoop.projects import load_agents, load_config, load_projects, require_board, role_of
 
@@ -142,6 +142,13 @@ def tick(board: Path) -> int:
         from agentcoop.outbox import sync_board_outboxes
         from agentcoop.statusfile import refresh_status
 
+        from agentcoop.core import refresh_transport
+
+        for project_name, record in (load_projects(board).get("projects") or {}).items():
+            try:
+                refresh_transport(board, project_name, record)
+            except CoopError as exc:
+                _log_round(board, project_name + ": " + str(exc))
         process_board_requests(board)
         sync_board_outboxes(board)
         from agentcoop.ping import post_due_heartbeats
@@ -417,6 +424,8 @@ def _run_helper(board, agent, project, record, *, popen, timeout_minutes) -> int
                         subject="Context for " + project,
                         body=body or "Need project context",
                     )
+                except TransportDown:
+                    raise
                 except CoopError as exc:
                     _give_up(board, agent, project, message, str(exc), print)
                     handled += 1

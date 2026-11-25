@@ -13,7 +13,7 @@ from typing import Callable
 
 from agentcoop.errors import CoopError
 from agentcoop.paths import ensure_agent_dirs, home_dir, is_same_or_inside, paths_conflict, private_dir
-from agentcoop.schema import check_agents, check_config, check_projects, format_problem
+from agentcoop.schema import GITHUB_REPO_RE, check_agents, check_config, check_projects, format_problem
 from agentcoop.tools import get_tool, tool_can_drive
 
 PROJECT_NAME_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,47}$")
@@ -50,6 +50,22 @@ _EMPTY_CONFIG = {
     "min_version": "0.2.0",
     "update_check": True,
 }
+
+
+def github_repo(record: object) -> str | None:
+    """Return owner/name when a project talks through GitHub. None means files.
+
+    A missing key is the default, so a board written by an older version reads as files.
+    """
+    if not isinstance(record, dict):
+        return None
+    value = record.get("github")
+    if not isinstance(value, dict):
+        return None
+    repo = value.get("repo")
+    if not isinstance(repo, str) or not GITHUB_REPO_RE.fullmatch(repo):
+        return None
+    return repo
 
 
 def now_stamp() -> str:

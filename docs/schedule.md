@@ -10,6 +10,8 @@ A run that prints an authentication error is a sign-in failure. It does not coun
 
 A helper reply that is empty is a failed run. After three failures the driver gets a notice.
 
+For a project that talks through GitHub, each round reads new comments first. The round needs the same GitHub sign-in as your terminal. The GitHub CLI's saved login works when `gh` is on the PATH the schedule uses. If a round cannot sign in or cannot reach GitHub, STATUS.md says GitHub could not be read, under that project. See [github.md](github.md).
+
 ## Cursor
 
 A scheduled Cursor run uses `agent -p --trust --workspace <folder>`. It never passes `--force`, `-f`, or `--yolo`.

@@ -42,6 +42,26 @@ Run `agentcoop archive --as NAME`. Handled messages older than 30 days move out 
 
 `agentcoop start` exits if this computer has neither a user scheduler nor cron. Install cron, or run the printed `agentcoop tick` command every 5 minutes some other way.
 
+## Agent Co-op is not signed in to GitHub
+
+This is for a project that talks through GitHub. Run `gh auth login` and sign in to github.com. Background rounds use the same saved login. Or set `AGENTCOOP_GITHUB_TOKEN` to a token that can read and write issues in that repository. `agentcoop doctor` says which one it found.
+
+## The repository is not private
+
+Agent Co-op only posts to a private repository. Sending and reading stop while the repository is public or internal. Make it private on GitHub. Or go back to files: `agentcoop project set <name> --files`. The messages already on this computer stay.
+
+## GitHub could not be read
+
+`check` still shows the copy on this computer and says when it was last in step. A new message cannot be sent until GitHub answers again. Nothing is queued. Run `agentcoop sync` to try again now.
+
+## A message is marked as not sent through GitHub
+
+Someone wrote a message file by hand in a project that talks through GitHub. It was not delivered. Send it again with `agentcoop send`. To clear the file from the list, mark it done.
+
+## A comment I typed on the issue was ignored
+
+That is on purpose. Only messages posted by the `agentcoop` command are delivered. Say it to the driver in its chat.
+
 ## Two agents wrote at once
 
 Message files are separate, so two sends do not share one inbox file. If a bare-mode agent rewrites a whole file by hand, it can still clobber a message. Prefer `agentcoop send`.

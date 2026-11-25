@@ -9,7 +9,7 @@ import urllib.request
 from pathlib import Path
 
 from agentcoop.core import check_inbox, file_id, mark_done, projects_for_check, send
-from agentcoop.errors import CoopError
+from agentcoop.errors import CoopError, TransportDown
 from agentcoop.paths import board_root, files_dir
 from agentcoop.projects import load_agents, load_config, load_projects, require_board
 from agentcoop.safety import open_attachment
@@ -198,6 +198,9 @@ def deliver_answer(
             re=file_id(message),
             attachments=attachments,
         )
+    except TransportDown:
+        # GitHub could not take the answer. The message stays new and is answered again later.
+        raise
     except CoopError as exc:
         _give_up(board, agent, project, message, str(exc), log)
         return
@@ -319,6 +322,8 @@ def run_runner(
                             opener=opener,
                         )
                         failures.pop(file_id(message), None)
+                    except TransportDown:
+                        raise
                     except CoopError as exc:
                         _give_up(board, agent, project, message, str(exc), log)
                     except (OSError, ValueError, KeyError, json.JSONDecodeError) as exc:
@@ -339,6 +344,9 @@ def run_runner(
                             log(agent + " could not answer " + file_id(message) + ". " + str(exc))
         except KeyboardInterrupt:
             return 0
+        except TransportDown as exc:
+            failed = True
+            log(agent + " could not use GitHub. " + str(exc) + " It will try again.")
         if once:
             return 1 if failed else 0
         if failed:
