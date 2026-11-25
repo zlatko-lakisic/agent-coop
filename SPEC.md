@@ -363,7 +363,17 @@ A reader MUST skip a `roster`, `request`, `context`, or `closed` comment that wa
 
 ### Conversations
 
-A message that has `re`, `about`, or `moved_from` naming a message already on GitHub MUST be posted to that message's issue. A message whose `group` matches an earlier message goes to that issue too. Any other message opens a new issue, titled `[<project>] <subject>`.
+A message that has `re`, `about`, or `moved_from` naming a message already on GitHub MUST be posted to that message's issue. A message whose `group` matches an earlier message goes to that issue too. Any other message opens a new issue, titled with the subject.
+
+### Projects in one repository
+
+Several projects MAY share one repository. Two labels keep them apart.
+
+Every issue `agentcoop` opens MUST carry the label `agentcoop` and a label that is the project's name. `agentcoop` makes both labels in the repository before it opens a project's first issue. If GitHub returns the new issue without them, `agentcoop` MUST add them before it posts a comment there.
+
+A reader MUST accept a comment for a project only when both of these hold: the JSON in the comment names that project, and the comment sits under an issue that carries both labels. Label names are compared without regard to case. A comment that names the project and sits under any other issue MUST be ignored, and `doctor` reports how many were. A reader MAY remember that an issue carries the labels. It MUST NOT remember that an issue lacks them.
+
+Everything a project commits to the repository goes under `projects/<project>/` on the branch `agentcoop-files`.
 
 `agentcoop` reads new comments with the repository's comment list, oldest first, starting from the newest `updated_at` it has seen. It SHOULD NOT read more often than `github_poll_seconds` in `config.json` (default 20).
 
@@ -385,9 +395,19 @@ When the driver's computer goes back to files it removes the helpers that work e
 
 Computers in one project SHOULD keep their clocks within a few seconds of each other. Role rules compare a message's `ts`, set by the sender's clock, with the time of a membership change.
 
+### Attached files
+
+A file sent with a message is committed to the branch `agentcoop-files` of the same repository, at `projects/<project>/files/<first two hex of the SHA-256>/<SHA-256>/<file name>`. A reader MUST NOT fetch a file whose path names another project. `agentcoop` creates that branch with no parent commit, so it shares no history with other branches. A file that is already there is not committed again. The file MUST pass every check in section 9 first, and MUST NOT be larger than `github_attach_max_mb` in `config.json` (default 25, at most 100).
+
+In the comment, each entry of `attachments` and each `path` in `attachment_info` is `github:` followed by that path. `source_path` is left out. No path on the sender's computer is posted. The sender's own copy keeps its local paths.
+
+A computer copies a message for an agent that works there like this. For each file it checks that the name is a plain file name and that the path, the name, and the SHA-256 in `attachment_info` agree. It downloads the file, checks the size and the SHA-256, and keeps it in `files/shared/<message id>/`, as section 9 defines for a shared copy. Its copy of the message then points at that file. A file that fails a check, is missing, or looks like it holds a key MUST NOT be kept. Its entry stays `github:...`, and readers MUST show it as blocked. If GitHub fails while a file is fetched, the message is not copied and the next read tries again.
+
+A computer does not download files for agents that work elsewhere.
+
 ### The copy on disk
 
-For each `message` event addressed to a member of the project, `agentcoop` writes the same JSON to `inbox/<recipient>/msgs/<id>.json` and `sent/<sender>/<id>.json`, with the bytes section 6 defines. For each `done` event it creates `inbox/<agent>/done/<id>`. It MUST check the id and both agent names against sections 4 and 5 before it builds a path. The first comment that uses an id keeps it.
+For each `message` event addressed to a member of the project, `agentcoop` writes the same JSON, or the JSON with local file paths as "Attached files" defines, to `inbox/<recipient>/msgs/<id>.json` and `sent/<sender>/<id>.json`, with the bytes section 6 defines. For each `done` event it creates `inbox/<agent>/done/<id>`. It MUST check the id and both agent names against sections 4 and 5 before it builds a path. The first comment that uses an id keeps it.
 
 `projects/<project>/github/index.json` records the issue and comment for each message id. `state.json` records where reading stopped. `agentcoop` is the only writer of that folder.
 
@@ -402,7 +422,7 @@ A message file in `inbox/<agent>/msgs/` whose id is not in the index was not sen
 ### Limits
 
 * `seq` is counted on each computer. It orders messages one computer sent in the same second.
-* Attachments are not carried yet. `send --attach` MUST be refused in a project that talks through GitHub.
+* A committed file stays in the repository's history, also after the shared copy on a computer is removed.
 * A project that already has messages cannot be moved to GitHub yet.
 * Progress notes, grades, and reviews stay on the computer that wrote them. Heartbeat messages travel like any message.
 * Conversation issues stay open. Nothing closes them yet.

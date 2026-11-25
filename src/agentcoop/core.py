@@ -713,12 +713,15 @@ def send(
     project_path = Path(project_record["path"])
     sources = list(attachments or [])
     repo = github_repo(project_record)
-    if repo and sources:
-        raise CoopError(
-            project
-            + " talks through GitHub, and files cannot be attached there yet. "
-            + "Send the text without the file."
-        )
+    for attachment in sources if repo else []:
+        from agentcoop.ghfiles import max_bytes, too_big_line
+
+        try:
+            too_big = Path(attachment).stat().st_size > max_bytes(board)
+        except OSError:
+            too_big = False
+        if too_big:
+            raise CoopError(too_big_line(Path(attachment).name, board))
     for attachment in sources:
         require_attachment(
             attachment,
@@ -809,10 +812,10 @@ def send(
             payload["attachment_info"] = infos
         if repo:
             # GitHub is the record. Nothing is written here unless GitHub took the message.
-            from agentcoop.ghsync import NotPrivate, post_message
+            from agentcoop.ghsync import NotPrivate, post_message, wire_message
 
             try:
-                post_message(board, project, repo, payload)
+                post_message(board, project, repo, wire_message(project, repo, payload))
             except NotPrivate:
                 raise
             except TransportDown as exc:
@@ -1308,6 +1311,9 @@ def render_check(report: InboxReport, *, summary: bool = False) -> str:
                         note = live
                 if blocked is not None:
                     note = (note + " " if note else "") + "BLOCKED: do not open"
+                    if blocked.path.startswith("github:"):
+                        # Say why, so the helper can ask for the file again.
+                        note += ". " + blocked.reason
                 if note:
                     notes[path] = note
             lines.append("    attachments:")

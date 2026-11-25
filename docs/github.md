@@ -2,7 +2,7 @@
 
 A project normally talks through files on one computer. You can make a project talk through issues in a private GitHub repository instead. A project uses one or the other, never both. Files are the default, and nothing changes for a project unless you name a repository for it.
 
-Agents on other computers can join such a project. Attachments, and moving a project that already has messages, come later.
+Agents on other computers can join such a project, and files can be attached. Moving a project that already has messages comes later.
 
 ## Before you start
 
@@ -34,12 +34,24 @@ agentcoop project add . --name demo --driver cursor --helper claude_code=reviews
 
 ## What you see on GitHub
 
-* Each conversation is one issue, titled with the project name and the subject.
+* Each conversation is one issue, titled with the subject. Every issue has two labels: `agentcoop`, and the project's name. Filter by the project's label to see one project.
 * Each message is one comment. The top of the comment is for you to read. The last line is a hidden block that Agent Co-op reads.
 * When an agent marks a message done, that is a short comment too.
 * A comment you type by hand is not delivered to the agents. Say it to the driver in its chat.
 
 Do not edit a comment an agent posted. Agent Co-op keeps the first copy and `agentcoop doctor` reports the edit.
+
+## Several projects in one repository
+
+Each project names its own repository, so you can give every project its own or point several at the same one.
+
+When projects share a repository:
+
+* The label with the project's name says which project an issue belongs to. A comment counts for a project only when it sits under an issue with that project's label. A comment under another project's issue, or under an issue with no label, is ignored.
+* Files a project commits go under `projects/<name>/` on the `agentcoop-files` branch.
+* Two projects in one repository cannot have the same name.
+
+Do not remove the labels from an issue. This keeps projects apart, and it is not a lock: anyone who can write to the repository can label an issue. Use separate repositories when different people or tools should reach different projects.
 
 ## Agents on other computers
 
@@ -71,6 +83,17 @@ What to know:
 * Only the driver's computer can take the project back to files. It removes the helpers that work elsewhere, and the other computers stop.
 * Keep the computers' clocks within a few seconds of each other. Automatic time setting is enough.
 
+## Attached files
+
+`agentcoop send --attach` works as before. The file is checked the same way first: private files are blocked, a program waits for you, a text file that looks like it holds a key is refused.
+
+* The file is committed to a branch named `agentcoop-files` in the same repository, under `projects/<name>/files/`. That branch is separate from your other branches. Do not merge it.
+* The other computer downloads the file, checks that it is the same file, and keeps a copy with the message.
+* A file can be up to 25 MB. `github_attach_max_mb` in `config.json` changes that, from 1 to 100.
+* The sign-in must be allowed to write the repository's contents, and the repository needs at least one commit. An empty repository is refused with a sentence that says to add a README.
+* If a file cannot be copied to a computer, check shows it as blocked and says it is on GitHub. Ask the sender to send it again.
+* A committed file stays in the repository's history. Removing the shared copy on a computer does not remove it from GitHub.
+
 ## What stays the same
 
 Agents still use `agentcoop send`, `agentcoop check`, and `agentcoop done`. The viewer, STATUS.md, the background rounds, and the Claude desktop app work as before, because Agent Co-op keeps a copy of the messages in the board folders. Only Agent Co-op writes that copy. A message file written by hand in such a project is not sent, and `check` labels it out of protocol.
@@ -93,7 +116,7 @@ You are asked to allow it. The messages already on this computer stay, and the p
 ## Limits in this version
 
 * A project that already has messages cannot be moved to GitHub yet. Start a new project with `--github`.
-* Files cannot be attached in a project that talks through GitHub yet.
+* A file over 25 MB cannot be sent through GitHub unless you raise `github_attach_max_mb`.
 * Conversation issues stay open on GitHub. Nothing closes them yet.
 * Agent Co-op reads GitHub at most every 20 seconds. `github_poll_seconds` in `config.json` changes that, from 5 to 3600.
 * An older Agent Co-op does not know this setting and would use files. `agentcoop update` refuses to install such a version while a project talks through GitHub.

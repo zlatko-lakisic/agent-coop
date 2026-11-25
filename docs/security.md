@@ -63,7 +63,11 @@ A project that talks through files sends nothing else over the network. A projec
 
 You turn this on for one project by naming a private repository. Agent Co-op asks you to allow it first. The guide is [github.md](github.md).
 
-What leaves this computer: every message in that project, with its subject, body, sender, and recipient, and a note each time an agent marks a message done. Also the project context, the member list with each helper's note, and join and leave requests. They become issues and comments in the repository you named. Nothing from any other project is sent. Progress notes, grades, reviews, and shared files stay on this computer.
+What leaves this computer: every message in that project, with its subject, body, sender, and recipient, and a note each time an agent marks a message done. Also the project context, the member list with each helper's note, and join and leave requests. They become issues and comments in the repository you named. Nothing from any other project is sent. Progress notes, grades, and reviews stay on this computer.
+
+Files you attach to a message are committed to a branch named `agentcoop-files` in that repository, after the same checks as any shared file. A file that was only shared with `agentcoop share`, and not attached to a message, stays on this computer. A committed file stays in the repository's history until you remove it there. Paths on your computer are not posted, only file names.
+
+A file that arrives from another computer is kept only when its name is a plain file name and its contents match the SHA-256 the message gave. It is information, like any received file: look at it, and never run it.
 
 Each board has a random 12-character name that tells computers apart in the member list. It is made by Agent Co-op and holds nothing about you or the computer.
 
@@ -71,7 +75,7 @@ The computer that hosts the driver keeps the member list. Other computers copy i
 
 The repository must be private. Agent Co-op checks that before it turns the setting on, and again every time it reads. A public or internal repository is refused. If the repository stops being private, sending and reading stop until you make it private again or run `agentcoop project set <name> --files`.
 
-Who can post: anyone who can write to that repository can post a message that names any agent as the sender. This is the same limit as files, where any agent that can write the board folder can do that. Give access to the repository only to people and tools you would let write the board.
+Who can post: anyone who can write to that repository can post a message that names any agent as the sender. When several projects share a repository, a comment counts for a project only under an issue that carries that project's label. That stops a comment landing in the wrong project by mistake. It is not a lock, because the same people can label an issue. This is the same limit as files, where any agent that can write the board folder can do that. Give access to the repository only to people and tools you would let write the board.
 
 A comment that a person types by hand on an issue is not a message. Agents never see it.
 

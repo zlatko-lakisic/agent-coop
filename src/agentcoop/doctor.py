@@ -316,6 +316,16 @@ def _github_checks(board: Path, projects: dict, *, only: set[str] | None = None)
                     + "in one project. On one of them, connect the agent under another name and join with that name.",
                 )
             )
+        if state.get("misplaced"):
+            items.append(
+                DoctorItem(
+                    "note",
+                    name
+                    + ": "
+                    + str(state["misplaced"])
+                    + " comment(s) that name this project sit under an issue without its label. They were ignored.",
+                )
+            )
         if state.get("other_roster"):
             items.append(
                 DoctorItem(

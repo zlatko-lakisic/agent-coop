@@ -1,8 +1,9 @@
 """Try the GitHub transport against a real private repository. Run it by hand.
 
-This is not part of the unit tests and CI does not run it. It posts one
-conversation (one issue, three comments) to the repository you name, from a
-temporary board, so your own board is not touched.
+This is not part of the unit tests and CI does not run it. It posts two
+conversations and the project's own issue to the repository you name, and
+commits one small file to a branch named agentcoop-files. It uses a temporary
+board, so your own board is not touched. The repository needs one commit.
 
     python3 scripts/github_live_check.py your-name/scratch-private-repo
 
@@ -35,7 +36,7 @@ def main() -> int:
         print(str(exc))
         return 1
     print("Signed in through " + ("the gh program" if source == "gh" else source) + ".")
-    print("This posts one issue and three comments to " + repo + ".")
+    print("This posts three issues and a few comments to " + repo + ", and commits one small file to a new branch.")
     if input("Type the repository name to go on: ").strip() != repo:
         print("Cancelled.")
         return 1
@@ -88,10 +89,18 @@ def main() -> int:
         ):
             if run(step) != 0:
                 return 1
+        note = folder / "live check note.txt"
+        note.write_text("A small file from the live check.\n", encoding="utf-8")
+        if run(["send", "--as", "cursor", "--to", "claude_code", "--subject", "A file", "--body", "With one file.",
+                "--attach", str(note), *common]) != 0:
+            print("Sending a file failed. Messages without files worked.")
+            return 1
         entry = load_index(board, "live-check")["messages"][mid]
         print("")
         print("Open https://github.com/" + repo + "/issues/" + str(entry["issue"]))
         print("Check: three comments, the text shown as written, nobody mentioned, and no link made from #1.")
+        print("Also check: every issue has the labels agentcoop and live-check, there is an issue named A file,")
+        print("and a branch named agentcoop-files holds the note under projects/live-check/files/.")
     return 0
 
 

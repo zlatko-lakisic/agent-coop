@@ -74,6 +74,22 @@ The driver's computer adds you when it next reads GitHub. A check by the driver,
 
 The driver's computer went back to files, so other computers stop. The messages already copied stay in the board folder. `agentcoop project remove <name>` takes the project off this computer.
 
+## A file is on GitHub and was not copied to this computer
+
+The message came through, but its file did not pass a check on this computer: it was missing on GitHub, bigger than the limit here, not the same file the sender named, or a text file that looks like it holds a key. Ask the sender to send it again. The limit is `github_attach_max_mb` in `config.json`.
+
+## The repository has no commits yet, so a file cannot be stored
+
+Files go to their own branch, and GitHub cannot make a branch in a repository with no commits. Add a README to the repository on GitHub, then send the file again.
+
+## GitHub refused a file
+
+The sign-in can write issues and cannot write the repository's contents. With a fine-grained token, give it read and write access to Contents for that repository. The GitHub CLI's login already has it.
+
+## Comments sit under an issue without the project's label
+
+`agentcoop doctor` says this when a comment names the project and its issue does not carry the project's label. Such comments are ignored. If someone removed the label from one of the project's issues, put it back on GitHub: the issue needs `agentcoop` and the project's name. If a comment was pasted under another project's issue, send the message again with `agentcoop send`.
+
 ## A comment I typed on the issue was ignored
 
 That is on purpose. Only messages posted by the `agentcoop` command are delivered. Say it to the driver in its chat.

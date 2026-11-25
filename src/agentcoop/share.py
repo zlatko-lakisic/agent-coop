@@ -641,6 +641,70 @@ def place_file(
     return _public_info(info)
 
 
+def receive_file(
+    board: Path,
+    project: str,
+    data: bytes,
+    info: dict,
+    *,
+    sender: str,
+    recipient: str,
+    message_id: str,
+) -> str | None:
+    """Keep a file that came with a message from another computer. Returns its path here.
+
+    Returns None when the file must not be kept: the name is not safe, or a
+    text file looks like it holds a key. The sender's computer already asked
+    its person about a program or a large file, and that mark is kept.
+    """
+    name = clean_filename(str(info.get("name") or ""))
+    if not name or name != str(info.get("name") or "") or name.startswith("."):
+        return None
+    digest = hashlib.sha256(data).hexdigest()
+    index = load_index(board, project)
+    existing = _by_hash(index, digest)
+    if existing is not None and Path(str(existing.get("path") or "")).is_file():
+        return str(existing["path"])
+    holding = share_root(board, project) / ".incoming"
+    holding.mkdir(parents=True, exist_ok=True)
+    arrived = holding / name
+    try:
+        arrived.write_bytes(data)
+        if _text_secret(arrived):
+            return None
+        copied, copied_hash, copied_size = _copy_bytes(arrived, share_root(board, project) / message_id, name)
+    finally:
+        try:
+            arrived.unlink()
+        except OSError:
+            pass
+    media = sniff_media(copied)
+    record = {
+        "name": copied.name,
+        "path": str(copied),
+        "source_path": "",
+        "bytes": copied_size,
+        "sha256": copied_hash,
+        "media_type": media,
+        "kind": guess_kind(media, copied.name, str(info.get("kind") or "")),
+        "description": str(info.get("description") or "")[:500],
+        "sender": sender,
+        "recipient": recipient,
+        "message": message_id,
+        "pinned": False,
+        "archived_on": "",
+        "shared_on": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+    }
+    if is_program(copied) or info.get("held") == "program":
+        record["held"] = "program"
+    if record["kind"] == "archive" or copied.suffix.lower() in ARCHIVE_SUFFIXES:
+        record["contents"] = "not checked"
+    index = load_index(board, project)
+    index["files"].append(record)
+    save_index(board, project, index)
+    return str(copied)
+
+
 def _public_info(info: dict) -> dict:
     kept = {
         "name": info.get("name") or "",

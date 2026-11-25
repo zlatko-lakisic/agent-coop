@@ -32,6 +32,12 @@ class FakeGitHub:
         self.down = False
         self.fail_comments = False
         self.token = TOKEN
+        self.empty = False
+        self.label_names: set[str] = set()
+        self.drop_labels = False
+        self.branches: dict[str, str] = {"main": "c0"}
+        self.files: dict[tuple[str, str], bytes] = {}
+        self.objects = 0
         self._moment = datetime(2026, 1, 1, tzinfo=timezone.utc)
 
     def _stamp(self) -> str:
@@ -57,7 +63,11 @@ class FakeGitHub:
 
     def threads(self) -> list[dict]:
         """Return the conversation issues, without the project's own issue."""
-        return [issue for issue in self.issues if not str(issue.get("title")).endswith("Agent Co-op project")]
+        return [issue for issue in self.issues if issue.get("title") != "Project members and requests"]
+
+    def labels_of(self, issue: dict) -> list[str]:
+        """Return the label names on an issue."""
+        return [label["name"] for label in issue.get("labels") or []]
 
     def count(self, method: str, ending: str) -> int:
         """Count calls whose path ends with some text."""
@@ -122,18 +132,37 @@ class FakeGitHub:
                     "archived": self.archived,
                 },
             )
+        if method == "POST" and rest == "/labels":
+            name = str(payload.get("name") or "")
+            if name.lower() in self.label_names:
+                return self._json(422, {"message": "Validation Failed"})
+            self.label_names.add(name.lower())
+            return self._json(201, {"name": name})
         if method == "POST" and rest == "/issues":
             issue = {"number": len(self.issues) + 1, "state": "open", **payload}
+            wanted = [str(name) for name in payload.get("labels") or []]
+            if self.drop_labels:
+                wanted = []
+            self.label_names.update(name.lower() for name in wanted)
+            issue["labels"] = [{"name": name} for name in wanted]
             self.issues.append(issue)
             return self._json(201, issue)
         if method == "GET" and rest == "/issues/comments":
             return self._list_comments(headers, query)
+        if rest.startswith("/git/") or rest.startswith("/contents/"):
+            return self._git(method, rest, headers, query, payload)
         pieces = rest.strip("/").split("/")
         if len(pieces) >= 2 and pieces[0] == "issues" and pieces[1].isdigit():
             number = int(pieces[1])
             found = [issue for issue in self.issues if issue["number"] == number]
             if not found:
                 return self._json(404, {"message": "Not Found"})
+            if method == "GET" and len(pieces) == 2:
+                return self._json(200, found[0])
+            if method == "POST" and pieces[2:] == ["labels"]:
+                have = {label["name"] for label in found[0]["labels"]}
+                found[0]["labels"] += [{"name": str(n)} for n in payload.get("labels") or [] if str(n) not in have]
+                return self._json(200, found[0]["labels"])
             if method == "PATCH" and len(pieces) == 2:
                 found[0].update(payload)
                 return self._json(200, found[0])
@@ -141,6 +170,44 @@ class FakeGitHub:
                 if self.fail_comments:
                     return self._json(500, {"message": "Server Error"})
                 return self._json(201, self._add_comment(number, str(payload.get("body") or "")))
+        return self._json(404, {"message": "Not Found"})
+
+    def _git(self, method: str, rest: str, headers: dict, query: dict, payload: dict):
+        import base64
+
+        if self.empty:
+            return self._json(409, {"message": "Git Repository is empty."})
+        if method == "GET" and rest.startswith("/git/ref/heads/"):
+            name = rest[len("/git/ref/heads/") :]
+            if name not in self.branches:
+                return self._json(404, {"message": "Not Found"})
+            return self._json(200, {"ref": "refs/heads/" + name, "object": {"sha": self.branches[name]}})
+        if method == "POST" and rest in ("/git/trees", "/git/commits"):
+            self.objects += 1
+            return self._json(201, {"sha": "obj" + str(self.objects)})
+        if method == "POST" and rest == "/git/refs":
+            name = str(payload.get("ref") or "")[len("refs/heads/") :]
+            if name in self.branches:
+                return self._json(422, {"message": "Reference already exists"})
+            self.branches[name] = str(payload.get("sha"))
+            return self._json(201, {"ref": payload.get("ref")})
+        if rest.startswith("/contents/"):
+            path = urllib.parse.unquote(rest[len("/contents/") :])
+            if method == "GET":
+                data = self.files.get((query.get("ref", "main"), path))
+                if data is None:
+                    return self._json(404, {"message": "Not Found"})
+                if "raw" in str(headers.get("Accept")):
+                    return 200, {"Content-Type": "application/octet-stream"}, data
+                return self._json(200, {"path": path, "size": len(data)})
+            if method == "PUT":
+                branch = str(payload.get("branch") or "main")
+                if branch not in self.branches:
+                    return self._json(404, {"message": "Branch not found"})
+                if (branch, path) in self.files:
+                    return self._json(422, {"message": "sha wasn't supplied"})
+                self.files[(branch, path)] = base64.b64decode(str(payload.get("content") or ""))
+                return self._json(201, {"content": {"path": path}})
         return self._json(404, {"message": "Not Found"})
 
     def _conditional(self, headers: dict, data: object, extra: dict | None = None):

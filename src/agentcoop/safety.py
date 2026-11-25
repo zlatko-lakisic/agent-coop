@@ -122,6 +122,8 @@ def check_attachment(
     """
     if not isinstance(raw, str) or not raw.strip():
         return "An attachment path is missing."
+    if raw.startswith("github:"):
+        return "This file is on GitHub and was not copied to this computer."
     path = Path(raw)
     if not path.is_absolute():
         return "Attachments must be absolute paths."

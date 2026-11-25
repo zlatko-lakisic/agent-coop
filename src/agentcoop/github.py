@@ -58,13 +58,35 @@ class LimitHit(TransportDown):
         super().__init__(text, code=1)
 
 
+class Conflict(TransportDown):
+    """GitHub could not do that in the repository's present state."""
+
+    def __init__(self, detail: str = "") -> None:
+        line = "GitHub could not do that right now."
+        if detail:
+            line += " " + detail
+        super().__init__(line, code=1)
+        self.detail = detail
+
+
+class Unprocessable(TransportDown):
+    """GitHub would not take the request as written. Often the thing is already there."""
+
+    def __init__(self, detail: str = "") -> None:
+        line = "GitHub returned 422."
+        if detail:
+            line += " " + detail
+        super().__init__(line, code=1)
+
+
 class Reply:
     """One answer from the API. Header names are lowercase."""
 
-    def __init__(self, status: int, data: object, headers: dict[str, str]) -> None:
+    def __init__(self, status: int, data: object, headers: dict[str, str], raw: bytes = b"") -> None:
         self.status = status
         self.data = data
         self.headers = headers
+        self.raw = raw
 
     @property
     def etag(self) -> str:
@@ -241,15 +263,20 @@ class Client:
         body: dict | None = None,
         query: dict | None = None,
         etag: str = "",
+        accept: str = "",
+        timeout: float | None = None,
     ) -> Reply:
-        """Send one request. A 304 comes back as a Reply. Other failures raise."""
+        """Send one request. A 304 comes back as a Reply. Other failures raise.
+
+        accept asks for another form of the answer, such as a file's own bytes.
+        """
         transport = _transport
         if transport is None:
             if _offline():
                 raise TransportDown(UNREACHABLE, code=1)
             transport = _urllib_transport
         headers = {
-            "Accept": "application/vnd.github+json",
+            "Accept": accept or "application/vnd.github+json",
             "User-Agent": USER_AGENT,
             "X-GitHub-Api-Version": "2022-11-28",
             "Authorization": "Bearer " + self._token,
@@ -260,18 +287,19 @@ class Client:
         if body is not None:
             raw_body = json.dumps(body).encode("utf-8")
             headers["Content-Type"] = "application/json"
-        status, found, raw = transport(method, self._url(path, query), headers, raw_body, self.timeout)
+        status, found, raw = transport(method, self._url(path, query), headers, raw_body, timeout or self.timeout)
         lowered = {str(key).lower(): str(value) for key, value in (found or {}).items()}
         data: object = None
         text = ""
-        if raw:
+        wants_bytes = bool(accept) and 200 <= status < 300
+        if raw and not wants_bytes:
             text = raw.decode("utf-8", errors="replace")
             try:
                 data = json.loads(text)
             except ValueError:
                 data = None
         if status == 304 or 200 <= status < 300:
-            return Reply(status, data, lowered)
+            return Reply(status, data, lowered, raw or b"")
         detail = ""
         if isinstance(data, dict) and isinstance(data.get("message"), str):
             detail = data["message"]
@@ -287,6 +315,10 @@ class Client:
             raise LimitHit(_reset_text(lowered))
         if status in (404, 410):
             raise NotFound()
+        if status == 409:
+            raise Conflict(detail.splitlines()[0][:200] if detail else "")
+        if status == 422:
+            raise Unprocessable(detail.splitlines()[0][:200] if detail else "")
         if status == 403:
             reason = detail.splitlines()[0][:200] if detail else ""
             raise TransportDown(
