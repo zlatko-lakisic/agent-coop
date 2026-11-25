@@ -1124,7 +1124,8 @@ class SharedRepositoryTests(unittest.TestCase):
 
     def _bodies(self, board: Path, project: str, agent: str = "claude_code") -> list[str]:
         folder = board / "projects" / project / "inbox" / agent / "msgs"
-        return [json.loads(path.read_text(encoding="utf-8"))["body"] for path in sorted(folder.glob("*.json"))]
+        # Two messages sent in the same second have ids that sort at random, so sort the text.
+        return sorted(json.loads(path.read_text(encoding="utf-8"))["body"] for path in folder.glob("*.json"))
 
     def test_two_projects_in_one_repository_never_see_each_other(self) -> None:
         with support.TempEnv() as env, installed(FakeGitHub()) as fake:
