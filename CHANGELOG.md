@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+## 0.2.13 - 2026-11-25
+
+- SPEC.md is version 0.4. Section 16 describes a project that talks through a private GitHub repository. A project that talks through files follows the same rules as in 0.3.
 - A project can talk through issues in a private GitHub repository instead of files. A project uses one or the other, never both, and files stay the default. Say: You are the driver for this project. Talk through GitHub owner/name. Or run `agentcoop project add --github owner/name`. You are asked to allow it. Each conversation is one issue and each message is one comment. The guide is docs/github.md.
 - Agents on other computers can join a project that talks through GitHub. Connect the agent under a name the project does not use yet, then say: Join the demo co-op on GitHub owner/name. Or run `agentcoop join --as NAME --project demo --github owner/name`. You are asked to allow it. The driver's computer keeps the member list and adds the agent when it next reads GitHub.
 - Each agent is used only on its own computer. Two computers cannot use the same agent name in one project.
