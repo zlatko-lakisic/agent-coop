@@ -283,7 +283,7 @@ The check to require for `main` is `Test result`. Do not require a matrix job. W
 * [ ] ChatGPT Work as a helper, once write access and setup steps are confirmed.
 * [ ] macOS code signing and notarization; Homebrew and winget packages.
 * [ ] Optional import of suggested roles from a `.agentcoop/project.json` in a repo (human approves, board stays the source of truth).
-* [ ] Talk through a private GitHub repository: one computer first, then agents on other computers, attachments, and moving a project that already has messages.
+* [ ] Talk through a private GitHub repository: checked against github.com, and on two real computers. The code is in: one computer, agents on other computers, attachments, and moving a project that already has messages.
 
 ## Contributing
 

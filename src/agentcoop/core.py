@@ -11,6 +11,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from agentcoop.errors import CoopError, TransportDown
+from agentcoop.paths import project_dir as project_record_dir
 from agentcoop.paths import (
     agentcoop_command,
     archive_dir,
@@ -731,6 +732,14 @@ def send(
             allowed_roots=roots,
         )
     moment = utc_now(now)
+    if not repo:
+        moving = Path(project_record_dir(board, project)) / "github" / "moving"
+        try:
+            fresh = moment.timestamp() - moving.stat().st_mtime < 15 * 60
+        except OSError:
+            fresh = False
+        if fresh:
+            raise CoopError(project + " is being moved to GitHub right now. Send again in a minute.")
     ensure_agent_dirs(board, project, sender)
     ensure_agent_dirs(board, project, recipient)
     from agentcoop.share import mismatch_note, place_file
@@ -1311,7 +1320,7 @@ def render_check(report: InboxReport, *, summary: bool = False) -> str:
                         note = live
                 if blocked is not None:
                     note = (note + " " if note else "") + "BLOCKED: do not open"
-                    if blocked.path.startswith("github:"):
+                    if blocked.path.startswith(("github:", "missing:")):
                         # Say why, so the helper can ask for the file again.
                         note += ". " + blocked.reason
                 if note:

@@ -358,8 +358,9 @@ The text above the block is for people. Readers MUST ignore it. A comment with n
 | `request` | `project`, `action` (`join` or `leave`), `agent`, `home`, `note`, `ts` | an agent on another computer asks to join or leave |
 | `context` | `project`, `name`, `part`, `of`, `text` | one part of a context version. `name` is the file name from section 3. |
 | `closed` | `project`, `ts` | the driver's computer took the project back to files |
+| `history` | `project`, `part`, `messages` (a list of message objects), `done` (agent name to message ids) | messages the project had before it talked through GitHub |
 
-A reader MUST skip a `roster`, `request`, `context`, or `closed` comment that was edited.
+A reader MUST skip a `roster`, `request`, `context`, `closed`, or `history` comment that was edited.
 
 ### Conversations
 
@@ -395,6 +396,18 @@ When the driver's computer goes back to files it removes the helpers that work e
 
 Computers in one project SHOULD keep their clocks within a few seconds of each other. Role rules compare a message's `ts`, set by the sender's clock, with the time of a membership change.
 
+### Earlier messages
+
+A project that already has messages MAY start to talk through GitHub. Before the `github` key is set, `agentcoop` copies every message in the project's inboxes and archives to one issue titled `Earlier messages`, as `history` events. Each event holds as many messages as fit in a comment, and `done` lists the messages their recipient had marked done. A file that is still on the computer and within the size limit is committed as "Attached files" defines. A file that is not is written as `missing:` followed by its name, and readers MUST show it as blocked. A message too long for a comment is not copied. It stays valid on the computer that has it.
+
+While the copy runs, `agentcoop send` MUST refuse to send in that project. If the copy fails, the project MUST still talk through files, and running the command again MUST copy only what is not on GitHub yet.
+
+A reader copies each message in a `history` event the way it copies a `message` event, and creates the done markers the event lists. A message that answers an earlier message opens a new issue. It MUST NOT be posted under `Earlier messages`.
+
+### Finished conversations
+
+`agentcoop archive` on the driver's computer closes a conversation's issue when every message in it was marked done by the agent it was sent to and the newest one is older than the archive age. The project's own issue and `Earlier messages` are never closed. A new message for a closed conversation opens the issue again. A closed issue is still read.
+
 ### Attached files
 
 A file sent with a message is committed to the branch `agentcoop-files` of the same repository, at `projects/<project>/files/<first two hex of the SHA-256>/<SHA-256>/<file name>`. A reader MUST NOT fetch a file whose path names another project. `agentcoop` creates that branch with no parent commit, so it shares no history with other branches. A file that is already there is not committed again. The file MUST pass every check in section 9 first, and MUST NOT be larger than `github_attach_max_mb` in `config.json` (default 25, at most 100).
@@ -423,6 +436,5 @@ A message file in `inbox/<agent>/msgs/` whose id is not in the index was not sen
 
 * `seq` is counted on each computer. It orders messages one computer sent in the same second.
 * A committed file stays in the repository's history, also after the shared copy on a computer is removed.
-* A project that already has messages cannot be moved to GitHub yet.
+* Earlier messages are copied once, when the project starts to talk through GitHub. Their order on GitHub is the order of the copy, and each keeps its own `ts`.
 * Progress notes, grades, and reviews stay on the computer that wrote them. Heartbeat messages travel like any message.
-* Conversation issues stay open. Nothing closes them yet.

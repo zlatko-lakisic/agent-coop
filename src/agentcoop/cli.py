@@ -1124,6 +1124,19 @@ def cmd_archive(args: argparse.Namespace) -> int:
     project = resolve_project(board, explicit=args.project, cwd=Path.cwd(), agent=agent)
     moved = archive(board, project, agent, older_than_days=args.older_than)
     print("Archived " + str(moved) + " handled message(s) for " + agent + ".")
+    from agentcoop.projects import github_repo, load_projects
+
+    repo = github_repo((load_projects(board).get("projects") or {}).get(project))
+    if repo:
+        from agentcoop.ghhistory import close_finished
+
+        try:
+            closed = close_finished(board, project, repo, args.older_than)
+        except CoopError as exc:
+            print("Finished conversations were not closed on GitHub. " + str(exc))
+        else:
+            if closed:
+                print("Closed " + str(closed) + " finished conversation(s) on GitHub.")
     return 0
 
 
@@ -1860,7 +1873,7 @@ def _use_github(args: argparse.Namespace, board: Path, name: str, repo_text: str
     from agentcoop.transport import check_can_use_github, confirm_summary, use_github
 
     repo = check_can_use_github(board, name, repo_text)
-    _require_person(name, confirm_summary(name, repo), kind="project", actor=_actor_name(args))
+    _require_person(name, confirm_summary(name, repo, board), kind="project", actor=_actor_name(args))
     print(use_github(board, name, repo))
 
 

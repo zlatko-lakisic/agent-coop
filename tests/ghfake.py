@@ -62,8 +62,18 @@ class FakeGitHub:
         return [c for c in self.comments if (parse_event(c["body"]) or {}).get("kind") in ("message", "done")]
 
     def threads(self) -> list[dict]:
-        """Return the conversation issues, without the project's own issue."""
-        return [issue for issue in self.issues if issue.get("title") != "Project members and requests"]
+        """Return the conversation issues, without the project's own issue and the history issue."""
+        special = ("Project members and requests", "Earlier messages")
+        return [issue for issue in self.issues if issue.get("title") not in special]
+
+    def history_messages(self) -> list[dict]:
+        """Return every earlier message copied to GitHub, in the order it was posted."""
+        from agentcoop.ghwire import parse_event
+
+        found = []
+        for comment in self.events("history"):
+            found.extend(parse_event(comment["body"])["messages"])
+        return found
 
     def labels_of(self, issue: dict) -> list[str]:
         """Return the label names on an issue."""

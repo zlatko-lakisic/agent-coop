@@ -39,9 +39,9 @@ def github_projects(board: Path) -> dict[str, str]:
     return found
 
 
-def confirm_summary(project: str, repo: str) -> str:
+def confirm_summary(project: str, repo: str, board: Path | None = None) -> str:
     """Return the sentence the person is asked to allow."""
-    return (
+    text = (
         "This will send every message in "
         + project
         + " to the private GitHub repository "
@@ -50,12 +50,26 @@ def confirm_summary(project: str, repo: str) -> str:
         + project
         + " will then talk through GitHub and not through files."
     )
+    if board is None:
+        return text
+    from agentcoop.ghhistory import counts
+
+    messages, files = counts(board, project)
+    if messages:
+        text += " Its " + _plural(messages, "earlier message") + " will be copied there first"
+        if files:
+            text += ", with " + _plural(files, "attached file")
+        text += "."
+    return text
+
+
+def _plural(count: int, noun: str) -> str:
+    return str(count) + " " + noun + ("" if count == 1 else "s")
 
 
 def check_can_use_github(board: Path, project: str, repo_text: str) -> str:
     """Check the repository and the project before asking the person. Return owner/name."""
     from agentcoop import github
-    from agentcoop.core import log_messages
     from agentcoop.ghsync import check_repo
 
     repo = github.require_repo(repo_text)
@@ -69,12 +83,6 @@ def check_can_use_github(board: Path, project: str, repo_text: str) -> str:
             + " talks through GitHub "
             + current
             + ". Moving it to another repository is not available yet. Nothing was changed."
-        )
-    if log_messages(board, project):
-        raise CoopError(
-            project
-            + " already has messages, and copying earlier messages to GitHub is not available yet. "
-            + "Add a new project with --github. Nothing was changed."
         )
     repo = check_repo(repo)
     from agentcoop.ghsync import read_roster
@@ -97,11 +105,27 @@ def check_can_use_github(board: Path, project: str, repo_text: str) -> str:
 
 def use_github(board: Path, project: str, repo: str) -> str:
     """Make a project talk through a private repository. The caller has asked the person."""
-    from agentcoop.ghsync import reset
+    from agentcoop.errors import TransportDown
+    from agentcoop.ghhistory import post_history
+    from agentcoop.ghsync import _with_state, load_state, reset
     from agentcoop.statusfile import refresh_status
 
     _record(board, project)
-    reset(board, project)
+    if str(load_state(board, project).get("repo") or "").lower() != repo.lower():
+        # Another repository, or the first time. Start from a clean record.
+        reset(board, project)
+    try:
+        copied = post_history(board, project, repo)
+    except TransportDown as exc:
+        raise TransportDown(
+            str(exc)
+            + " "
+            + project
+            + " still talks through files. The messages copied so far stay on GitHub. "
+            + "Run the same command again to carry on.",
+            code=exc.code,
+        ) from exc
+    _with_state(board, project, lambda state: (state.pop("closed", None), state.pop("blocked", None)))
 
     def change(data: dict) -> None:
         data["projects"][project]["github"] = {"repo": repo}
@@ -115,12 +139,26 @@ def use_github(board: Path, project: str, repo: str) -> str:
     except CoopError:
         # The member list is posted with the first message or the next read.
         pass
-    return (
+    text = (
         project
         + " now talks through GitHub: "
         + repo
         + ". Each conversation is one issue there. A message file written by hand is not delivered."
     )
+    if copied.messages:
+        text += " " + _plural(copied.messages, "earlier message") + " copied"
+        if copied.files:
+            text += ", with " + _plural(copied.files, "file")
+        text += "."
+    if copied.missing_files:
+        text += " " + _plural(copied.missing_files, "file") + " could not be copied: missing here, or over the size limit."
+    if copied.too_long:
+        text += (
+            " "
+            + _plural(copied.too_long, "message")
+            + " too long for GitHub stayed on this computer only."
+        )
+    return text
 
 
 def use_files(board: Path, project: str) -> str:
