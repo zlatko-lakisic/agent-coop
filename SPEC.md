@@ -10,6 +10,8 @@ The protocol is files, the skill is a prompt, and everything else is optional.
 
 A conforming reader MUST accept messages as defined here. The `agentcoop` command is a convenience. Agents MAY read and write the files directly (bare mode).
 
+A project MAY talk through a private GitHub repository instead of files. Section 16 defines that. A project uses one or the other, never both. Files are the default.
+
 ## 2. Terms
 
 * **Board.** The shared folder, outside every project.
@@ -54,6 +56,7 @@ The board MUST use this layout:
         ├── progress/helpers/<agent>/
         ├── context/
         ├── approvals.json
+        ├── github/
         └── archive/<agent>/
 ```
 
@@ -83,6 +86,9 @@ Each path has one writer. A second writer MUST NOT update that path.
 | `context/` | that project's driver, through `agentcoop context write` |
 | `approvals.json` | that project's driver, through `agentcoop allow`, only when the person asks in that chat |
 | `logs/trace.jsonl` | agentcoop, when tracing is on |
+| `github/` | agentcoop, in a project that talks through GitHub |
+
+In a project that talks through GitHub, `agentcoop` is the only writer of `inbox/<agent>/msgs/`, `inbox/<agent>/done/`, and `sent/<agent>/`. See section 16.
 
 A file in `context/` is written once and MUST NOT be edited. `agentcoop archive` MAY delete old versions. It keeps the latest 5, and it deletes an older file only when that file is past the archive age.
 
@@ -193,6 +199,8 @@ A project MAY include `profiles`, a map of agent name to an object. That object 
 
 A project MAY include `review`: `off`, `changes`, or `always`. When the key is missing and a helper profile has the tag `review`, the mode is `changes`. Otherwise it is `off`. Older readers MUST ignore the key.
 
+A project MAY include `github`, an object with `repo` set to `owner/name`. When the key is present the project talks through that repository, as section 16 defines. When the key is missing the project talks through files. Older readers ignore the key and would use files, so `agentcoop update` MUST refuse to install a version that cannot talk through GitHub while any project has the key.
+
 `agents.json` lists connected agents. Each agent has `tool`, `display`, `connected`, and `installed`. Runner agents also have a `runner` object with `api`, `host`, and `model`.
 
 No two projects MAY use the same path or nested paths. Paths MUST be compared after resolution, and case-insensitively on macOS and Windows.
@@ -245,6 +253,8 @@ Destructive or high-impact actions require the human, in the agent's own chat.
 
 Nothing in the protocol listens on a network interface except the optional human viewer, which MUST bind to `127.0.0.1`, MUST require a token, and SHOULD stop after a period with no requests.
 
+A project that talks through files MUST NOT send board data over a network. A project that talks through GitHub sends its messages to the one private repository the person named, and nowhere else.
+
 ## 11. Bare mode versus agentcoop mode
 
 Bare mode: the agent creates message files and done markers with its own file tools.
@@ -253,13 +263,16 @@ Bare mode: the agent creates message files and done markers with its own file to
 
 Both modes MUST use the same files. A reader MUST accept either.
 
+Bare mode is not available in a project that talks through GitHub. A message file written by hand there is not sent, and readers MUST label it out of protocol.
+
 ## 12. Versioning
 
 The message field `v` is the message format version. Spec 0.3 still uses `1`. The version table is [COMPATIBILITY.md](COMPATIBILITY.md). A context request uses the same fields as any other message. The change is in the role rules, not in the file format, so `v` did not change. Readers MUST ignore unknown fields. `agentcoop version` prints the tool version and this spec version (`0.3`).
 
 ## 13. Known limitations
 
-* Agents must share one machine's filesystem. A cloud agent joins only if its tools can read and write that filesystem.
+* In a project that talks through files, agents must share one machine's filesystem. A cloud agent joins only if its tools can read and write that filesystem.
+* In a project that talks through GitHub, anyone who can write to the repository can post a message that claims any sender. The private repository is the lock.
 * Where a tool has no permission setting for the board, enforcement depends on the agent following the skill. `check` and `doctor` detect bare-mode violations. They do not prevent them.
 * A bare-mode agent can write a malformed file. Readers skip young unreadable files and report older ones.
 * A helper that cannot write files cannot reply or mark done.
@@ -284,6 +297,7 @@ These MUST ask the person to confirm before anything changes:
 * `project review --accept` and `--restore`
 * `disconnect`
 * `project set --driver-shell`
+* making a project talk through GitHub, or through files again (`project add --github`, `project set --github`, `project set --files`)
 
 Confirmation MAY be typed in a terminal, given in a window, or given on the local page when a window is not available. Cancel is the default. If the person does not allow the change, the command MUST exit 1, MUST say `The person did not allow this change.`, and MUST NOT change the board.
 
@@ -304,3 +318,63 @@ A processed join, leave, stop_watching, or start_watching file MUST move to `req
 `agentcoop` MUST write `projects/STATUS.md` on every `tick`, `check`, `send`, and membership change, and when a heartbeat or the stop flag changes. When the latest progress has Status `waiting`, the file MUST say so at the top, with what the driver needs. The file lists each project's name, folder, driver, and helpers, whether the background schedule is on, the time of the last round, each project's latest progress headline, one short line for the driver task and each helper task in progress, whether checking is on or stopped, and whether each agent is watching.
 
 `projects/<project>/approvals.json` holds standing approvals the person gave in the driver's chat. A board message MUST NOT add one. Older programs ignore the file. `logs/trace.jsonl` is one JSON line per command when `AGENTCOOP_TRACE=1` or `config.json` has `"trace": true`. Message bodies are left out.
+
+## 16. GitHub transport
+
+A project whose record has `github.repo` talks through issues in that repository. GitHub is the record. The board folders are a copy.
+
+### Private only
+
+The repository MUST be private. `agentcoop` MUST check that GitHub reports `private` as true and `visibility` as `private` before it turns the setting on, and again each time it reads from GitHub. An `internal` repository MUST be refused. If the repository is no longer private, `send`, `done`, and `check` MUST stop, MUST say so, and MUST NOT post or read anything.
+
+Turning the setting on or off MUST ask the person first, as section 14 requires.
+
+### Sign-in
+
+`agentcoop` uses `AGENTCOOP_GITHUB_TOKEN` when it is set, and otherwise the token the GitHub CLI prints for `gh auth token`. It MUST NOT write the token to the board, to a log, or to its output. It MUST send the token only to `api.github.com` and MUST NOT repeat it when a request is sent on to another address.
+
+### Comments
+
+Every event is one issue comment. A comment MUST NOT be edited after it is posted.
+
+A comment ends with one hidden block on its own line:
+
+```text
+<!-- agentcoop:1 {"kind":"message","message":{...}} -->
+```
+
+The text between the marker and the closing `-->` is one JSON object. It MUST be ASCII, and `<`, `>`, and `&` MUST be written as `\u003c`, `\u003e`, and `\u0026`, so the block can never contain `-->`. A reader takes the last block in the comment. The number after `agentcoop:` is the wire version. A reader MUST skip a block with a wire version or a `kind` it does not know.
+
+The text above the block is for people. Readers MUST ignore it. A comment with no block is not a message and MUST NOT be delivered to an agent.
+
+| `kind` | Other fields | Meaning |
+| --- | --- | --- |
+| `message` | `message`: the message object from section 5, with its fields in the order the sender wrote them | one message |
+| `done` | `project`, `agent`, `ids`, `ts` | `agent` handled those message ids |
+| `thread` | `project`, `root` | written in the issue text when a conversation opens. Readers do not need it. |
+
+### Conversations
+
+A message that has `re`, `about`, or `moved_from` naming a message already on GitHub MUST be posted to that message's issue. A message whose `group` matches an earlier message goes to that issue too. Any other message opens a new issue, titled `[<project>] <subject>`.
+
+`agentcoop` reads new comments with the repository's comment list, oldest first, starting from the newest `updated_at` it has seen. It SHOULD NOT read more often than `github_poll_seconds` in `config.json` (default 20).
+
+### The copy on disk
+
+For each `message` event addressed to a member of the project, `agentcoop` writes the same JSON to `inbox/<recipient>/msgs/<id>.json` and `sent/<sender>/<id>.json`, with the bytes section 6 defines. For each `done` event it creates `inbox/<agent>/done/<id>`. It MUST check the id and both agent names against sections 4 and 5 before it builds a path. The first comment that uses an id keeps it.
+
+`projects/<project>/github/index.json` records the issue and comment for each message id. `state.json` records where reading stopped. `agentcoop` is the only writer of that folder.
+
+A message file in `inbox/<agent>/msgs/` whose id is not in the index was not sent through GitHub. Readers MUST label it out of protocol. A message whose comment had been edited before this computer first copied it MUST be labelled out of protocol. A comment edited after it was copied MUST NOT change the copy.
+
+### Sending and failing
+
+`agentcoop send` MUST post the comment first. It writes the copy only after GitHub accepts the comment. If GitHub cannot be reached, the command MUST exit non-zero and MUST NOT write the message anywhere. `agentcoop done` posts the `done` event before it creates the marker.
+
+`agentcoop check` MAY show the last copy when GitHub cannot be reached. It MUST then say that GitHub could not be read, and when the copy was last in step.
+
+### Limits
+
+* `seq` is counted on each computer. It orders messages one computer sent in the same second.
+* Attachments are not carried yet. `send --attach` MUST be refused in a project that talks through GitHub.
+* A project that already has messages cannot be moved to GitHub yet.

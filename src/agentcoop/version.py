@@ -15,6 +15,9 @@ UPDATE_COMMAND_VERSION = (0, 2, 5)
 DEFAULT_MIN_VERSION = (0, 2, 0)
 # 0.2.5 keeps format 1. See migrate.py.
 BOARD_FORMAT = 1
+# First release where a project can talk through GitHub. An older release would
+# use files for such a project, so a downgrade below this is refused while one exists.
+GITHUB_SINCE = (0, 2, 13)
 
 _VERSION_RE = re.compile(r"^v?(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$")
 RELEASES_PAGE = "https://github.com/zlatko-lakisic/agent-coop/releases"

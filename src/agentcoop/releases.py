@@ -7,6 +7,7 @@ import json
 import os
 import re
 import urllib.error
+import urllib.parse
 import urllib.request
 from pathlib import Path
 
@@ -58,10 +59,11 @@ def http_get(url: str, timeout: float = 30) -> bytes:
         "Accept": "application/vnd.github+json",
         "User-Agent": USER_AGENT,
     }
-    token = os.environ.get("AGENTCOOP_GITHUB_TOKEN") or ""
-    if token:
-        headers["Authorization"] = "Bearer " + token
     request = urllib.request.Request(url, headers=headers)
+    token = os.environ.get("AGENTCOOP_GITHUB_TOKEN") or ""
+    if token and urllib.parse.urlsplit(url).netloc.lower() == "api.github.com":
+        # Only GitHub's API gets the token, and it is not repeated on a redirect.
+        request.add_unredirected_header("Authorization", "Bearer " + token)
     try:
         with urllib.request.urlopen(request, timeout=timeout) as response:
             return response.read()

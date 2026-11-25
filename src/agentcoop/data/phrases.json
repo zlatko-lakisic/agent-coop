@@ -107,6 +107,13 @@
           "in": ["skill", "rule", "agents", "gemini", "board"]
         },
         {
+          "say": "You are the driver for this project. Talk through GitHub <owner>/<name>",
+          "does": "Create the project with this agent as the driver, and send its messages to issues in that private GitHub repository. You are asked to allow it.",
+          "who": "Cursor, Claude Code, Codex CLI, the ChatGPT desktop app, and Gemini CLI.",
+          "added": "0.2.13",
+          "in": ["skill", "rule", "agents", "gemini", "board"]
+        },
+        {
           "say": "Join this project",
           "also": "Join the <name> co-op",
           "does": "Add this agent as a helper.",

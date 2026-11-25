@@ -743,7 +743,10 @@ def wait_for_reply(
         if item.re in waiting_ids
     }
     first_mtime: float | None = None
+    from agentcoop.core import refresh_transport
+
     while True:
+        refresh_transport(board, project, record)
         messages, _issues = new_messages(board, project, agent)
         ready = []
         for wanted in waiting_ids:

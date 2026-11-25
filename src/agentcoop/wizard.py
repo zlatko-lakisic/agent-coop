@@ -523,6 +523,11 @@ def format_projects(board: Path | None = None, name: str | None = None) -> str:
             lines.append("  Helpers: (none)")
         for agent, note in helpers.items():
             lines.append("  Helper: " + agent + " (" + note + ")")
+        from agentcoop.transport import talks_line
+
+        talks = talks_line(project)
+        if talks:
+            lines.append("  " + talks)
         installed = project.get("installed") or []
         if installed:
             lines.append("  Installed files:")

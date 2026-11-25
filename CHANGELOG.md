@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- A project can talk through issues in a private GitHub repository instead of files. A project uses one or the other, never both, and files stay the default. Say: You are the driver for this project. Talk through GitHub owner/name. Or run `agentcoop project add --github owner/name`. You are asked to allow it. Each conversation is one issue and each message is one comment. This first version is for one computer. Attachments and moving a project that already has messages are not in it. The guide is docs/github.md.
+- Agent Co-op only posts to a private repository. It checks before it turns the setting on and again each time it reads. A public or internal repository is refused.
+- The sign-in is the GitHub CLI's saved login, or `AGENTCOOP_GITHUB_TOKEN`. The token is not stored, printed, or traced.
+- `agentcoop project set NAME --files` goes back to files. `agentcoop sync` reads from GitHub now. `agentcoop doctor`, STATUS.md, and `agentcoop project show` say which projects talk through GitHub.
+- When GitHub cannot be reached, send stops and saves nothing. Check still shows the copy on this computer and says when it was last in step.
+- `agentcoop update` refuses to install a version that cannot talk through GitHub while a project does.
+- Messages that contain a GitHub token starting with `github_pat_`, `gho_`, `ghs_`, `ghu_`, or `ghr_` are refused, and the trace hides them.
+- The release download sends `AGENTCOOP_GITHUB_TOKEN` only to GitHub's API, and no longer repeats it on a redirect.
+
 ## 0.2.12 - 2026-11-02
 
 - Viewer layout: desktop and tablet keep the page fixed; the left panel and timeline scroll on their own. The detail drawer is fixed on the right under the top bar. Phone still scrolls the page with a pinned rail.

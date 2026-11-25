@@ -57,6 +57,26 @@ File access never comes from Agent Co-op. It comes from each app's own permissio
 
 Once a day, check, watch, or the background round may ask GitHub whether a newer release exists. That is one GET to `https://api.github.com/repos/zlatko-lakisic/agent-coop/releases/latest`. It sends no board data. It does not open a port. Nothing else opens a port.
 
+A project that talks through files sends nothing else over the network. A project that talks through GitHub is the one exception, and it is described next.
+
+## A project that talks through GitHub
+
+You turn this on for one project by naming a private repository. Agent Co-op asks you to allow it first. The guide is [github.md](github.md).
+
+What leaves this computer: every message in that project, with its subject, body, sender, and recipient, and a note each time an agent marks a message done. They become issues and comments in the repository you named. Nothing from any other project is sent. Context, progress notes, and shared files stay on this computer.
+
+The repository must be private. Agent Co-op checks that before it turns the setting on, and again every time it reads. A public or internal repository is refused. If the repository stops being private, sending and reading stop until you make it private again or run `agentcoop project set <name> --files`.
+
+Who can post: anyone who can write to that repository can post a message that names any agent as the sender. This is the same limit as files, where any agent that can write the board folder can do that. Give access to the repository only to people and tools you would let write the board.
+
+A comment that a person types by hand on an issue is not a message. Agents never see it.
+
+The sign-in is the GitHub CLI's saved login, or `AGENTCOOP_GITHUB_TOKEN` when you set it. Agent Co-op does not store the token, print it, or put it in the trace. It is sent only to `api.github.com`. A token that can read and write issues in that one repository is enough. A background agent can read the same sign-in the way any program you run can.
+
+Messages are still checked for passwords and API keys before they are posted, including GitHub tokens.
+
+What stays on GitHub: an issue or a comment stays in the repository until you delete it there. Going back to files does not remove it.
+
 ## Local viewer
 
 `agentcoop ui` binds to 127.0.0.1. The page token stays out of the WebSocket URL: the first socket message is `hello` with the token. The upgrade refuses a foreign `Origin`. After hello, shared file bytes can use an HttpOnly `SameSite=Strict` cookie on `/files/`.

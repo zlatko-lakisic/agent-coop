@@ -18,7 +18,7 @@ from pathlib import Path
 from agentcoop.errors import CoopError
 from agentcoop.install import backup_file
 from agentcoop.projects import load_config, mutate_config
-from agentcoop.version import BOARD_FORMAT, DEFAULT_MIN_VERSION, parse_version, version_text
+from agentcoop.version import BOARD_FORMAT, DEFAULT_MIN_VERSION, GITHUB_SINCE, parse_version, version_text
 
 _META_KEYS = ("board_format", "min_version", "update_check")
 
@@ -126,6 +126,23 @@ def assert_downgrade_allowed(board: Path, target: tuple[int, int, int]) -> None:
     A down step has to be registered and run before this returns. Format 1 has
     no down step, so a target below min_version is refused.
     """
+    if target < GITHUB_SINCE:
+        from agentcoop.transport import github_projects
+
+        try:
+            using = sorted(github_projects(board))
+        except CoopError:
+            using = []
+        if using:
+            raise CoopError(
+                using[0]
+                + " talks through GitHub, and Agent Co-op "
+                + version_text(target)
+                + " cannot do that. It would use files for that project. First run: agentcoop project set "
+                + using[0]
+                + " --files",
+                code=1,
+            )
     minimum = read_min_version(board)
     if target >= minimum:
         return
