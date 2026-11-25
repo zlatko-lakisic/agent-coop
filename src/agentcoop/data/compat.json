@@ -4,13 +4,26 @@
       "version": "Unreleased",
       "date": "",
       "message_format": 1,
-      "spec": "0.3",
+      "spec": "0.4",
+      "board_format": 1,
+      "oldest_reader": "0.2.0",
+      "board_changes": "Nothing",
+      "settings_changes": "None",
+      "downgrade_loses": "Nothing",
+      "desktop_skill": "Same",
+      "upgrade_from": "0.2.0"
+    },
+    {
+      "version": "0.2.13",
+      "date": "2026-11-25",
+      "message_format": 1,
+      "spec": "0.4",
       "board_format": 1,
       "oldest_reader": "0.2.0",
       "board_changes": "projects/<name>/github/ holds index.json, state.json, and sync.lock for a project that talks through GitHub. Older programs ignore that folder. In such a project only agentcoop writes inbox/<agent>/msgs/, inbox/<agent>/done/, and sent/<agent>/, and a message file written by hand is labelled out of protocol. A project that talks through files is unchanged. STATUS.md may show a Talks through line under a project, and an On other computers line. .state/computer-id holds a random name for this board. Older programs ignore that file. projects/<name>/github/context-parts/ holds context that is still arriving. In a project that talks through GitHub, a message's attachments entry may be github: followed by a path, for a file that was not copied to this computer. Older programs show that entry as a path that does not exist. The entry may be missing: followed by a name, for a file that was not copied when the project moved to GitHub. projects/<name>/github/moving exists while earlier messages are copied, and send waits. Older programs ignore that file.",
       "settings_changes": "A project may include github, an object with repo set to owner/name. A missing key means files, as before. Older programs ignore that key. That object may include homes, a map of agent name to the computer it works on. A missing homes means every member works on this computer. A member that works on another computer need not be in agents.json. config.json may contain github_poll_seconds, a whole number from 5 to 3600. A missing key means 20. config.json may contain github_attach_max_mb, a whole number from 1 to 100. A missing key means 25.",
       "downgrade_loses": "An older program ignores the github key and would use files for that project, so its agents would stop seeing mail from GitHub and their new messages would stay on this computer. agentcoop update refuses that downgrade while any project talks through GitHub. Run agentcoop project set <name> --files first. After that the messages already copied to this computer stay readable. Going back to files removes the helpers that work on other computers, and those computers stop. agentcoop sync and agentcoop join --github are not in older versions. GitHub tokens that start with github_pat_, gho_, ghs_, ghu_, or ghr_ are no longer refused in a message. The release download again sends AGENTCOOP_GITHUB_TOKEN to every address it fetches.",
-      "desktop_skill": "Same",
+      "desktop_skill": "Changed",
       "upgrade_from": "0.2.0"
     },
     {
