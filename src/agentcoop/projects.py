@@ -68,6 +68,101 @@ def github_repo(record: object) -> str | None:
     return repo
 
 
+_computer_ids: dict[str, str] = {}
+
+
+def computer_id(board: Path) -> str:
+    """Return a random name for this board, made once. It tells two computers apart.
+
+    It is not the computer's real name and holds nothing about the person.
+    """
+    key = str(board)
+    found = _computer_ids.get(key)
+    if found:
+        return found
+    path = board / ".state" / "computer-id"
+    try:
+        found = path.read_text(encoding="ascii").strip()
+    except (OSError, UnicodeError):
+        found = ""
+    if not re.fullmatch(r"[0-9a-f]{12}", found or ""):
+        import secrets
+
+        found = secrets.token_hex(6)
+        atomic_write_bytes(path, (found + "\n").encode("ascii"))
+        try:
+            found = path.read_text(encoding="ascii").strip() or found
+        except (OSError, UnicodeError):
+            pass
+    _computer_ids[key] = found
+    return found
+
+
+def github_homes(record: object) -> dict | None:
+    """Return agent name to computer, for a GitHub project shared by several computers.
+
+    None means every member works on this computer.
+    """
+    if github_repo(record) is None:
+        return None
+    homes = record["github"].get("homes")  # type: ignore[index]
+    return homes if isinstance(homes, dict) else None
+
+
+def agent_is_here(board: Path, record: object, agent: str) -> bool:
+    """Say whether an agent works on this computer. Always true in a files project."""
+    homes = github_homes(record)
+    if homes is None:
+        return True
+    return homes.get(agent) == computer_id(board)
+
+
+def elsewhere_line(agent: str, project: str) -> str:
+    """Return the sentence for an agent that works on another computer."""
+    return agent + " works on another computer in " + project + ", so it cannot be used from this one."
+
+
+def require_here(board: Path, record: object, agent: str, project: str) -> None:
+    """Stop when an agent that works on another computer is used from this one."""
+    if not agent_is_here(board, record, agent):
+        raise CoopError(elsewhere_line(agent, project))
+
+
+def driver_is_here(board: Path, record: object) -> bool:
+    """Say whether this computer hosts the driver, and so keeps the member list."""
+    if not isinstance(record, dict):
+        return True
+    return agent_is_here(board, record, str(record.get("driver") or ""))
+
+
+def _settle_homes(board: Path, before: dict, after: dict) -> None:
+    """After a change made on this computer, record where each new member works."""
+    known = None
+    for name, record in (after.get("projects") or {}).items():
+        if github_repo(record) is None:
+            continue
+        old = (before.get("projects") or {}).get(name)
+        if github_repo(old) is None:
+            continue
+        old_members = [item for item in _members(old) if item]
+        members = [item for item in _members(record) if item]
+        added = [item for item in members if item not in old_members]
+        homes = github_homes(record)
+        if not added and (homes is None or all(item in members for item in homes)):
+            continue
+        if known is None:
+            known = load_agents(board).get("agents") or {}
+        mine = computer_id(board)
+        if homes is None:
+            if all(item in known for item in added):
+                continue
+            homes = {item: mine for item in old_members}
+        homes = {agent: home for agent, home in homes.items() if agent in members}
+        for item in added:
+            homes.setdefault(item, mine if item in known else "")
+        record["github"]["homes"] = homes
+
+
 def now_stamp() -> str:
     """Return the current UTC time at second precision."""
     return datetime.now(timezone.utc).replace(microsecond=0).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -379,8 +474,12 @@ def mutate_projects(
     enforce_integrity: bool = True,
     schema_code: int = 6,
     skip_schema: bool = False,
+    remote: bool = False,
 ) -> None:
-    """Lock, check, edit, validate, and save projects.json."""
+    """Lock, check, edit, validate, and save projects.json.
+
+    remote is true when the change copies a member list that another computer posted.
+    """
     with board_lock(board):
         path = board / "projects.json"
         data = read_json(path)
@@ -390,7 +489,10 @@ def mutate_projects(
                 raise CoopError(format_problem(path, problems[0]), code=schema_code)
         if enforce_integrity:
             require_integrity(board)
+        before = json.loads(json.dumps(data))
         change(data)
+        if not remote:
+            _settle_homes(board, before, data)
         validate_all(board, data)
         save_projects(board, data)
 
@@ -454,9 +556,10 @@ def validate_project_record(board: Path, name: str, project: dict, agents: dict)
     if driver in helpers:
         raise CoopError(driver + " is the driver, so it cannot also be a helper.")
     known = agents.get("agents") or {}
-    if driver not in known:
+    driver_here = agent_is_here(board, project, driver)
+    if driver_here and driver not in known:
         raise CoopError(driver + " is not connected yet. Run: agentcoop connect " + driver)
-    tool_key = (known[driver] or {}).get("tool", "")
+    tool_key = (known.get(driver) or {}).get("tool", "")
     if tool_key == "runner":
         can_drive = False
     else:
@@ -464,7 +567,7 @@ def validate_project_record(board: Path, name: str, project: dict, agents: dict)
             can_drive = tool_can_drive(tool_key)
         except KeyError:
             can_drive = False
-    if not can_drive:
+    if driver_here and not can_drive:
         raise CoopError(
             known[driver].get("display", driver)
             + " cannot be the driver. Pick an agent that edits project files."
@@ -474,7 +577,7 @@ def validate_project_record(board: Path, name: str, project: dict, agents: dict)
         raise CoopError("Project " + name + " needs a folder path.")
     for helper, note in helpers.items():
         validate_agent_name(helper)
-        if helper not in known:
+        if helper not in known and agent_is_here(board, project, helper):
             raise CoopError(helper + " is not connected yet. Run: agentcoop agents")
         if not isinstance(note, str):
             raise CoopError("The note for " + helper + " must be text.")
@@ -596,8 +699,11 @@ def _role_entry(driver: str, helpers: dict, since: str) -> dict:
     return {"since": since, "driver": driver, "helpers": sorted(helpers.keys())}
 
 
-def _record_membership(project: dict, before_driver: str, before_helpers: dict) -> None:
-    """Append roles_history when the driver or the helper names change."""
+def _record_membership(project: dict, before_driver: str, before_helpers: dict, since: str | None = None) -> None:
+    """Append roles_history when the driver or the helper names change.
+
+    since is the time the change was made, when another computer made it earlier.
+    """
     after_helpers = dict(project.get("helpers") or {})
     same = before_driver == project.get("driver") and set(before_helpers) == set(after_helpers)
     if same:
@@ -605,7 +711,7 @@ def _record_membership(project: dict, before_driver: str, before_helpers: dict) 
     history = list(project.get("roles_history") or [])
     if not history:
         history.append(_role_entry(before_driver, before_helpers, str(project.get("created") or now_stamp())))
-    history.append(_role_entry(str(project.get("driver")), after_helpers, now_stamp()))
+    history.append(_role_entry(str(project.get("driver")), after_helpers, since or now_stamp()))
     project["roles_history"] = history
 
 
@@ -663,10 +769,11 @@ def _validate_new_project(board: Path, name: str, record: dict, projects: dict, 
     if driver in helpers:
         raise CoopError(driver + " is the driver, so it cannot also be a helper.")
     known = agents.get("agents") or {}
-    if driver not in known:
+    remote_ok = github_repo(record) is not None
+    if driver not in known and not remote_ok:
         raise CoopError(driver + " is not connected yet. Run: agentcoop connect " + driver)
-    tool_key = (known[driver] or {}).get("tool", "")
-    if not tool_can_drive(tool_key):
+    tool_key = (known.get(driver) or {}).get("tool", "")
+    if driver in known and not tool_can_drive(tool_key):
         display = (known[driver] or {}).get("display", driver)
         raise CoopError(display + " cannot be the driver. Pick an agent that edits project files.")
     path_raw = record.get("path")
@@ -674,7 +781,7 @@ def _validate_new_project(board: Path, name: str, record: dict, projects: dict, 
         raise CoopError("Project " + name + " needs a folder path.")
     for helper, note in helpers.items():
         validate_agent_name(helper)
-        if helper not in known:
+        if helper not in known and not remote_ok:
             raise CoopError(helper + " is not connected yet. Run: agentcoop agents")
         if not isinstance(note, str):
             raise CoopError("The note for " + helper + " must be text.")

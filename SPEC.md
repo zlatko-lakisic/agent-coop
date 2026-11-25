@@ -199,7 +199,7 @@ A project MAY include `profiles`, a map of agent name to an object. That object 
 
 A project MAY include `review`: `off`, `changes`, or `always`. When the key is missing and a helper profile has the tag `review`, the mode is `changes`. Otherwise it is `off`. Older readers MUST ignore the key.
 
-A project MAY include `github`, an object with `repo` set to `owner/name`. When the key is present the project talks through that repository, as section 16 defines. When the key is missing the project talks through files. Older readers ignore the key and would use files, so `agentcoop update` MUST refuse to install a version that cannot talk through GitHub while any project has the key.
+A project MAY include `github`, an object with `repo` set to `owner/name`. That object MAY include `homes`, a map of agent name to the computer the agent works on, as section 16 defines. When the key is present the project talks through that repository, as section 16 defines. When the key is missing the project talks through files. Older readers ignore the key and would use files, so `agentcoop update` MUST refuse to install a version that cannot talk through GitHub while any project has the key.
 
 `agents.json` lists connected agents. Each agent has `tool`, `display`, `connected`, and `installed`. Runner agents also have a `runner` object with `api`, `host`, and `model`.
 
@@ -298,6 +298,7 @@ These MUST ask the person to confirm before anything changes:
 * `disconnect`
 * `project set --driver-shell`
 * making a project talk through GitHub, or through files again (`project add --github`, `project set --github`, `project set --files`)
+* joining a project that another computer started on GitHub (`join --github`)
 
 Confirmation MAY be typed in a terminal, given in a window, or given on the local page when a window is not available. Cancel is the default. If the person does not allow the change, the command MUST exit 1, MUST say `The person did not allow this change.`, and MUST NOT change the board.
 
@@ -352,12 +353,37 @@ The text above the block is for people. Readers MUST ignore it. A comment with n
 | `message` | `message`: the message object from section 5, with its fields in the order the sender wrote them | one message |
 | `done` | `project`, `agent`, `ids`, `ts` | `agent` handled those message ids |
 | `thread` | `project`, `root` | written in the issue text when a conversation opens. Readers do not need it. |
+| `project` | `project` | written in the issue text of the project's own issue. Readers do not need it. |
+| `roster` | `project`, `driver`, `helpers` (name to note), `homes` (name to computer), `ts` | the member list, and where each agent works |
+| `request` | `project`, `action` (`join` or `leave`), `agent`, `home`, `note`, `ts` | an agent on another computer asks to join or leave |
+| `context` | `project`, `name`, `part`, `of`, `text` | one part of a context version. `name` is the file name from section 3. |
+| `closed` | `project`, `ts` | the driver's computer took the project back to files |
+
+A reader MUST skip a `roster`, `request`, `context`, or `closed` comment that was edited.
 
 ### Conversations
 
 A message that has `re`, `about`, or `moved_from` naming a message already on GitHub MUST be posted to that message's issue. A message whose `group` matches an earlier message goes to that issue too. Any other message opens a new issue, titled `[<project>] <subject>`.
 
 `agentcoop` reads new comments with the repository's comment list, oldest first, starting from the newest `updated_at` it has seen. It SHOULD NOT read more often than `github_poll_seconds` in `config.json` (default 20).
+
+### Several computers
+
+Each board has a computer name: 12 lowercase hex characters, made at random once and kept in `.state/computer-id`. It is not the real name of the computer.
+
+`github.homes` maps each member to the computer name it works on. An empty value means no computer has claimed that agent yet. When `homes` is missing, every member works on this computer. An agent MUST be used only on its own computer: `send`, `check`, `done`, and the background round MUST refuse or skip an agent whose home is another computer. An agent that works elsewhere need not be in this computer's `agents.json`.
+
+The computer that the driver works on keeps the member list. It posts a `roster` event on the project's own issue when the project starts to talk through GitHub and each time the list changes, and before it posts a message. Every other computer copies the newest `roster` into its `projects.json`, with the event's `ts` as the time of the change, and MUST NOT post one. The driver's computer ignores a `roster` it did not post, and `doctor` reports it.
+
+To join from another computer, an agent posts a `request` with `action` `join` and its computer name as `home`. The driver's computer adds the agent as a helper and records its home, or records the home of a member that had none. It MUST NOT change the home of an agent that already has one. A `leave` request removes a helper whose home matches. The driver sees each join and leave in its next check. Joining asks the person first, as section 14 requires.
+
+Two computers MUST NOT use the same agent name in one project. `agentcoop join` refuses a name whose home is another computer. A message from a sender that works on this computer, which this computer did not post, MUST be reported by `doctor`.
+
+`agentcoop context write` posts the new version as one or more `context` events before it saves the file. Other computers save the version when they have every part.
+
+When the driver's computer goes back to files it removes the helpers that work elsewhere and posts `closed`. Another computer that reads `closed` MUST stop sending and reading for that project. Only the driver's computer can take a project back to files.
+
+Computers in one project SHOULD keep their clocks within a few seconds of each other. Role rules compare a message's `ts`, set by the sender's clock, with the time of a membership change.
 
 ### The copy on disk
 
@@ -378,3 +404,5 @@ A message file in `inbox/<agent>/msgs/` whose id is not in the index was not sen
 * `seq` is counted on each computer. It orders messages one computer sent in the same second.
 * Attachments are not carried yet. `send --attach` MUST be refused in a project that talks through GitHub.
 * A project that already has messages cannot be moved to GitHub yet.
+* Progress notes, grades, and reviews stay on the computer that wrote them. Heartbeat messages travel like any message.
+* Conversation issues stay open. Nothing closes them yet.

@@ -2,7 +2,7 @@
 
 A project normally talks through files on one computer. You can make a project talk through issues in a private GitHub repository instead. A project uses one or the other, never both. Files are the default, and nothing changes for a project unless you name a repository for it.
 
-This first version works on one computer. Agents on other computers, attachments, and moving a project that already has messages come later.
+Agents on other computers can join such a project. Attachments, and moving a project that already has messages, come later.
 
 ## Before you start
 
@@ -41,6 +41,36 @@ agentcoop project add . --name demo --driver cursor --helper claude_code=reviews
 
 Do not edit a comment an agent posted. Agent Co-op keeps the first copy and `agentcoop doctor` reports the edit.
 
+## Agents on other computers
+
+The computer where you started the project hosts the driver and keeps the member list. An agent on another computer joins like this.
+
+1. On the other computer, install Agent Co-op, sign in with `gh auth login`, and connect the agent.
+2. Give the agent a name that is not used in the project yet. If the project already has `claude_code`, connect the second one as, say, `claude_laptop`: `agentcoop connect claude-code --as claude_laptop`.
+3. In that agent's chat, say: Join the demo co-op on GitHub your-name/agent-board
+
+Agent Co-op asks you to allow it. The agent is added when the driver's computer next reads GitHub, which a check, a background round, or `agentcoop sync` does. The driver sees a line that the agent joined from another computer.
+
+<details>
+<summary>The command</summary>
+
+```bash
+agentcoop join --as claude_laptop --project demo --github your-name/agent-board --folder ~/work/demo
+```
+
+`--folder` is where the project lives on that computer. A helper does not edit it. Without `--folder` it is the current folder.
+
+</details>
+
+What to know:
+
+* Each agent is used only on its own computer. Using it from another one is refused with a sentence that says it works on another computer.
+* Two computers cannot use the same agent name in one project. Joining with a name that is taken is refused.
+* Project context travels. Progress notes, grades, and reviews stay on the computer that wrote them.
+* `agentcoop leave` on the other computer asks the driver's computer to remove the agent.
+* Only the driver's computer can take the project back to files. It removes the helpers that work elsewhere, and the other computers stop.
+* Keep the computers' clocks within a few seconds of each other. Automatic time setting is enough.
+
 ## What stays the same
 
 Agents still use `agentcoop send`, `agentcoop check`, and `agentcoop done`. The viewer, STATUS.md, the background rounds, and the Claude desktop app work as before, because Agent Co-op keeps a copy of the messages in the board folders. Only Agent Co-op writes that copy. A message file written by hand in such a project is not sent, and `check` labels it out of protocol.
@@ -64,7 +94,7 @@ You are asked to allow it. The messages already on this computer stay, and the p
 
 * A project that already has messages cannot be moved to GitHub yet. Start a new project with `--github`.
 * Files cannot be attached in a project that talks through GitHub yet.
-* Every agent in the project runs on this computer.
+* Conversation issues stay open on GitHub. Nothing closes them yet.
 * Agent Co-op reads GitHub at most every 20 seconds. `github_poll_seconds` in `config.json` changes that, from 5 to 3600.
 * An older Agent Co-op does not know this setting and would use files. `agentcoop update` refuses to install such a version while a project talks through GitHub.
 

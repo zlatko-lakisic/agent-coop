@@ -13,7 +13,7 @@ from pathlib import Path
 
 from agentcoop.errors import CoopError, TransportDown
 from agentcoop.paths import private_dir
-from agentcoop.projects import load_agents, load_config, load_projects, require_board, role_of
+from agentcoop.projects import agent_is_here, load_agents, load_config, load_projects, require_board, role_of
 
 MAX_HELPER_RUNS = 3
 TOUCH_MINUTES = 10
@@ -165,6 +165,8 @@ def tick(board: Path) -> int:
             for project, record in projects.items():
                 role = role_of(record, name)
                 if not role:
+                    continue
+                if not agent_is_here(board, record, name):
                     continue
                 if not _should_start(board, name, project, role):
                     continue

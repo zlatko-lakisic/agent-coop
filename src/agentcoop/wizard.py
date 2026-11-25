@@ -528,6 +528,11 @@ def format_projects(board: Path | None = None, name: str | None = None) -> str:
         talks = talks_line(project)
         if talks:
             lines.append("  " + talks)
+            from agentcoop.transport import away_members
+
+            away = away_members(root, project)
+            if away:
+                lines.append("  On other computers: " + ", ".join(away))
         installed = project.get("installed") or []
         if installed:
             lines.append("  Installed files:")

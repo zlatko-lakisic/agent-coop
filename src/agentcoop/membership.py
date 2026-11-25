@@ -222,6 +222,21 @@ def join_named(
         raise CoopError(
             "You are the driver for " + project + ", so you cannot join it as a helper."
         )
+    from agentcoop.projects import driver_is_here, github_repo
+
+    repo = github_repo(record)
+    if repo and not driver_is_here(board, record):
+        if agent in (record.get("helpers") or {}):
+            return "You are already a helper on " + project + ". Nothing was changed."
+        _ensure_known(board, agent)
+        from agentcoop.ghsync import post_request
+
+        post_request(board, project, repo, "join", agent, note or _default_note(board, agent))
+        return (
+            "Asked the driver's computer to add you to "
+            + project
+            + ". You join when that computer next checks GitHub."
+        )
     if agent in (record.get("helpers") or {}):
         if tags is not None or can is not None or cost is not None or note is not None:
             from agentcoop.profiles import set_profile
@@ -275,6 +290,19 @@ def leave_named(agent: str, project: str) -> str:
         )
     if agent not in (record.get("helpers") or {}):
         return "You are not a helper on " + project + ". Nothing was changed."
+    from agentcoop.projects import driver_is_here, github_repo, require_here
+
+    repo = github_repo(record)
+    if repo and not driver_is_here(board, record):
+        require_here(board, record, agent, project)
+        from agentcoop.ghsync import post_request
+
+        post_request(board, project, repo, "leave", agent)
+        return (
+            "Asked the driver's computer to remove you from "
+            + project
+            + ". You leave when that computer next checks GitHub."
+        )
     text = helper_remove(project, agent)
     line = "You left " + project + "."
     extra = [item for item in text.splitlines()[1:] if item.strip()]

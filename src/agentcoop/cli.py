@@ -532,6 +532,8 @@ def build_parser() -> argparse.ArgumentParser:
     join_cmd.add_argument("--tags", default="")
     join_cmd.add_argument("--can", default="")
     join_cmd.add_argument("--cost", default="")
+    join_cmd.add_argument("--github", metavar="OWNER/NAME", help="Join a project another computer started on GitHub")
+    join_cmd.add_argument("--folder", help="Folder for the project on this computer, with --github")
     join_cmd.add_argument("words", nargs="*")
     join_cmd.set_defaults(func=cmd_join)
     leave_cmd = sub.add_parser("leave", help="Leave a project you help with")
@@ -1990,12 +1992,9 @@ def cmd_project_set(args: argparse.Namespace) -> int:
         if record is None:
             raise CoopError("There is no project named " + args.name + ". Run: agentcoop project list")
         if github_repo(record):
-            _require_person(
-                args.name,
-                "This will stop " + args.name + " talking through GitHub. Its agents will use files on this computer.",
-                kind="project",
-                actor=_actor_name(args),
-            )
+            from agentcoop.transport import files_summary
+
+            _require_person(args.name, files_summary(board, args.name), kind="project", actor=_actor_name(args))
         print(use_files(board, args.name))
         return 0
     _require_person(
@@ -2279,6 +2278,15 @@ def cmd_join(args: argparse.Namespace) -> int:
     from agentcoop.membership import join_self
 
     agent = _agent(args)
+    if args.github:
+        from agentcoop.transport import finish_join, plan_join
+
+        board = _board()
+        folder = Path(args.folder) if args.folder else Path.cwd()
+        plan = plan_join(board, agent, args.github, args.project, folder)
+        _require_person(plan.project, plan.summary, kind="project", actor=agent)
+        print(finish_join(board, plan, note=args.note or ""))
+        return 0
     text = join_self(
         agent,
         project=args.project,

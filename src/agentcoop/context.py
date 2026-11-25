@@ -184,6 +184,14 @@ def write_context(
         path = folder / name
     payload = body if body.endswith("\n") else body + "\n"
     data = payload.encode("utf-8")
+    from agentcoop.projects import github_repo
+
+    repo = github_repo(record)
+    if repo:
+        # Members on other computers get it from GitHub. Nothing is saved here unless GitHub took it.
+        from agentcoop.ghsync import post_context
+
+        post_context(board, project, repo, name, payload)
     tmp = path.with_name("." + path.name + ".tmp")
     mode = 0o600 if os.name != "nt" else 0o666
     fd = os.open(

@@ -107,6 +107,15 @@ def check_projects(data: object) -> list[str]:
             repo = github.get("repo") if isinstance(github, dict) else None
             if not isinstance(repo, str) or not GITHUB_REPO_RE.fullmatch(repo):
                 problems.append(name + " github must be an object with repo set to owner/name")
+            homes = github.get("homes") if isinstance(github, dict) else None
+            if homes is not None and (
+                not isinstance(homes, dict)
+                or any(
+                    not isinstance(agent, str) or not AGENT_NAME_RE.fullmatch(agent) or not isinstance(home, str)
+                    for agent, home in homes.items()
+                )
+            ):
+                problems.append(name + " github homes must be a map of agent name to text")
     return problems
 
 

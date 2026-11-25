@@ -2,7 +2,11 @@
 
 ## Unreleased
 
-- A project can talk through issues in a private GitHub repository instead of files. A project uses one or the other, never both, and files stay the default. Say: You are the driver for this project. Talk through GitHub owner/name. Or run `agentcoop project add --github owner/name`. You are asked to allow it. Each conversation is one issue and each message is one comment. This first version is for one computer. Attachments and moving a project that already has messages are not in it. The guide is docs/github.md.
+- A project can talk through issues in a private GitHub repository instead of files. A project uses one or the other, never both, and files stay the default. Say: You are the driver for this project. Talk through GitHub owner/name. Or run `agentcoop project add --github owner/name`. You are asked to allow it. Each conversation is one issue and each message is one comment. Attachments and moving a project that already has messages are not in it. The guide is docs/github.md.
+- Agents on other computers can join a project that talks through GitHub. Connect the agent under a name the project does not use yet, then say: Join the demo co-op on GitHub owner/name. Or run `agentcoop join --as NAME --project demo --github owner/name`. You are asked to allow it. The driver's computer keeps the member list and adds the agent when it next reads GitHub.
+- Each agent is used only on its own computer. Two computers cannot use the same agent name in one project.
+- Project context travels to the other computers. Progress notes, grades, and reviews do not.
+- Only the driver's computer can take a shared project back to files. It removes the helpers that work elsewhere, and the other computers stop.
 - Agent Co-op only posts to a private repository. It checks before it turns the setting on and again each time it reads. A public or internal repository is refused.
 - The sign-in is the GitHub CLI's saved login, or `AGENTCOOP_GITHUB_TOKEN`. The token is not stored, printed, or traced.
 - `agentcoop project set NAME --files` goes back to files. `agentcoop sync` reads from GitHub now. `agentcoop doctor`, STATUS.md, and `agentcoop project show` say which projects talk through GitHub.
