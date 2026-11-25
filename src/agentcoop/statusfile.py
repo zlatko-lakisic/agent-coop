@@ -134,6 +134,15 @@ def render_status(board: Path, now: datetime | None = None) -> str:
             from agentcoop.ghsync import stale_line
 
             lines.append(talks)
+            from agentcoop.projects import agent_is_here
+
+            away = [
+                str(item)
+                for item in [project.get("driver"), *helpers]
+                if item and not agent_is_here(board, project, str(item))
+            ]
+            if away:
+                lines.append("On other computers: " + ", ".join(away))
             stale = stale_line(board, str(name))
             if stale:
                 lines.append(stale)

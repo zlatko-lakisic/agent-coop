@@ -38,6 +38,27 @@ class FakeGitHub:
         self._moment += timedelta(seconds=1)
         return self._moment.strftime("%Y-%m-%dT%H:%M:%SZ")
 
+    def events(self, kind: str) -> list[dict]:
+        """Return the comments that carry one kind of event, oldest first."""
+        from agentcoop.ghwire import parse_event
+
+        found = []
+        for comment in self.comments:
+            event = parse_event(comment["body"])
+            if event is not None and event["kind"] == kind:
+                found.append(comment)
+        return found
+
+    def messages(self) -> list[dict]:
+        """Return the comments that are messages or done markers, oldest first."""
+        from agentcoop.ghwire import parse_event
+
+        return [c for c in self.comments if (parse_event(c["body"]) or {}).get("kind") in ("message", "done")]
+
+    def threads(self) -> list[dict]:
+        """Return the conversation issues, without the project's own issue."""
+        return [issue for issue in self.issues if not str(issue.get("title")).endswith("Agent Co-op project")]
+
     def count(self, method: str, ending: str) -> int:
         """Count calls whose path ends with some text."""
         return sum(1 for verb, path in self.calls if verb == method and path.endswith(ending))

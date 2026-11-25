@@ -23,7 +23,9 @@ from agentcoop.paths import (
 from agentcoop.projects import (
     INTEGRITY_PAUSED,
     INTEGRITY_WARNING,
+    agent_is_here,
     github_repo,
+    require_here,
     load_agents,
     load_config,
     load_projects,
@@ -627,8 +629,9 @@ def assert_can_send(
         raise CoopError(reason)
     if role_of(project, sender) == "":
         raise CoopError(sender + " is not a member of " + project_name + ".")
+    require_here(board, project, sender, project_name)
     agents = load_agents(board)
-    if recipient not in (agents.get("agents") or {}):
+    if recipient not in (agents.get("agents") or {}) and agent_is_here(board, project, recipient):
         raise CoopError(recipient + " is not connected. Run: agentcoop agents")
     return project
 
@@ -844,8 +847,10 @@ def mark_done(board: Path, project: str, agent: str, ids: list[str]) -> None:
             raise CoopError("There is no message " + mid + " in the inbox for " + agent + ".")
         if not (msgs / (mid + ".json")).is_file():
             raise CoopError("There is no message " + mid + " in the inbox for " + agent + ".")
-    repo = github_repo((load_projects(board).get("projects") or {}).get(project))
+    record = (load_projects(board).get("projects") or {}).get(project)
+    repo = github_repo(record)
     if repo:
+        require_here(board, record, agent, project)
         from agentcoop.ghsync import post_done
 
         post_done(board, project, repo, agent, [mid for mid in ids if not (done / mid).exists()])
@@ -875,10 +880,28 @@ def check_inbox(
     record = (projects.get("projects") or {}).get(project)
     if record is None:
         raise CoopError("There is no project named " + project + ". Run: agentcoop project list")
+    transport_note = refresh_transport(board, project, record)
+    if github_repo(record):
+        # A pull can bring a new member list. Read the roles again before using them.
+        projects, intact = read_projects_checked(board)
+        record = (projects.get("projects") or {}).get(project) or record
     role = role_of(record, agent)
+    if github_repo(record) and (not role or not agent_is_here(board, record, agent)):
+        # It may have asked to join from this computer. Look for the answer now.
+        transport_note = refresh_transport(board, project, record, force=True)
+        projects, intact = read_projects_checked(board)
+        record = (projects.get("projects") or {}).get(project) or record
+        role = role_of(record, agent)
+        if not role:
+            raise CoopError(
+                agent
+                + " is not a member of "
+                + project
+                + ". If it asked to join from this computer, the driver's computer adds it when it next reads GitHub."
+            )
     if not role:
         raise CoopError(agent + " is not a member of " + project + ".")
-    transport_note = refresh_transport(board, project, record)
+    require_here(board, record, agent, project)
     from agentcoop.outbox import sync_project_outbox
 
     sync_project_outbox(board, project, now=outbox_now)

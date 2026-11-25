@@ -114,6 +114,13 @@
           "in": ["skill", "rule", "agents", "gemini", "board"]
         },
         {
+          "say": "Join the <project> co-op on GitHub <owner>/<name>",
+          "does": "Join a project that was started on another computer and talks through that private GitHub repository. You are asked to allow it. The driver's computer adds the agent when it next reads GitHub.",
+          "who": "Agents that can run commands.",
+          "added": "0.2.13",
+          "in": ["skill", "rule", "agents", "gemini", "board"]
+        },
+        {
           "say": "Join this project",
           "also": "Join the <name> co-op",
           "does": "Add this agent as a helper.",

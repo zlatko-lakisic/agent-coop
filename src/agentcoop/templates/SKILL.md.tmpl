@@ -132,6 +132,7 @@ Tell them in plain words what you did and what changed. Do not paste raw command
 * "You are the driver for this project": `{{AGENTCOOP}} project add --driver self --as {{AGENT_NAME}}`, then check the board and start watching
 * "You are the driver for this project. Talk through GitHub <owner>/<name>": the same command with `--github <owner>/<name>` added. The messages of that project then go to issues in that private repository and not to files. The person is asked to allow it. Never add `--github` unless the person named the repository in this chat.
 * "Join this project" or "Join the <name> co-op": `{{AGENTCOOP}} join --as {{AGENT_NAME}}` plus the words they used
+* "Join the <project> co-op on GitHub <owner>/<name>": `{{AGENTCOOP}} join --as {{AGENT_NAME}} --project <project> --github <owner>/<name>`. Use it when the project was started on another computer. The person is asked to allow it. The driver's computer adds you when it next reads GitHub. If it says your name already works there from another computer, tell the person. Do not pick another name yourself.
 * "Join the <project> co-op and start working", or "Start working": check the board, answer what is waiting, and start watching
 * "Stop" or "Stop checking": stop your own watch loop and tell the person in one line
 * "Leave this project": `{{AGENTCOOP}} leave --as {{AGENT_NAME}}`

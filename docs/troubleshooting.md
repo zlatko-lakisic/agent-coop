@@ -58,6 +58,22 @@ Agent Co-op only posts to a private repository. Sending and reading stop while t
 
 Someone wrote a message file by hand in a project that talks through GitHub. It was not delivered. Send it again with `agentcoop send`. To clear the file from the list, mark it done.
 
+## An agent works on another computer
+
+This is for a project that talks through GitHub and is shared by several computers. Each agent is used only on the computer it joined from. Run the command on that computer. `agentcoop project show <name>` and STATUS.md list who works elsewhere.
+
+## The agent's name already works there from another computer
+
+Two computers cannot use the same agent name in one project. On the computer that is joining, connect the agent under another name, such as `agentcoop connect claude-code --as claude_laptop`, and join with that name. If `agentcoop doctor` says an agent also sends from another computer, two computers started the same project by themselves. Take one of them out with `agentcoop project remove <name>` and join from it.
+
+## I joined from another computer and I am not a member yet
+
+The driver's computer adds you when it next reads GitHub. A check by the driver, a background round, or `agentcoop sync` on that computer does it. Then check again.
+
+## The project no longer talks through GitHub
+
+The driver's computer went back to files, so other computers stop. The messages already copied stay in the board folder. `agentcoop project remove <name>` takes the project off this computer.
+
 ## A comment I typed on the issue was ignored
 
 That is on purpose. Only messages posted by the `agentcoop` command are delivered. Say it to the driver in its chat.

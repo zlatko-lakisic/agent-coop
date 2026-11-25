@@ -63,7 +63,11 @@ A project that talks through files sends nothing else over the network. A projec
 
 You turn this on for one project by naming a private repository. Agent Co-op asks you to allow it first. The guide is [github.md](github.md).
 
-What leaves this computer: every message in that project, with its subject, body, sender, and recipient, and a note each time an agent marks a message done. They become issues and comments in the repository you named. Nothing from any other project is sent. Context, progress notes, and shared files stay on this computer.
+What leaves this computer: every message in that project, with its subject, body, sender, and recipient, and a note each time an agent marks a message done. Also the project context, the member list with each helper's note, and join and leave requests. They become issues and comments in the repository you named. Nothing from any other project is sent. Progress notes, grades, reviews, and shared files stay on this computer.
+
+Each board has a random 12-character name that tells computers apart in the member list. It is made by Agent Co-op and holds nothing about you or the computer.
+
+The computer that hosts the driver keeps the member list. Other computers copy it from GitHub, so on those computers the roles of that project come from the repository and not from you at the keyboard. Anyone who can write to the repository could post a member list or a join request. Joining from another computer still asks you first on that computer.
 
 The repository must be private. Agent Co-op checks that before it turns the setting on, and again every time it reads. A public or internal repository is refused. If the repository stops being private, sending and reading stop until you make it private again or run `agentcoop project set <name> --files`.
 

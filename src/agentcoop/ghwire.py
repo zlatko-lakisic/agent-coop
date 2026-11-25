@@ -133,3 +133,92 @@ def render_thread(project: str, root_id: str) -> str:
         encode_block({"kind": "thread", "project": project, "root": root_id}),
     ]
     return "\n".join(lines)
+
+
+def project_title(project: str) -> str:
+    """Return the title of the issue that holds a project's roster and requests."""
+    return ("[" + project + "] Agent Co-op project")[:MAX_TITLE]
+
+
+def render_project(project: str) -> str:
+    """Return the issue text for a project's own issue."""
+    lines = [
+        "Agent Co-op keeps the member list, join and leave requests, and the context for the project "
+        + _code(project)
+        + " here.",
+        "",
+        "Each comment below was posted by the agentcoop command. " + NOT_DELIVERED,
+        "",
+        encode_block({"kind": "project", "project": project}),
+    ]
+    return "\n".join(lines)
+
+
+def roster_event(project: str, driver: str, helpers: dict, homes: dict, ts: str) -> dict:
+    """Build the event that says who is in a project and which computer each agent works on."""
+    return {
+        "kind": "roster",
+        "project": project,
+        "driver": driver,
+        "helpers": dict(helpers),
+        "homes": dict(homes),
+        "ts": ts,
+    }
+
+
+def render_roster(event: dict) -> str:
+    """Return the comment for a roster."""
+    helpers = event.get("helpers") or {}
+    lines = ["**Members of " + str(event.get("project")) + "**", "", "Driver: " + _code(str(event.get("driver")))]
+    if helpers:
+        for name in sorted(helpers):
+            note = str(helpers[name] or "")
+            lines.append("Helper: " + _code(str(name)) + ((" (" + _code(note) + ")") if note.strip() else ""))
+    else:
+        lines.append("Helpers: none")
+    lines.extend(["", encode_block(event)])
+    return "\n".join(lines)
+
+
+def request_event(project: str, action: str, agent: str, home: str, note: str, ts: str) -> dict:
+    """Build a join or leave request from an agent on another computer."""
+    return {"kind": "request", "project": project, "action": action, "agent": agent, "home": home, "note": note, "ts": ts}
+
+
+def render_request(event: dict) -> str:
+    """Return the comment for a join or leave request."""
+    action = "join" if event.get("action") == "join" else "leave"
+    line = "**" + str(event.get("agent")) + "** asks to " + action + " " + _code(str(event.get("project"))) + "."
+    return "\n".join([line, "", encode_block(event)])
+
+
+def context_events(project: str, name: str, text: str, chunk: int = 8000) -> list[dict]:
+    """Split one context version into events that each fit in a comment."""
+    pieces = [text[start : start + chunk] for start in range(0, len(text), chunk)] or [""]
+    return [
+        {"kind": "context", "project": project, "name": name, "part": index + 1, "of": len(pieces), "text": piece}
+        for index, piece in enumerate(pieces)
+    ]
+
+
+def render_context(event: dict) -> str:
+    """Return the comment for one part of a context version."""
+    head = "**Project context** " + _code(str(event.get("name")))
+    if int(event.get("of") or 1) > 1:
+        head += " · part " + str(event.get("part")) + " of " + str(event.get("of"))
+    block = encode_block(event)
+    text = "\n".join([head, "", _fence(str(event.get("text") or "")), "", block])
+    if len(text) <= MAX_COMMENT:
+        return text
+    return "\n".join([head, "", "The text is stored with this comment.", "", block])
+
+
+def closed_event(project: str, ts: str) -> dict:
+    """Build the event that says a project went back to files."""
+    return {"kind": "closed", "project": project, "ts": ts}
+
+
+def render_closed(event: dict) -> str:
+    """Return the comment for a project that went back to files."""
+    line = "**" + str(event.get("project")) + "** no longer talks through GitHub. Its driver's computer went back to files."
+    return "\n".join([line, "", encode_block(event)])

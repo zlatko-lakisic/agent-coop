@@ -95,7 +95,7 @@ def run_doctor(
         items.extend(_agent_checks(name, record))
         if record.get("tool") == "runner":
             items.append(_runner_check(record))
-    items.extend(_project_checks(projects, agents, config, only=project_names))
+    items.extend(_project_checks(projects, agents, config, only=project_names, board=board))
     items.extend(_github_checks(board, projects, only=project_names))
     items.extend(_duplicate_instruction_checks(agents, projects, only=project_names))
     items.extend(_message_checks(board, projects, only=project_names))
@@ -305,6 +305,28 @@ def _github_checks(board: Path, projects: dict, *, only: set[str] | None = None)
             else:
                 items.append(DoctorItem("ok", name + ": talks through GitHub " + repo + ", which is private."))
         state = load_state(board, name)
+        for twin in state.get("twins") or []:
+            items.append(
+                DoctorItem(
+                    "fix",
+                    name
+                    + ": "
+                    + str(twin)
+                    + " also sends from another computer. Two computers must not use the same agent name "
+                    + "in one project. On one of them, connect the agent under another name and join with that name.",
+                )
+            )
+        if state.get("other_roster"):
+            items.append(
+                DoctorItem(
+                    "note",
+                    name + ": another computer posted a different member list. Only the driver's computer keeps it.",
+                )
+            )
+        if state.get("roster_problem"):
+            items.append(
+                DoctorItem("fix", name + ": the member list from GitHub could not be used. " + str(state["roster_problem"]))
+            )
         if state.get("last_error"):
             items.append(
                 DoctorItem("note", name + ": the last read from GitHub failed. " + str(state.get("last_error")))
@@ -371,7 +393,10 @@ def _project_checks(
     config: dict,
     *,
     only: set[str] | None = None,
+    board: Path | None = None,
 ) -> list[DoctorItem]:
+    from agentcoop.projects import agent_is_here
+
     items = []
     known = agents.get("agents") or {}
     roots = [Path(item) for item in (config.get("allowed_roots") or []) if isinstance(item, str)]
@@ -392,7 +417,9 @@ def _project_checks(
         if not nested:
             seen.append((name, path))
         driver = project.get("driver", "")
-        if driver not in known:
+        if board is not None and not agent_is_here(board, project, driver):
+            items.append(DoctorItem("ok", driver + ": the driver of " + name + ", on another computer."))
+        elif driver not in known:
             items.append(DoctorItem("fix", driver + " is not connected. Run: agentcoop connect " + driver))
         else:
             tool_key = known[driver].get("tool", "")
@@ -401,7 +428,9 @@ def _project_checks(
             else:
                 items.append(DoctorItem("ok", known[driver].get("display", driver) + ": connected as the driver of " + name + "."))
         for helper in (project.get("helpers") or {}):
-            if helper not in known:
+            if board is not None and not agent_is_here(board, project, helper):
+                items.append(DoctorItem("ok", helper + ": a helper on " + name + ", on another computer."))
+            elif helper not in known:
                 items.append(DoctorItem("fix", helper + " is not connected. Run: agentcoop agents"))
             else:
                 items.append(DoctorItem("ok", known[helper].get("display", helper) + ": connected."))
