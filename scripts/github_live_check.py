@@ -99,7 +99,8 @@ def main() -> int:
         print("")
         print("Open https://github.com/" + repo + "/issues/" + str(entry["issue"]))
         print("Check: three comments, the text shown as written, nobody mentioned, and no link made from #1.")
-        print("Also check: a second issue named A file, and a branch named agentcoop-files that holds the note.")
+        print("Also check: every issue has the labels agentcoop and live-check, there is an issue named A file,")
+        print("and a branch named agentcoop-files holds the note under projects/live-check/files/.")
     return 0
 
 

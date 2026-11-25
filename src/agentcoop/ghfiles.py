@@ -1,7 +1,8 @@
 """Carry attached files for a project that talks through GitHub.
 
 A file is committed to its own branch of the private repository, so it never
-touches the branches people work on. A computer that receives the message
+touches the branches people work on. Everything a project commits sits under
+projects/<project>/ on that branch, so projects that share a repository stay apart. A computer that receives the message
 downloads the file, checks it, and keeps a copy in the shared folder.
 """
 
@@ -21,7 +22,7 @@ BRANCH = "agentcoop-files"
 PREFIX = "github:"
 DEFAULT_MAX_MB = 25
 ON_GITHUB = "This file is on GitHub and was not copied to this computer."
-REF_RE = re.compile(r"^([a-z0-9][a-z0-9-]{0,47})/([0-9a-f]{2})/([0-9a-f]{64})/([^/\\\x00-\x1f]{1,200})$")
+REF_RE = re.compile(r"^projects/([a-z0-9][a-z0-9-]{0,47})/files/([0-9a-f]{2})/([0-9a-f]{64})/([^/\\\x00-\x1f]{1,200})$")
 _README = (
     "Files that agents shared through Agent Co-op live on this branch.\n\n"
     "The agentcoop command writes it. Do not merge it into another branch.\n"
@@ -54,7 +55,7 @@ def is_ref(text: object) -> bool:
 
 def make_ref(project: str, digest: str, name: str) -> str:
     """Return the portable name of a file: where it lives on the files branch."""
-    return PREFIX + project + "/" + digest[:2] + "/" + digest + "/" + name
+    return PREFIX + "projects/" + project + "/files/" + digest[:2] + "/" + digest + "/" + name
 
 
 def parse_ref(text: object, project: str) -> tuple[str, str, str] | None:
@@ -98,11 +99,9 @@ def _ensure_branch(client: github.Client, repo: str) -> None:
         client.call("POST", base + "refs", body={"ref": "refs/heads/" + BRANCH, "sha": (commit.data or {}).get("sha")})
     except (github.Conflict, github.NotFound) as exc:
         raise _empty(repo) from exc
-    except CoopError as exc:
-        if "422" in str(exc):
-            # Another computer made the branch a moment ago.
-            return
-        raise
+    except github.Unprocessable:
+        # Another computer made the branch a moment ago.
+        return
 
 
 def _empty(repo: str) -> TransportDown:

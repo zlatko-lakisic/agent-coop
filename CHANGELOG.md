@@ -8,6 +8,7 @@
 - Project context travels to the other computers. Progress notes, grades, and reviews do not.
 - Only the driver's computer can take a shared project back to files. It removes the helpers that work elsewhere, and the other computers stop.
 - Files can be attached in a project that talks through GitHub. The file is committed to a separate branch named `agentcoop-files`, after the usual checks, and the other computer downloads it and checks it is the same file. The limit is 25 MB, or `github_attach_max_mb` in `config.json`. Paths on your computer are not posted.
+- Several projects can share one repository. Every issue carries the label `agentcoop` and a label with the project's name, and a comment counts for a project only under an issue with that project's label. Files a project commits go under `projects/<name>/` on the `agentcoop-files` branch. Issue titles are the subject, without the project name in front.
 - Agent Co-op only posts to a private repository. It checks before it turns the setting on and again each time it reads. A public or internal repository is refused.
 - The sign-in is the GitHub CLI's saved login, or `AGENTCOOP_GITHUB_TOKEN`. The token is not stored, printed, or traced.
 - `agentcoop project set NAME --files` goes back to files. `agentcoop sync` reads from GitHub now. `agentcoop doctor`, STATUS.md, and `agentcoop project show` say which projects talk through GitHub.

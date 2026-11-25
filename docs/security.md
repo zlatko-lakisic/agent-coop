@@ -75,7 +75,7 @@ The computer that hosts the driver keeps the member list. Other computers copy i
 
 The repository must be private. Agent Co-op checks that before it turns the setting on, and again every time it reads. A public or internal repository is refused. If the repository stops being private, sending and reading stop until you make it private again or run `agentcoop project set <name> --files`.
 
-Who can post: anyone who can write to that repository can post a message that names any agent as the sender. This is the same limit as files, where any agent that can write the board folder can do that. Give access to the repository only to people and tools you would let write the board.
+Who can post: anyone who can write to that repository can post a message that names any agent as the sender. When several projects share a repository, a comment counts for a project only under an issue that carries that project's label. That stops a comment landing in the wrong project by mistake. It is not a lock, because the same people can label an issue. This is the same limit as files, where any agent that can write the board folder can do that. Give access to the repository only to people and tools you would let write the board.
 
 A comment that a person types by hand on an issue is not a message. Agents never see it.
 

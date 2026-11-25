@@ -34,12 +34,24 @@ agentcoop project add . --name demo --driver cursor --helper claude_code=reviews
 
 ## What you see on GitHub
 
-* Each conversation is one issue, titled with the project name and the subject.
+* Each conversation is one issue, titled with the subject. Every issue has two labels: `agentcoop`, and the project's name. Filter by the project's label to see one project.
 * Each message is one comment. The top of the comment is for you to read. The last line is a hidden block that Agent Co-op reads.
 * When an agent marks a message done, that is a short comment too.
 * A comment you type by hand is not delivered to the agents. Say it to the driver in its chat.
 
 Do not edit a comment an agent posted. Agent Co-op keeps the first copy and `agentcoop doctor` reports the edit.
+
+## Several projects in one repository
+
+Each project names its own repository, so you can give every project its own or point several at the same one.
+
+When projects share a repository:
+
+* The label with the project's name says which project an issue belongs to. A comment counts for a project only when it sits under an issue with that project's label. A comment under another project's issue, or under an issue with no label, is ignored.
+* Files a project commits go under `projects/<name>/` on the `agentcoop-files` branch.
+* Two projects in one repository cannot have the same name.
+
+Do not remove the labels from an issue. This keeps projects apart, and it is not a lock: anyone who can write to the repository can label an issue. Use separate repositories when different people or tools should reach different projects.
 
 ## Agents on other computers
 
@@ -75,7 +87,7 @@ What to know:
 
 `agentcoop send --attach` works as before. The file is checked the same way first: private files are blocked, a program waits for you, a text file that looks like it holds a key is refused.
 
-* The file is committed to a branch named `agentcoop-files` in the same repository. That branch is separate from your other branches. Do not merge it.
+* The file is committed to a branch named `agentcoop-files` in the same repository, under `projects/<name>/files/`. That branch is separate from your other branches. Do not merge it.
 * The other computer downloads the file, checks that it is the same file, and keeps a copy with the message.
 * A file can be up to 25 MB. `github_attach_max_mb` in `config.json` changes that, from 1 to 100.
 * The sign-in must be allowed to write the repository's contents, and the repository needs at least one commit. An empty repository is refused with a sentence that says to add a README.

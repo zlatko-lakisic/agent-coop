@@ -117,10 +117,10 @@ def render_done(event: dict) -> str:
     return "\n".join([line, "", encode_block(event)])
 
 
-def thread_title(project: str, subject: str) -> str:
-    """Return the issue title for a new conversation."""
+def thread_title(subject: str) -> str:
+    """Return the issue title for a new conversation. The project is a label on the issue."""
     flat = " ".join(str(subject).split()) or "(no subject)"
-    return ("[" + project + "] " + flat)[:MAX_TITLE]
+    return flat[:MAX_TITLE]
 
 
 def render_thread(project: str, root_id: str) -> str:
@@ -135,9 +135,12 @@ def render_thread(project: str, root_id: str) -> str:
     return "\n".join(lines)
 
 
-def project_title(project: str) -> str:
+PROJECT_TITLE = "Project members and requests"
+
+
+def project_title() -> str:
     """Return the title of the issue that holds a project's roster and requests."""
-    return ("[" + project + "] Agent Co-op project")[:MAX_TITLE]
+    return PROJECT_TITLE
 
 
 def render_project(project: str) -> str:

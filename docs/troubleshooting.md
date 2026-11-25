@@ -86,6 +86,10 @@ Files go to their own branch, and GitHub cannot make a branch in a repository wi
 
 The sign-in can write issues and cannot write the repository's contents. With a fine-grained token, give it read and write access to Contents for that repository. The GitHub CLI's login already has it.
 
+## Comments sit under an issue without the project's label
+
+`agentcoop doctor` says this when a comment names the project and its issue does not carry the project's label. Such comments are ignored. If someone removed the label from one of the project's issues, put it back on GitHub: the issue needs `agentcoop` and the project's name. If a comment was pasted under another project's issue, send the message again with `agentcoop send`.
+
 ## A comment I typed on the issue was ignored
 
 That is on purpose. Only messages posted by the `agentcoop` command are delivered. Say it to the driver in its chat.

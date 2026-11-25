@@ -78,6 +78,10 @@ def _inbox(board: Path, agent: str) -> list[Path]:
     return sorted(folder.glob("*.json")) if folder.is_dir() else []
 
 
+def _inbox_of(board: Path, project: str, agent: str = "claude_code") -> list[Path]:
+    return sorted((board / "projects" / project / "inbox" / agent / "msgs").glob("*.json"))
+
+
 def _record(board: Path) -> dict:
     return load_projects(board)["projects"]["demo"]
 
@@ -473,7 +477,10 @@ class TalkTests(unittest.TestCase):
             code, _out, err = _send("--needs-reply")
             self.assertEqual(code, 0, err)
             self.assertEqual(len(fake.threads()), 1)
-            self.assertEqual(fake.threads()[0]["title"], "[demo] Look at this")
+            self.assertEqual(fake.threads()[0]["title"], "Look at this")
+            for issue in fake.issues:
+                self.assertEqual(sorted(fake.labels_of(issue)), ["agentcoop", "demo"])
+            self.assertEqual(fake.count("POST", "/labels"), 2, "the two labels are made once")
             self.assertEqual(len(fake.messages()), 1)
             files = _inbox(env.board, "claude_code")
             self.assertEqual(len(files), 1)
@@ -983,7 +990,8 @@ class FileTests(unittest.TestCase):
             self.assertEqual([branch for branch, _path in fake.files], ["agentcoop-files"])
             self.assertEqual(list(fake.files.values()), [b"line one\nline two\n"])
             wire = parse_event(fake.messages()[0]["body"])["message"]
-            self.assertTrue(wire["attachments"][0].startswith("github:demo/"))
+            self.assertTrue(wire["attachments"][0].startswith("github:projects/demo/files/"))
+            self.assertTrue(all(path.startswith("projects/demo/files/") for _branch, path in fake.files))
             self.assertTrue(wire["attachments"][0].endswith("/notes v2.txt"))
             self.assertNotIn("source_path", wire["attachment_info"][0])
             for comment in fake.comments:
@@ -1144,9 +1152,15 @@ class SharedRepositoryTests(unittest.TestCase):
                 for name in ("alpha", "beta"):
                     index = load_index(board_a, name)
                     self.assertEqual(len(index["messages"]), 2 if name == "alpha" else 1)
-            titles = [issue["title"] for issue in fake.issues]
-            self.assertTrue(all(title.startswith("[alpha] ") or title.startswith("[beta] ") for title in titles), titles)
-            self.assertTrue(all(path.startswith("alpha/") for _branch, path in fake.files))
+            by_label = {"alpha": 0, "beta": 0}
+            for issue in fake.issues:
+                labels = fake.labels_of(issue)
+                self.assertIn("agentcoop", labels)
+                owners = [name for name in ("alpha", "beta") if name in labels]
+                self.assertEqual(len(owners), 1, "each issue carries exactly one project's label")
+                by_label[owners[0]] += 1
+            self.assertEqual(by_label, {"alpha": 3, "beta": 2})
+            self.assertTrue(all(path.startswith("projects/alpha/files/") for _branch, path in fake.files))
             with computer(env.root, "b") as (board_b, work_b):
                 _run(["setup", "--connect", "cursor", "--schedule", "no", "--add-to-path", "no", "--yes"])
                 _run(["connect", "claude-code", "--as", "claude_b", "--yes"])
@@ -1164,21 +1178,56 @@ class SharedRepositoryTests(unittest.TestCase):
                 self.assertIn("claude_b", load_projects(board_a)["projects"]["beta"]["helpers"])
                 self.assertNotIn("claude_b", load_projects(board_a)["projects"]["alpha"]["helpers"])
 
-    def test_the_name_inside_the_comment_decides_not_the_issue_it_sits_in(self) -> None:
+    def _two(self, env) -> tuple[int, int]:
+        _run(["setup", "--connect", "cursor,claude-code", "--schedule", "no", "--add-to-path", "no", "--yes"])
+        self.assertEqual(self._add(env.workspace, "alpha"), 0)
+        self.assertEqual(self._add(env.workspace, "beta"), 0)
+        self.assertEqual(self._say("alpha", "for alpha only"), 0)
+        self.assertEqual(self._say("beta", "for beta only"), 0)
+        return (
+            [issue["number"] for issue in self._fake.threads() if issue["title"] == "About alpha"][0],
+            [issue["number"] for issue in self._fake.threads() if issue["title"] == "About beta"][0],
+        )
+
+    def test_a_comment_under_another_projects_issue_is_ignored(self) -> None:
         with support.TempEnv() as env, installed(FakeGitHub()) as fake:
-            _run(["setup", "--connect", "cursor,claude-code", "--schedule", "no", "--add-to-path", "no", "--yes"])
-            self.assertEqual(self._add(env.workspace, "alpha"), 0)
-            self.assertEqual(self._add(env.workspace, "beta"), 0)
-            self.assertEqual(self._say("alpha", "for alpha only"), 0)
-            self.assertEqual(self._say("beta", "for beta only"), 0)
-            alpha_issue = [issue["number"] for issue in fake.threads() if issue["title"] == "[alpha] About alpha"][0]
-            beta_issue = [issue["number"] for issue in fake.threads() if issue["title"] == "[beta] About beta"][0]
+            self._fake = fake
+            alpha_issue, beta_issue = self._two(env)
             beta_comment = [c for c in fake.messages() if c["issue_url"].endswith("/" + str(beta_issue))][0]
-            # A copy of a beta message, pasted under an alpha conversation, is still a beta message.
+            # A copy of a beta message, pasted under an alpha conversation, belongs to nobody.
             fake.hand_comment(alpha_issue, beta_comment["body"].replace("_cursor_", "_cursor_x"))
             self.assertEqual(_run(["sync"])[0], 0)
             self.assertEqual(self._bodies(env.board, "alpha"), ["for alpha only"])
-            self.assertEqual(len(self._bodies(env.board, "beta")), 2)
+            self.assertEqual(self._bodies(env.board, "beta"), ["for beta only"])
+            self.assertIn("sit under an issue without its label", _run(["doctor"])[1])
+
+    def test_a_comment_under_an_issue_with_no_label_is_ignored(self) -> None:
+        with support.TempEnv() as env, installed(FakeGitHub()) as fake:
+            self._fake = fake
+            _alpha_issue, beta_issue = self._two(env)
+            beta_comment = [c for c in fake.messages() if c["issue_url"].endswith("/" + str(beta_issue))][0]
+            fake.issues.append({"number": len(fake.issues) + 1, "state": "open", "title": "A bug report", "labels": [{"name": "bug"}]})
+            stray = fake.issues[-1]["number"]
+            fake.hand_comment(stray, beta_comment["body"].replace("_cursor_", "_cursor_y"))
+            self.assertEqual(_run(["sync"])[0], 0)
+            self.assertEqual(self._bodies(env.board, "beta"), ["for beta only"])
+            # A no is not remembered. Once the issue carries the labels, comments under it count.
+            fake.issues[-1]["labels"] = [{"name": "agentcoop"}, {"name": "beta"}]
+            fake.hand_comment(stray, beta_comment["body"].replace("_cursor_", "_cursor_z"))
+            self.assertEqual(_run(["sync"])[0], 0)
+            ids = [path.stem for path in _inbox_of(env.board, "beta")]
+            self.assertTrue(any("_cursor_z" in name for name in ids), ids)
+
+    def test_a_label_github_did_not_apply_is_added_afterwards(self) -> None:
+        with support.TempEnv() as env, installed(FakeGitHub()) as fake:
+            fake.drop_labels = True
+            _setup(env.workspace / "demo")
+            self.assertEqual(_send()[0], 0)
+            for issue in fake.issues:
+                self.assertEqual(sorted(fake.labels_of(issue)), ["agentcoop", "demo"])
+            self.assertEqual(_run(["sync"])[0], 0)
+            code, out, _err = _run(["check", "--as", "claude_code", "--project", "demo"])
+            self.assertIn("Please review the plan.", out)
 
     def test_a_file_from_another_project_is_not_fetched(self) -> None:
         from agentcoop.ghfiles import make_ref, parse_ref
@@ -1186,6 +1235,8 @@ class SharedRepositoryTests(unittest.TestCase):
         digest = "ab" + "0" * 62
         self.assertIsNone(parse_ref(make_ref("alpha", digest, "n.txt"), "beta"))
         self.assertIsNotNone(parse_ref(make_ref("alpha", digest, "n.txt"), "alpha"))
+        self.assertEqual(make_ref("alpha", digest, "n.txt"), "github:projects/alpha/files/ab/" + digest + "/n.txt")
+        self.assertIsNone(parse_ref("github:alpha/ab/" + digest + "/n.txt", "alpha"), "the old place is not read")
 
 
 class DesktopHelperTests(unittest.TestCase):

@@ -363,7 +363,17 @@ A reader MUST skip a `roster`, `request`, `context`, or `closed` comment that wa
 
 ### Conversations
 
-A message that has `re`, `about`, or `moved_from` naming a message already on GitHub MUST be posted to that message's issue. A message whose `group` matches an earlier message goes to that issue too. Any other message opens a new issue, titled `[<project>] <subject>`.
+A message that has `re`, `about`, or `moved_from` naming a message already on GitHub MUST be posted to that message's issue. A message whose `group` matches an earlier message goes to that issue too. Any other message opens a new issue, titled with the subject.
+
+### Projects in one repository
+
+Several projects MAY share one repository. Two labels keep them apart.
+
+Every issue `agentcoop` opens MUST carry the label `agentcoop` and a label that is the project's name. `agentcoop` makes both labels in the repository before it opens a project's first issue. If GitHub returns the new issue without them, `agentcoop` MUST add them before it posts a comment there.
+
+A reader MUST accept a comment for a project only when both of these hold: the JSON in the comment names that project, and the comment sits under an issue that carries both labels. Label names are compared without regard to case. A comment that names the project and sits under any other issue MUST be ignored, and `doctor` reports how many were. A reader MAY remember that an issue carries the labels. It MUST NOT remember that an issue lacks them.
+
+Everything a project commits to the repository goes under `projects/<project>/` on the branch `agentcoop-files`.
 
 `agentcoop` reads new comments with the repository's comment list, oldest first, starting from the newest `updated_at` it has seen. It SHOULD NOT read more often than `github_poll_seconds` in `config.json` (default 20).
 
@@ -387,7 +397,7 @@ Computers in one project SHOULD keep their clocks within a few seconds of each o
 
 ### Attached files
 
-A file sent with a message is committed to the branch `agentcoop-files` of the same repository, at `<project>/<first two hex of the SHA-256>/<SHA-256>/<file name>`. `agentcoop` creates that branch with no parent commit, so it shares no history with other branches. A file that is already there is not committed again. The file MUST pass every check in section 9 first, and MUST NOT be larger than `github_attach_max_mb` in `config.json` (default 25, at most 100).
+A file sent with a message is committed to the branch `agentcoop-files` of the same repository, at `projects/<project>/files/<first two hex of the SHA-256>/<SHA-256>/<file name>`. A reader MUST NOT fetch a file whose path names another project. `agentcoop` creates that branch with no parent commit, so it shares no history with other branches. A file that is already there is not committed again. The file MUST pass every check in section 9 first, and MUST NOT be larger than `github_attach_max_mb` in `config.json` (default 25, at most 100).
 
 In the comment, each entry of `attachments` and each `path` in `attachment_info` is `github:` followed by that path. `source_path` is left out. No path on the sender's computer is posted. The sender's own copy keeps its local paths.
 

@@ -69,6 +69,16 @@ class Conflict(TransportDown):
         self.detail = detail
 
 
+class Unprocessable(TransportDown):
+    """GitHub would not take the request as written. Often the thing is already there."""
+
+    def __init__(self, detail: str = "") -> None:
+        line = "GitHub returned 422."
+        if detail:
+            line += " " + detail
+        super().__init__(line, code=1)
+
+
 class Reply:
     """One answer from the API. Header names are lowercase."""
 
@@ -307,6 +317,8 @@ class Client:
             raise NotFound()
         if status == 409:
             raise Conflict(detail.splitlines()[0][:200] if detail else "")
+        if status == 422:
+            raise Unprocessable(detail.splitlines()[0][:200] if detail else "")
         if status == 403:
             reason = detail.splitlines()[0][:200] if detail else ""
             raise TransportDown(

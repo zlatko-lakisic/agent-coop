@@ -103,6 +103,7 @@ class PullResult:
         self.done = 0
         self.skipped = False
         self.twins: set[str] = set()
+        self.misplaced = 0
 
 
 def sync_dir(board: Path, project: str) -> Path:
@@ -128,7 +129,7 @@ def _save_state(board: Path, project: str, state: dict) -> None:
 
 
 def _shape(index: dict) -> dict:
-    for key in ("messages", "done", "groups", "requests"):
+    for key in ("messages", "done", "groups", "requests", "issues"):
         if not isinstance(index.get(key), dict):
             index[key] = {}
     index["v"] = 1
@@ -308,6 +309,52 @@ def _parse_message(raw: object, project: str, members: set[str]):
     return parsed
 
 
+def has_labels(issue: object, project: str) -> bool:
+    """Say whether an issue carries the Agent Co-op label and this project's label."""
+    labels = issue.get("labels") if isinstance(issue, dict) else None
+    names = set()
+    for label in labels if isinstance(labels, list) else []:
+        name = label.get("name") if isinstance(label, dict) else label
+        if isinstance(name, str):
+            names.add(name.lower())
+    return LABEL in names and project.lower() in names
+
+
+def _event_project(event: dict) -> object:
+    if event["kind"] == "message":
+        message = event.get("message")
+        return message.get("project") if isinstance(message, dict) else None
+    return event.get("project")
+
+
+def _issue_is_ours(board: Path | None, project: str, repo: str, client: github.Client, issue: int, memo: dict) -> bool:
+    """Say whether an issue belongs to this project. The issue's labels decide.
+
+    A yes is remembered. A no is asked again on the next read, in case the label is added later.
+    """
+    key = str(issue)
+    if key in memo:
+        return memo[key]
+    if board is not None and _cached_index(board, project)["issues"].get(key) is True:
+        memo[key] = True
+        return True
+    try:
+        found = has_labels(client.call("GET", "/repos/" + repo + "/issues/" + key).data, project)
+    except github.NotFound:
+        found = False
+    memo[key] = found
+    if found and board is not None:
+        _remember_issue(board, project, issue)
+    return found
+
+
+def _remember_issue(board: Path, project: str, issue: int) -> None:
+    with board_lock(board):
+        index = load_index(board, project)
+        index["issues"][str(issue)] = True
+        _save_index(board, project, index)
+
+
 def _apply_page(
     board: Path,
     project: str,
@@ -315,8 +362,15 @@ def _apply_page(
     result: PullResult,
     touched: set[str],
     state: dict,
+    repo: str,
+    client: github.Client,
+    memo: dict,
 ) -> None:
-    """Handle one page of comments in the order they were posted."""
+    """Handle one page of comments in the order they were posted.
+
+    A comment counts only when it names this project and sits under an issue that
+    carries this project's label.
+    """
     plain: list = []
 
     def flush() -> None:
@@ -329,14 +383,19 @@ def _apply_page(
 
     for comment in comments:
         event = parse_event(comment.get("body")) if isinstance(comment, dict) else None
-        if event is None or event["kind"] not in EXTRA_KINDS:
+        if event is None or _event_project(event) != project:
+            continue
+        comment_id = comment.get("id")
+        issue = _issue_number(comment.get("issue_url"))
+        if not isinstance(comment_id, int) or issue is None:
+            continue
+        if not _issue_is_ours(board, project, repo, client, issue, memo):
+            result.misplaced += 1
+            continue
+        if event["kind"] not in EXTRA_KINDS:
             plain.append(comment)
             continue
         flush()
-        comment_id = comment.get("id")
-        issue = _issue_number(comment.get("issue_url"))
-        if event.get("project") != project or not isinstance(comment_id, int) or issue is None:
-            continue
         if _edited(comment):
             continue
         if event["kind"] == "roster":
@@ -641,6 +700,7 @@ def _pull_locked(board: Path, project: str, repo: str, state: dict, result: Pull
     etag = str(state.get("etag") or "")
     touched: set[str] = set()
     first = True
+    memo: dict = {}
     path = "/repos/" + repo + "/issues/comments"
     for reply in client.pages(path, query=query, etag=etag):
         if reply.status == 304:
@@ -653,11 +713,13 @@ def _pull_locked(board: Path, project: str, repo: str, state: dict, result: Pull
             stamp = comment.get("updated_at") if isinstance(comment, dict) else None
             if isinstance(stamp, str) and stamp > newest:
                 newest = stamp
-        _apply_page(board, project, comments, result, touched, state)
+        _apply_page(board, project, comments, result, touched, state, repo, client, memo)
     state["since"] = newest
     state["etag"] = etag
     if result.twins:
         state["twins"] = sorted(set(state.get("twins") or []) | result.twins)
+    if result.misplaced:
+        state["misplaced"] = int(state.get("misplaced") or 0) + result.misplaced
     _announce(board, project, repo, client, state)
     if touched:
         from agentcoop.outbox import refresh_new_md_for_agent
@@ -771,30 +833,55 @@ def _with_state(board: Path, project: str, action, wait: float = 10.0):
         _unlock(lock)
 
 
-def _project_issue(client: github.Client, repo: str, project: str, state: dict, *, fresh: bool = False) -> int:
-    number = state.get("project_issue")
-    if isinstance(number, int) and not fresh:
-        return number
-    reply = client.call(
-        "POST",
-        "/repos/" + repo + "/issues",
-        body={"title": project_title(project), "body": render_project(project), "labels": [LABEL]},
-    )
+def _ensure_labels(client: github.Client, repo: str, project: str, state: dict) -> None:
+    """Make the two labels every issue of this project carries. Remembered in state."""
+    if state.get("labels") == project:
+        return
+    for name, text in ((LABEL, "Posted by Agent Co-op"), (project, "Agent Co-op project " + project)):
+        try:
+            client.call("POST", "/repos/" + repo + "/labels", body={"name": name, "color": "5319e7", "description": text})
+        except github.Unprocessable:
+            # The label is already there.
+            pass
+    state["labels"] = project
+
+
+def _new_issue(client: github.Client, repo: str, project: str, title: str, body: str) -> int | None:
+    """Open an issue that carries this project's labels. Returns its number."""
+    labels = [LABEL, project]
+    reply = client.call("POST", "/repos/" + repo + "/issues", body={"title": title, "body": body, "labels": labels})
     number = reply.data.get("number") if isinstance(reply.data, dict) else None
     if not isinstance(number, int):
-        raise TransportDown("GitHub did not open the project's issue.")
-    state["project_issue"] = number
+        return None
+    if not has_labels(reply.data, project):
+        client.call("POST", "/repos/" + repo + "/issues/" + str(number) + "/labels", body={"labels": labels})
     return number
 
 
-def _post_on_project(client: github.Client, repo: str, project: str, state: dict, text: str) -> int:
+def _project_issue(
+    client: github.Client, repo: str, project: str, state: dict, *, fresh: bool = False, board: Path | None = None
+) -> int:
+    number = state.get("project_issue")
+    if isinstance(number, int) and not fresh:
+        return number
+    _ensure_labels(client, repo, project, state)
+    number = _new_issue(client, repo, project, project_title(), render_project(project))
+    if number is None:
+        raise TransportDown("GitHub did not open the project's issue.")
+    state["project_issue"] = number
+    if board is not None:
+        _remember_issue(board, project, number)
+    return number
+
+
+def _post_on_project(board: Path, client: github.Client, repo: str, project: str, state: dict, text: str) -> int:
     """Post one comment on the project's own issue. Returns the comment id."""
     path = "/repos/" + repo + "/issues/"
-    issue = _project_issue(client, repo, project, state)
+    issue = _project_issue(client, repo, project, state, board=board)
     try:
         reply = client.call("POST", path + str(issue) + "/comments", body={"body": text})
     except github.NotFound:
-        issue = _project_issue(client, repo, project, state, fresh=True)
+        issue = _project_issue(client, repo, project, state, fresh=True, board=board)
         reply = client.call("POST", path + str(issue) + "/comments", body={"body": text})
     data = reply.data if isinstance(reply.data, dict) else {}
     return data.get("id") if isinstance(data.get("id"), int) else 0
@@ -810,7 +897,7 @@ def _announce(board: Path, project: str, repo: str, client: github.Client, state
     if state.get("roster_posted") == text:
         return
     event = roster_event(project, roster["driver"], roster["helpers"], roster["homes"], now_stamp())
-    comment_id = _post_on_project(client, repo, project, state, render_roster(event))
+    comment_id = _post_on_project(board, client, repo, project, state, render_roster(event))
     state["roster_posted"] = text
     state["roster_mine"] = (list(state.get("roster_mine") or []) + [comment_id])[-50:]
 
@@ -831,16 +918,21 @@ def read_roster(repo: str, project: str) -> tuple[dict | None, int | None, bool]
     newest = None
     issue = None
     closed = False
+    memo: dict = {}
     query = {"sort": "created", "direction": "asc", "per_page": "100"}
     for reply in client.pages("/repos/" + repo + "/issues/comments", query=query):
         for comment in reply.data if isinstance(reply.data, list) else []:
             event = parse_event(comment.get("body")) if isinstance(comment, dict) else None
             if event is None or event.get("project") != project or _edited(comment):
                 continue
+            if event["kind"] not in ("roster", "closed"):
+                continue
+            number = _issue_number(comment.get("issue_url"))
+            if number is None or not _issue_is_ours(None, project, repo, client, number, memo):
+                continue
             if event["kind"] == "roster":
                 fields = _roster_fields(event)
-                number = _issue_number(comment.get("issue_url"))
-                if fields is not None and number is not None:
+                if fields is not None:
                     newest = {"driver": fields[0], "helpers": fields[1], "homes": fields[2]}
                     issue = number
                     closed = False
@@ -855,7 +947,7 @@ def post_request(board: Path, project: str, repo: str, action: str, agent: str, 
     _private_for_post(client, board, project, repo)
     event = request_event(project, action, agent, computer_id(board), note, now_stamp())
     done = _with_state(
-        board, project, lambda state: _post_on_project(client, repo, project, state, render_request(event)), wait=30.0
+        board, project, lambda state: _post_on_project(board, client, repo, project, state, render_request(event)), wait=30.0
     )
     if done is None:
         raise TransportDown("Another command is reading GitHub. Try again in a moment.")
@@ -868,7 +960,7 @@ def post_context(board: Path, project: str, repo: str, name: str, text: str) -> 
 
     def action(state: dict) -> bool:
         for event in context_events(project, name, text):
-            _post_on_project(client, repo, project, state, render_context(event))
+            _post_on_project(board, client, repo, project, state, render_context(event))
         return True
 
     if _with_state(board, project, action, wait=30.0) is None:
@@ -879,7 +971,7 @@ def post_closed(board: Path, project: str, repo: str) -> None:
     """Tell other computers this project went back to files."""
     client = github.client()
     event = closed_event(project, now_stamp())
-    _with_state(board, project, lambda state: _post_on_project(client, repo, project, state, render_closed(event)))
+    _with_state(board, project, lambda state: _post_on_project(board, client, repo, project, state, render_closed(event)))
 
 
 def remember_project_issue(board: Path, project: str, issue: int | None) -> None:
@@ -973,19 +1065,21 @@ def _thread_for(index: dict, message: dict) -> int | None:
     return None
 
 
-def _open_issue(client: github.Client, repo: str, project: str, message: dict) -> int:
-    reply = client.call(
-        "POST",
-        "/repos/" + repo + "/issues",
-        body={
-            "title": thread_title(project, str(message.get("subject") or "")),
-            "body": render_thread(project, str(message.get("id"))),
-            "labels": [LABEL],
-        },
+def _open_issue(board: Path, client: github.Client, repo: str, project: str, message: dict) -> int:
+    if load_state(board, project).get("labels") != project:
+        found: dict = {}
+        _ensure_labels(client, repo, project, found)
+        _with_state(board, project, lambda state: state.update(found))
+    number = _new_issue(
+        client,
+        repo,
+        project,
+        thread_title(str(message.get("subject") or "")),
+        render_thread(project, str(message.get("id"))),
     )
-    number = reply.data.get("number") if isinstance(reply.data, dict) else None
-    if not isinstance(number, int):
+    if number is None:
         raise TransportDown("GitHub did not open the conversation. The message was not sent.")
+    _remember_issue(board, project, number)
     return number
 
 
@@ -1011,7 +1105,7 @@ def post_message(board: Path, project: str, repo: str, message: dict) -> None:
     issue = _thread_for(index, message)
     opened = False
     if issue is None:
-        issue = _open_issue(client, repo, project, message)
+        issue = _open_issue(board, client, repo, project, message)
         opened = True
     path = "/repos/" + repo + "/issues/"
     try:
@@ -1021,7 +1115,7 @@ def post_message(board: Path, project: str, repo: str, message: dict) -> None:
             if opened:
                 raise
             # The conversation was deleted on GitHub. Start a new one.
-            issue = _open_issue(client, repo, project, message)
+            issue = _open_issue(board, client, repo, project, message)
             opened = True
             reply = client.call("POST", path + str(issue) + "/comments", body={"body": text})
     except CoopError:

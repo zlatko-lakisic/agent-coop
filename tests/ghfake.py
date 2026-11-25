@@ -33,6 +33,8 @@ class FakeGitHub:
         self.fail_comments = False
         self.token = TOKEN
         self.empty = False
+        self.label_names: set[str] = set()
+        self.drop_labels = False
         self.branches: dict[str, str] = {"main": "c0"}
         self.files: dict[tuple[str, str], bytes] = {}
         self.objects = 0
@@ -61,7 +63,11 @@ class FakeGitHub:
 
     def threads(self) -> list[dict]:
         """Return the conversation issues, without the project's own issue."""
-        return [issue for issue in self.issues if not str(issue.get("title")).endswith("Agent Co-op project")]
+        return [issue for issue in self.issues if issue.get("title") != "Project members and requests"]
+
+    def labels_of(self, issue: dict) -> list[str]:
+        """Return the label names on an issue."""
+        return [label["name"] for label in issue.get("labels") or []]
 
     def count(self, method: str, ending: str) -> int:
         """Count calls whose path ends with some text."""
@@ -126,8 +132,19 @@ class FakeGitHub:
                     "archived": self.archived,
                 },
             )
+        if method == "POST" and rest == "/labels":
+            name = str(payload.get("name") or "")
+            if name.lower() in self.label_names:
+                return self._json(422, {"message": "Validation Failed"})
+            self.label_names.add(name.lower())
+            return self._json(201, {"name": name})
         if method == "POST" and rest == "/issues":
             issue = {"number": len(self.issues) + 1, "state": "open", **payload}
+            wanted = [str(name) for name in payload.get("labels") or []]
+            if self.drop_labels:
+                wanted = []
+            self.label_names.update(name.lower() for name in wanted)
+            issue["labels"] = [{"name": name} for name in wanted]
             self.issues.append(issue)
             return self._json(201, issue)
         if method == "GET" and rest == "/issues/comments":
@@ -140,6 +157,12 @@ class FakeGitHub:
             found = [issue for issue in self.issues if issue["number"] == number]
             if not found:
                 return self._json(404, {"message": "Not Found"})
+            if method == "GET" and len(pieces) == 2:
+                return self._json(200, found[0])
+            if method == "POST" and pieces[2:] == ["labels"]:
+                have = {label["name"] for label in found[0]["labels"]}
+                found[0]["labels"] += [{"name": str(n)} for n in payload.get("labels") or [] if str(n) not in have]
+                return self._json(200, found[0]["labels"])
             if method == "PATCH" and len(pieces) == 2:
                 found[0].update(payload)
                 return self._json(200, found[0])
