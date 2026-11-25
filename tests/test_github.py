@@ -277,17 +277,6 @@ class TurnOnTests(unittest.TestCase):
             self.assertEqual(code, 2)
             self.assertIn("owner/name", err)
 
-    def test_a_project_with_messages_cannot_move_yet(self) -> None:
-        with support.TempEnv() as env, installed(FakeGitHub()) as fake:
-            _setup(env.workspace / "demo", github_repo_name=None)
-            self.assertEqual(_send()[0], 0)
-            with support.person("demo"):
-                code, _out, err = _run(["project", "set", "demo", "--github", "octo/board"])
-            self.assertEqual(code, 1)
-            self.assertIn("already has messages", err)
-            self.assertNotIn("github", _record(env.board))
-            self.assertEqual(fake.threads(), [])
-
 
 class SignInTests(unittest.TestCase):
     def test_no_sign_in_says_what_to_run(self) -> None:
@@ -1237,6 +1226,246 @@ class SharedRepositoryTests(unittest.TestCase):
         self.assertIsNotNone(parse_ref(make_ref("alpha", digest, "n.txt"), "alpha"))
         self.assertEqual(make_ref("alpha", digest, "n.txt"), "github:projects/alpha/files/ab/" + digest + "/n.txt")
         self.assertIsNone(parse_ref("github:alpha/ab/" + digest + "/n.txt", "alpha"), "the old place is not read")
+
+
+class MoveTests(unittest.TestCase):
+    """A project that already has messages starts to talk through GitHub."""
+
+    def setUp(self) -> None:
+        import agentcoop.ghhistory as ghhistory
+
+        pace = patch.object(ghhistory, "PACE_SECONDS", 0)
+        pace.start()
+        self.addCleanup(pace.stop)
+
+    def _files_project(self, folder: Path) -> dict:
+        """Make a files project with a question, an answer, a done marker, and a file."""
+        _setup(folder, github_repo_name=None)
+        self.assertEqual(_send("--needs-reply")[0], 0)
+        board = Path(os.environ["AGENTCOOP_BOARD"])
+        first = json.loads(_inbox(board, "claude_code")[0].read_text(encoding="utf-8"))
+        self.assertEqual(_send("--re", first["id"], sender="claude_code", to="cursor")[0], 0)
+        self.assertEqual(_run(["done", first["id"], "--as", "claude_code", "--project", "demo"])[0], 0)
+        note = folder / "plan.txt"
+        note.write_text("the plan", encoding="utf-8")
+        self.assertEqual(_send("--attach", str(note))[0], 0)
+        return first
+
+    def _move(self) -> tuple[int, str, str]:
+        with support.person("demo"):
+            return _run(["project", "set", "demo", "--github", "octo/board"])
+
+    def test_earlier_messages_and_files_are_copied_first(self) -> None:
+        with support.TempEnv() as env, installed(FakeGitHub()) as fake:
+            first = self._files_project(env.workspace / "demo")
+            code, out, err = self._move()
+            self.assertEqual(code, 0, err)
+            self.assertIn("Its 3 earlier messages will be copied there first, with 1 attached file.", out)
+            self.assertIn("3 earlier messages copied, with 1 file.", out)
+            self.assertEqual(_record(env.board)["github"], {"repo": "octo/board"})
+            copied = fake.history_messages()
+            self.assertEqual(len(copied), 3)
+            self.assertEqual(len({item["id"] for item in copied}), 3)
+            with_file = [item for item in copied if item["attachments"]][0]
+            self.assertTrue(with_file["attachments"][0].startswith("github:projects/demo/files/"))
+            self.assertEqual(list(fake.files.values()), [b"the plan"])
+            done = parse_event(fake.events("history")[0]["body"])["done"]
+            self.assertEqual(done, {"claude_code": [first["id"]]})
+            for comment in fake.comments:
+                self.assertNotIn(str(env.root), comment["body"], "no path on this computer leaves it")
+            history = [issue for issue in fake.issues if issue["title"] == "Earlier messages"]
+            self.assertEqual(len(history), 1)
+            self.assertEqual(sorted(fake.labels_of(history[0])), ["agentcoop", "demo"])
+            self.assertEqual(fake.threads(), [], "earlier messages do not each open an issue")
+            # Nothing that was already here is treated as written by hand.
+            self.assertEqual(_run(["sync"])[0], 0)
+            code, out, _err = _run(["check", "--as", "claude_code", "--project", "demo"])
+            self.assertNotIn("OUT OF PROTOCOL", out)
+            self.assertNotIn("BLOCKED", out)
+            self.assertNotIn("written by hand", _run(["doctor"])[1])
+            self.assertEqual(len(_inbox(env.board, "claude_code")), 2)
+            self.assertEqual(len(fake.history_messages()), 3, "a second read copies nothing twice")
+
+    def test_another_computer_that_joins_gets_the_earlier_messages(self) -> None:
+        with support.TempEnv() as env, installed(FakeGitHub()) as fake:
+            with computer(env.root, "a") as (board_a, work_a):
+                first = self._files_project(work_a / "demo")
+                self.assertEqual(self._move()[0], 0)
+            with computer(env.root, "b") as (board_b, work_b):
+                self.assertEqual(_join(work_b)[0], 0)
+                self.assertEqual(len(_inbox(board_b, "claude_code")), 2)
+                self.assertEqual(len(_inbox(board_b, "cursor")), 1)
+                self.assertTrue((board_b / "projects" / "demo" / "inbox" / "claude_code" / "done" / first["id"]).exists())
+                self.assertEqual(
+                    _inbox(board_b, "cursor")[0].read_bytes(), _inbox(board_a, "cursor")[0].read_bytes(), "byte for byte"
+                )
+                self.assertNotIn("also sends from another computer", _run(["doctor"])[1])
+
+    def test_an_answer_to_an_earlier_message_starts_a_new_conversation(self) -> None:
+        with support.TempEnv() as env, installed(FakeGitHub()) as fake:
+            first = self._files_project(env.workspace / "demo")
+            self.assertEqual(self._move()[0], 0)
+            history = [issue["number"] for issue in fake.issues if issue["title"] == "Earlier messages"][0]
+            code, _out, err = _send("--re", first["id"], sender="claude_code", to="cursor")
+            self.assertEqual(code, 0, err)
+            self.assertEqual(len(fake.threads()), 1)
+            self.assertFalse(fake.messages()[-1]["issue_url"].endswith("/" + str(history)))
+
+    def test_a_failure_part_way_leaves_the_project_on_files_and_can_carry_on(self) -> None:
+        import agentcoop.ghhistory as ghhistory
+
+        with support.TempEnv() as env, installed(FakeGitHub()) as fake:
+            self._files_project(env.workspace / "demo")
+            for _index in range(4):
+                self.assertEqual(_send()[0], 0)
+            real = fake._add_comment
+            calls = {"count": 0}
+
+            def flaky(issue, body):
+                if "agentcoop:1 {\"kind\":\"history\"" in body:
+                    calls["count"] += 1
+                    if calls["count"] == 2:
+                        from agentcoop.errors import TransportDown
+
+                        raise TransportDown(github.UNREACHABLE)
+                return real(issue, body)
+
+            with patch.object(ghhistory, "HISTORY_LIMIT", 1200):
+                fake._add_comment = flaky
+                code, _out, err = self._move()
+                self.assertEqual(code, 1)
+                self.assertIn("demo still talks through files.", err)
+                self.assertIn("Run the same command again to carry on.", err)
+                self.assertNotIn("github", _record(env.board))
+                before = len(fake.history_messages())
+                self.assertGreater(before, 0)
+                self.assertLess(before, 7)
+                self.assertEqual(_send()[0], 0, "the project still works through files")
+                fake._add_comment = real
+                code, out, err = self._move()
+                self.assertEqual(code, 0, err)
+            ids = [item["id"] for item in fake.history_messages()]
+            self.assertEqual(len(ids), 8)
+            self.assertEqual(len(set(ids)), 8, "nothing is copied twice")
+            self.assertEqual(len([issue for issue in fake.issues if issue["title"] == "Earlier messages"]), 1)
+            self.assertEqual(_record(env.board)["github"], {"repo": "octo/board"})
+
+    def test_sending_waits_while_the_project_is_being_moved(self) -> None:
+        with support.TempEnv() as env, installed(FakeGitHub()):
+            _setup(env.workspace / "demo", github_repo_name=None)
+            marker = env.board / "projects" / "demo" / "github" / "moving"
+            marker.parent.mkdir(parents=True)
+            marker.write_text("now", encoding="ascii")
+            code, _out, err = _send()
+            self.assertEqual(code, 1)
+            self.assertIn("demo is being moved to GitHub right now.", err)
+            old = marker.stat().st_mtime - 16 * 60
+            os.utime(marker, (old, old))
+            self.assertEqual(_send()[0], 0, "a marker left by a crash does not block for ever")
+
+    def test_a_message_too_long_for_a_comment_stays_here_and_stays_valid(self) -> None:
+        import agentcoop.ghhistory as ghhistory
+
+        with support.TempEnv() as env, installed(FakeGitHub()) as fake:
+            _setup(env.workspace / "demo", github_repo_name=None)
+            self.assertEqual(_send()[0], 0)
+            code, _out, err = _run(
+                ["send", "--as", "cursor", "--project", "demo", "--to", "claude_code", "--subject", "Long", "--body", "x" * 3000]
+            )
+            self.assertEqual(code, 0, err)
+            with patch.object(ghhistory, "HISTORY_LIMIT", 1500):
+                code, out, err = self._move()
+            self.assertEqual(code, 0, err)
+            self.assertIn("1 earlier message copied.", out)
+            self.assertIn("1 message too long for GitHub stayed on this computer only.", out)
+            self.assertEqual(len(fake.history_messages()), 1)
+            report = check_inbox(env.board, "demo", "claude_code")
+            self.assertEqual([item.violation for item in report.messages], [None, None])
+
+    def test_a_file_that_is_gone_is_marked_and_the_message_still_moves(self) -> None:
+        with support.TempEnv() as env, installed(FakeGitHub()) as fake:
+            self._files_project(env.workspace / "demo")
+            for path in (env.board / "projects" / "demo" / "files" / "shared").rglob("plan.txt"):
+                path.unlink()
+            code, out, err = self._move()
+            self.assertEqual(code, 0, err)
+            self.assertIn("1 file could not be copied: missing here, or over the size limit.", out)
+            with_file = [item for item in fake.history_messages() if item["attachments"]][0]
+            self.assertEqual(with_file["attachments"], ["missing:plan.txt"])
+            self.assertEqual(fake.files, {})
+
+    def test_copying_pauses_between_posts(self) -> None:
+        import agentcoop.ghhistory as ghhistory
+
+        with support.TempEnv() as env, installed(FakeGitHub()):
+            self._files_project(env.workspace / "demo")
+            waits: list[float] = []
+            with patch.object(ghhistory, "PACE_SECONDS", 1.0):
+                ghhistory.post_history(env.board, "demo", "octo/board", sleep=waits.append)
+            self.assertEqual(waits, [1.0, 1.0], "one pause after the file and one after the comment")
+
+    def test_a_project_can_come_back_to_the_same_repository(self) -> None:
+        with support.TempEnv() as env, installed(FakeGitHub()) as fake:
+            _setup(env.workspace / "demo")
+            self.assertEqual(_send()[0], 0)
+            with support.person("demo"):
+                self.assertEqual(_run(["project", "set", "demo", "--files"])[0], 0)
+            self.assertEqual(_send()[0], 0, "sent through files")
+            code, out, err = self._move()
+            self.assertEqual(code, 0, err)
+            self.assertIn("1 earlier message copied.", out)
+            self.assertEqual(len(fake.history_messages()), 1, "only the message GitHub did not have")
+            self.assertEqual(_send()[0], 0)
+            report = check_inbox(env.board, "demo", "claude_code")
+            self.assertEqual([item.violation for item in report.messages], [None, None, None])
+
+
+class CloseTests(unittest.TestCase):
+    def test_archive_closes_a_finished_conversation_and_a_new_message_opens_it_again(self) -> None:
+        with support.TempEnv() as env, installed(FakeGitHub()) as fake:
+            _setup(env.workspace / "demo")
+            self.assertEqual(_send("--needs-reply")[0], 0)
+            first = json.loads(_inbox(env.board, "claude_code")[0].read_text(encoding="utf-8"))
+            self.assertEqual(_send("--re", first["id"], sender="claude_code", to="cursor")[0], 0)
+            reply = json.loads(_inbox(env.board, "cursor")[0].read_text(encoding="utf-8"))
+            self.assertEqual(_send(to="claude_code")[0], 0, "a second conversation that is not finished")
+            self.assertEqual(_run(["done", first["id"], "--as", "claude_code", "--project", "demo"])[0], 0)
+            code, out, _err = _run(["archive", "--as", "cursor", "--project", "demo", "--older-than", "0"])
+            self.assertEqual(code, 0)
+            self.assertNotIn("Closed", out, "the answer is not marked done yet")
+            self.assertEqual(_run(["done", reply["id"], "--as", "cursor", "--project", "demo"])[0], 0)
+            code, out, err = _run(["archive", "--as", "cursor", "--project", "demo", "--older-than", "0"])
+            self.assertEqual(code, 0, err)
+            self.assertIn("Closed 1 finished conversation(s) on GitHub.", out)
+            states = {issue["number"]: issue["state"] for issue in fake.threads()}
+            finished = int(fake.messages()[0]["issue_url"].rsplit("/", 1)[-1])
+            self.assertEqual(states[finished], "closed")
+            self.assertEqual(sorted(states.values()), ["closed", "open"])
+            special = [issue for issue in fake.issues if issue not in fake.threads()]
+            self.assertTrue(all(issue["state"] == "open" for issue in special), "the project's own issue stays open")
+            code, out, _err = _run(["archive", "--as", "cursor", "--project", "demo", "--older-than", "0"])
+            self.assertNotIn("Closed", out, "it is closed once")
+            self.assertEqual(_send("--re", reply["id"], sender="cursor", to="claude_code")[0], 0)
+            states = {issue["number"]: issue["state"] for issue in fake.threads()}
+            self.assertEqual(states[finished], "open")
+
+    def test_a_recent_conversation_stays_open(self) -> None:
+        with support.TempEnv() as env, installed(FakeGitHub()) as fake:
+            _setup(env.workspace / "demo")
+            self.assertEqual(_send()[0], 0)
+            first = json.loads(_inbox(env.board, "claude_code")[0].read_text(encoding="utf-8"))
+            self.assertEqual(_run(["done", first["id"], "--as", "claude_code", "--project", "demo"])[0], 0)
+            code, out, _err = _run(["archive", "--as", "claude_code", "--project", "demo"])
+            self.assertEqual(code, 0)
+            self.assertNotIn("Closed", out)
+            self.assertEqual([issue["state"] for issue in fake.threads()], ["open"])
+
+    def test_archive_in_a_files_project_does_not_load_the_github_code(self) -> None:
+        with support.TempEnv() as env, installed(FakeGitHub()) as fake:
+            _setup(env.workspace / "demo", github_repo_name=None)
+            before = len(fake.calls)
+            self.assertEqual(_run(["archive", "--as", "cursor", "--project", "demo", "--older-than", "0"])[0], 0)
+            self.assertEqual(len(fake.calls), before)
 
 
 class DesktopHelperTests(unittest.TestCase):

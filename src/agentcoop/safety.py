@@ -124,6 +124,8 @@ def check_attachment(
         return "An attachment path is missing."
     if raw.startswith("github:"):
         return "This file is on GitHub and was not copied to this computer."
+    if raw.startswith("missing:"):
+        return "This file was not copied when the project moved to GitHub."
     path = Path(raw)
     if not path.is_absolute():
         return "Attachments must be absolute paths."

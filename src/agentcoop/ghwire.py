@@ -225,3 +225,54 @@ def render_closed(event: dict) -> str:
     """Return the comment for a project that went back to files."""
     line = "**" + str(event.get("project")) + "** no longer talks through GitHub. Its driver's computer went back to files."
     return "\n".join([line, "", encode_block(event)])
+
+
+HISTORY_TITLE = "Earlier messages"
+HISTORY_LIMIT = 55000
+
+
+def encoded_length(value: object) -> int:
+    """Return how many characters a value takes inside the hidden block."""
+    return len(json.dumps(value, ensure_ascii=True, separators=(",", ":")))
+
+
+def render_history_issue(project: str) -> str:
+    """Return the issue text for the messages a project had before it talked through GitHub."""
+    lines = [
+        "The messages the project " + _code(project) + " had before it talked through GitHub.",
+        "",
+        "They were copied here by the agentcoop command, many to a comment. " + NOT_DELIVERED,
+        "",
+        encode_block({"kind": "thread", "project": project, "root": "history"}),
+    ]
+    return "\n".join(lines)
+
+
+def history_event(project: str, part: int, messages: list[dict], done: dict) -> dict:
+    """Build one comment's worth of earlier messages, with who had marked which done."""
+    return {"kind": "history", "project": project, "part": part, "messages": messages, "done": done}
+
+
+def render_history(event: dict) -> str:
+    """Return the comment for one part of a project's earlier messages."""
+    messages = [item for item in event.get("messages") or [] if isinstance(item, dict)]
+    noun = "1 message" if len(messages) == 1 else str(len(messages)) + " messages"
+    head = "**Earlier messages**, part " + str(event.get("part")) + ": " + noun
+    if messages:
+        head += ", from " + str(messages[0].get("ts")) + " to " + str(messages[-1].get("ts"))
+    block = encode_block(event)
+    rows = [
+        "- "
+        + str(item.get("ts"))
+        + " "
+        + _code(str(item.get("sender")))
+        + " to "
+        + _code(str(item.get("recipient")))
+        + ": "
+        + _code(str(item.get("subject") or "(no subject)"))
+        for item in messages
+    ]
+    text = "\n".join([head, "", *rows, "", block])
+    if len(text) <= MAX_COMMENT:
+        return text
+    return "\n".join([head, "", block])

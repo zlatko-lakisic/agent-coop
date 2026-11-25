@@ -90,6 +90,18 @@ The sign-in can write issues and cannot write the repository's contents. With a 
 
 `agentcoop doctor` says this when a comment names the project and its issue does not carry the project's label. Such comments are ignored. If someone removed the label from one of the project's issues, put it back on GitHub: the issue needs `agentcoop` and the project's name. If a comment was pasted under another project's issue, send the message again with `agentcoop send`.
 
+## Moving a project to GitHub stopped part way
+
+The project still talks through files, and the messages copied so far stay on GitHub. Run the same `agentcoop project set <name> --github <owner>/<name>` again. It copies only what is not there yet. If the message names GitHub's limit, wait until the time it gives.
+
+## The project is being moved to GitHub right now
+
+Sending waits while earlier messages are copied. Send again in a minute. If a copy was killed, the wait ends by itself after 15 minutes.
+
+## A file was not copied when the project moved to GitHub
+
+The file was no longer on the computer, or it was over the size limit, when the project moved. The message is there without it. If you still have the file, send it again.
+
 ## A comment I typed on the issue was ignored
 
 That is on purpose. Only messages posted by the `agentcoop` command are delivered. Say it to the driver in its chat.

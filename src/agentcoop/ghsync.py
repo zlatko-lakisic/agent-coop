@@ -58,7 +58,7 @@ NOT_SENT = (
     "so it was not delivered."
 )
 EDITED = "This message was edited on GitHub after it was sent."
-EXTRA_KINDS = ("roster", "request", "context", "closed")
+EXTRA_KINDS = ("roster", "request", "context", "closed", "history")
 
 HOME_RE = re.compile(r"^[0-9a-f]{12}$")
 STAMP_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
@@ -129,7 +129,7 @@ def _save_state(board: Path, project: str, state: dict) -> None:
 
 
 def _shape(index: dict) -> dict:
-    for key in ("messages", "done", "groups", "requests", "issues"):
+    for key in ("messages", "done", "groups", "requests", "issues", "closed"):
         if not isinstance(index.get(key), dict):
             index[key] = {}
     index["v"] = 1
@@ -408,7 +408,81 @@ def _apply_page(
             record = (load_projects(board).get("projects") or {}).get(project)
             if not driver_is_here(board, record):
                 state["closed"] = True
+        elif event["kind"] == "history":
+            _on_history(board, project, repo, comment_id, issue, event, result, touched)
     flush()
+
+
+def _on_history(
+    board: Path,
+    project: str,
+    repo: str,
+    comment_id: int,
+    issue: int,
+    event: dict,
+    result: PullResult,
+    touched: set[str],
+) -> None:
+    """Copy the messages a project had before it talked through GitHub."""
+    from agentcoop.core import ID_RE, write_message_file
+
+    raws = event.get("messages")
+    if not isinstance(raws, list):
+        return
+    record = (load_projects(board).get("projects") or {}).get(project) or {}
+    members = _members(board, project)
+    here = {name for name in members if agent_is_here(board, record, name)}
+    kept = []
+    with board_lock(board):
+        index = load_index(board, project)
+        for raw in raws:
+            parsed = _parse_message(raw, project, members)
+            if parsed is None:
+                continue
+            entry = index["messages"].get(parsed.id)
+            if not isinstance(entry, dict):
+                index["messages"][parsed.id] = {"issue": issue, "comment": comment_id, "history": True}
+            elif entry.get("comment") not in (comment_id, 0):
+                continue
+            kept.append((parsed, raw))
+        _save_index(board, project, index)
+    for parsed, raw in kept:
+        ensure_agent_dirs(board, project, parsed.recipient)
+        if not _has_copy(board, project, parsed.recipient, parsed.id):
+            try:
+                write_message_file(
+                    inbox_msgs(board, project, parsed.recipient), _with_files(board, project, repo, parsed, raw, here)
+                )
+            except FileExistsError:
+                pass
+            else:
+                result.messages += 1
+                touched.add(parsed.recipient)
+        if parsed.sender in members:
+            ensure_agent_dirs(board, project, parsed.sender)
+            try:
+                write_message_file(sent_dir(board, project, parsed.sender), raw)
+            except FileExistsError:
+                pass
+    done = event.get("done")
+    if not isinstance(done, dict):
+        return
+    ids_here = {parsed.id for parsed, _raw in kept}
+    with board_lock(board):
+        index = load_index(board, project)
+        for agent, ids in done.items():
+            if not isinstance(agent, str) or agent not in members or not isinstance(ids, list):
+                continue
+            for mid in ids:
+                if not isinstance(mid, str) or not ID_RE.fullmatch(mid) or mid not in ids_here:
+                    continue
+                index["done"].setdefault(agent + "/" + mid, comment_id)
+                if (inbox_msgs(board, project, agent) / (mid + ".json")).is_file():
+                    marker = inbox_done(board, project, agent) / mid
+                    if not marker.exists():
+                        marker.parent.mkdir(parents=True, exist_ok=True)
+                        marker.touch()
+        _save_index(board, project, index)
 
 
 def _roster_fields(event: dict) -> tuple[str, dict, dict] | None:
@@ -451,6 +525,8 @@ def _on_roster(board: Path, project: str, comment_id: int, issue: int, event: di
     if comment_id <= int(state.get("roster_seen") or 0):
         return
     state["roster_seen"] = comment_id
+    # A member list posted after a closed notice means the project talks through GitHub again.
+    state.pop("closed", None)
     if comment_id in (state.get("roster_mine") or []):
         return
     fields = _roster_fields(event)
@@ -1057,7 +1133,8 @@ def _thread_for(index: dict, message: dict) -> int | None:
     for key in ("re", "about", "moved_from"):
         value = message.get(key)
         entry = index["messages"].get(value) if isinstance(value, str) else None
-        if isinstance(entry, dict) and isinstance(entry.get("issue"), int):
+        # An answer to an earlier message starts a new conversation. It does not go under the history.
+        if isinstance(entry, dict) and isinstance(entry.get("issue"), int) and not entry.get("history"):
             return entry["issue"]
     group = message.get("group")
     if isinstance(group, str) and isinstance(index["groups"].get(group), int):
@@ -1081,6 +1158,18 @@ def _open_issue(board: Path, client: github.Client, repo: str, project: str, mes
         raise TransportDown("GitHub did not open the conversation. The message was not sent.")
     _remember_issue(board, project, number)
     return number
+
+
+def _reopen(board: Path, client: github.Client, repo: str, project: str, issue: int) -> None:
+    """Open a finished conversation again, because a new message joins it."""
+    try:
+        client.call("PATCH", "/repos/" + repo + "/issues/" + str(issue), body={"state": "open"})
+    except CoopError:
+        pass
+    with board_lock(board):
+        index = load_index(board, project)
+        index["closed"].pop(str(issue), None)
+        _save_index(board, project, index)
 
 
 def _close_issue(client: github.Client, repo: str, issue: int) -> None:
@@ -1107,6 +1196,8 @@ def post_message(board: Path, project: str, repo: str, message: dict) -> None:
     if issue is None:
         issue = _open_issue(board, client, repo, project, message)
         opened = True
+    elif str(issue) in index["closed"]:
+        _reopen(board, client, repo, project, issue)
     path = "/repos/" + repo + "/issues/"
     try:
         try:

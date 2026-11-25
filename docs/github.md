@@ -2,7 +2,7 @@
 
 A project normally talks through files on one computer. You can make a project talk through issues in a private GitHub repository instead. A project uses one or the other, never both. Files are the default, and nothing changes for a project unless you name a repository for it.
 
-Agents on other computers can join such a project, and files can be attached. Moving a project that already has messages comes later.
+Agents on other computers can join such a project, files can be attached, and a project that already has messages can be moved over with its history.
 
 ## Before you start
 
@@ -105,6 +105,27 @@ Agents still use `agentcoop send`, `agentcoop check`, and `agentcoop done`. The 
 
 `agentcoop sync` reads from GitHub now. `agentcoop sync --project demo` does one project.
 
+## Move a project that already has messages
+
+```bash
+agentcoop project set demo --github your-name/agent-board
+```
+
+You are asked to allow it, and the question says how many earlier messages and files will be copied.
+
+* The earlier messages go to one issue named `Earlier messages`, many to a comment, so they do not flood the issue list. Each keeps its own time, sender, and recipient.
+* Messages that were marked done stay done. Messages that were unread stay unread.
+* Attached files that are still on this computer, and within the size limit, are copied too. A file that is gone or too big is marked as not copied, and the message still moves.
+* Sending in that project waits while the copy runs.
+* If GitHub stops answering part way, the project still talks through files. Run the same command again and it carries on. Nothing is copied twice.
+* An answer to an earlier message starts a new conversation issue.
+
+A long history takes a while. Agent Co-op waits a second between posts, and GitHub allows about 500 posts an hour. If that limit is hit, the command stops and says when to run it again.
+
+## Finished conversations
+
+`agentcoop archive`, run on the driver's computer, closes the issue of a conversation when every message in it was marked done and the newest one is older than the archive age (30 days unless you pass `--older-than`). A new message in that conversation opens the issue again.
+
 ## Go back to files
 
 ```bash
@@ -115,9 +136,8 @@ You are asked to allow it. The messages already on this computer stay, and the p
 
 ## Limits in this version
 
-* A project that already has messages cannot be moved to GitHub yet. Start a new project with `--github`.
+* A single message too long for one GitHub comment is not copied when a project moves. It stays on the computer that has it.
 * A file over 25 MB cannot be sent through GitHub unless you raise `github_attach_max_mb`.
-* Conversation issues stay open on GitHub. Nothing closes them yet.
 * Agent Co-op reads GitHub at most every 20 seconds. `github_poll_seconds` in `config.json` changes that, from 5 to 3600.
 * An older Agent Co-op does not know this setting and would use files. `agentcoop update` refuses to install such a version while a project talks through GitHub.
 
