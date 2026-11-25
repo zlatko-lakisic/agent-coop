@@ -1104,6 +1104,89 @@ class FileTests(unittest.TestCase):
                 self.assertEqual(Path(local["attachments"][0]).read_text(encoding="utf-8"), "hello")
 
 
+class SharedRepositoryTests(unittest.TestCase):
+    """Several projects in one repository. The project name inside each comment keeps them apart."""
+
+    def _add(self, work: Path, name: str) -> int:
+        folder = work / name
+        folder.mkdir()
+        with support.person(name):
+            return _run(
+                ["project", "add", str(folder), "--name", name, "--driver", "cursor", "--helper", "claude_code=reviews",
+                 "--gitignore", "no", "--yes", "--github", "octo/board"]
+            )[0]
+
+    def _say(self, project: str, body: str, *extra: str) -> int:
+        return _run(
+            ["send", "--as", "cursor", "--project", project, "--to", "claude_code", "--subject", "About " + project,
+             "--body", body, *extra]
+        )[0]
+
+    def _bodies(self, board: Path, project: str, agent: str = "claude_code") -> list[str]:
+        folder = board / "projects" / project / "inbox" / agent / "msgs"
+        return [json.loads(path.read_text(encoding="utf-8"))["body"] for path in sorted(folder.glob("*.json"))]
+
+    def test_two_projects_in_one_repository_never_see_each_other(self) -> None:
+        with support.TempEnv() as env, installed(FakeGitHub()) as fake:
+            with computer(env.root, "a") as (board_a, work_a):
+                _run(["setup", "--connect", "cursor,claude-code", "--schedule", "no", "--add-to-path", "no", "--yes"])
+                self.assertEqual(self._add(work_a, "alpha"), 0)
+                self.assertEqual(self._add(work_a, "beta"), 0)
+                self.assertEqual(self._say("alpha", "for alpha only"), 0)
+                self.assertEqual(self._say("beta", "for beta only"), 0)
+                note = work_a / "alpha" / "n.txt"
+                note.write_text("x", encoding="utf-8")
+                self.assertEqual(self._say("alpha", "with a file", "--attach", str(note)), 0)
+                self.assertEqual(_run(["sync"])[0], 0)
+                self.assertEqual(self._bodies(board_a, "alpha"), ["for alpha only", "with a file"])
+                self.assertEqual(self._bodies(board_a, "beta"), ["for beta only"])
+                for name in ("alpha", "beta"):
+                    index = load_index(board_a, name)
+                    self.assertEqual(len(index["messages"]), 2 if name == "alpha" else 1)
+            titles = [issue["title"] for issue in fake.issues]
+            self.assertTrue(all(title.startswith("[alpha] ") or title.startswith("[beta] ") for title in titles), titles)
+            self.assertTrue(all(path.startswith("alpha/") for _branch, path in fake.files))
+            with computer(env.root, "b") as (board_b, work_b):
+                _run(["setup", "--connect", "cursor", "--schedule", "no", "--add-to-path", "no", "--yes"])
+                _run(["connect", "claude-code", "--as", "claude_b", "--yes"])
+                (work_b / "beta").mkdir()
+                with support.person("beta"):
+                    code, _out, err = _run(
+                        ["join", "--as", "claude_b", "--project", "beta", "--github", "octo/board", "--folder", str(work_b / "beta")]
+                    )
+                self.assertEqual(code, 0, err)
+                self.assertEqual(self._bodies(board_b, "beta"), ["for beta only"])
+                self.assertFalse((board_b / "projects" / "alpha").exists())
+                self.assertNotIn("alpha", json.dumps(load_projects(board_b)))
+            with computer(env.root, "a") as (board_a, _work):
+                self.assertEqual(_run(["sync"])[0], 0)
+                self.assertIn("claude_b", load_projects(board_a)["projects"]["beta"]["helpers"])
+                self.assertNotIn("claude_b", load_projects(board_a)["projects"]["alpha"]["helpers"])
+
+    def test_the_name_inside_the_comment_decides_not_the_issue_it_sits_in(self) -> None:
+        with support.TempEnv() as env, installed(FakeGitHub()) as fake:
+            _run(["setup", "--connect", "cursor,claude-code", "--schedule", "no", "--add-to-path", "no", "--yes"])
+            self.assertEqual(self._add(env.workspace, "alpha"), 0)
+            self.assertEqual(self._add(env.workspace, "beta"), 0)
+            self.assertEqual(self._say("alpha", "for alpha only"), 0)
+            self.assertEqual(self._say("beta", "for beta only"), 0)
+            alpha_issue = [issue["number"] for issue in fake.threads() if issue["title"] == "[alpha] About alpha"][0]
+            beta_issue = [issue["number"] for issue in fake.threads() if issue["title"] == "[beta] About beta"][0]
+            beta_comment = [c for c in fake.messages() if c["issue_url"].endswith("/" + str(beta_issue))][0]
+            # A copy of a beta message, pasted under an alpha conversation, is still a beta message.
+            fake.hand_comment(alpha_issue, beta_comment["body"].replace("_cursor_", "_cursor_x"))
+            self.assertEqual(_run(["sync"])[0], 0)
+            self.assertEqual(self._bodies(env.board, "alpha"), ["for alpha only"])
+            self.assertEqual(len(self._bodies(env.board, "beta")), 2)
+
+    def test_a_file_from_another_project_is_not_fetched(self) -> None:
+        from agentcoop.ghfiles import make_ref, parse_ref
+
+        digest = "ab" + "0" * 62
+        self.assertIsNone(parse_ref(make_ref("alpha", digest, "n.txt"), "beta"))
+        self.assertIsNotNone(parse_ref(make_ref("alpha", digest, "n.txt"), "alpha"))
+
+
 class DesktopHelperTests(unittest.TestCase):
     def test_the_claude_desktop_app_still_uses_its_folder(self) -> None:
         """The app only reads and writes files. agentcoop carries them to and from GitHub."""
